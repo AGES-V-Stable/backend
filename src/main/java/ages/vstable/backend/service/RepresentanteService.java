@@ -2,62 +2,68 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.representante.RepresentanteCreateRequest;
 import ages.vstable.backend.dto.representante.RepresentanteResponse;
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.entity.ProgressoCadastroEntity;
+import ages.vstable.backend.repository.ProgressoCadastroRepository;
+import ages.vstable.backend.util.CpfUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
-import java.util.Optional;
-import java.util.UUID;
+import java.time.LocalDate;
+import java.time.Period;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class RepresentanteService {
 
-    private final UsuarioRepository usuarioRepository;
+    private static final int IDADE_MINIMA = 18;
 
-    public Optional<RepresentanteResponse> findById(UUID id) {
-        return usuarioRepository.findById(id)
-                .map(this::toResponse);
-    }
+    private final ProgressoCadastroRepository progressoCadastroRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RepresentanteResponse create(RepresentanteCreateRequest request) {
 
-        if (usuarioRepository.existsByCpf(request.getCpf())) {
-            throw new IllegalArgumentException(
-                    "A representante with this CPF already exists"
-            );
-        }
+        validateCpf(request.getCpf());
+        validateAge(request.getDataNascimento());
 
-        UsuarioEntity usuario = new UsuarioEntity();
+        ProgressoCadastroEntity progresso = progressoCadastroRepository
+                .findByEmailContato(request.getEmail())
+                .orElseGet(() -> {
+                    ProgressoCadastroEntity novo = new ProgressoCadastroEntity();
+                    novo.setEmailContato(request.getEmail());
+                    novo.setEtapaAtual(1);
+                    return novo;
+                });
 
-        usuario.setEmpresaId(request.getEmpresaId());
-        usuario.setNomeCompleto(request.getNomeCompleto());
-        usuario.setCpf(request.getCpf());
-        usuario.setDataNascimento(request.getDataNascimento());
-        usuario.setEmail(request.getEmail());
-        usuario.setTelefone(request.getTelefone());
-        usuario.setCargo(request.getCargo());
-        usuario.setPaisResidencia(request.getPaisResidencia());
+        progresso.setDadosTemporarios(serialize(request));
+        progresso.setEtapaAtual(2);
 
-        return toResponse(usuarioRepository.save(usuario));
-    }
+        ProgressoCadastroEntity salvo = progressoCadastroRepository.save(progresso);
 
-    private RepresentanteResponse toResponse(UsuarioEntity entity) {
         RepresentanteResponse response = new RepresentanteResponse();
-
-        response.setId(entity.getId());
-        response.setEmpresaId(entity.getEmpresaId());
-        response.setNomeCompleto(entity.getNomeCompleto());
-        response.setCpf(entity.getCpf());
-        response.setDataNascimento(entity.getDataNascimento());
-        response.setEmail(entity.getEmail());
-        response.setTelefone(entity.getTelefone());
-        response.setCargo(entity.getCargo());
-        response.setPaisResidencia(entity.getPaisResidencia());
-        response.setCriadoEm(entity.getCriadoEm());
-        response.setAtualizadoEm(entity.getAtualizadoEm());
+        response.setProgressoId(salvo.getId());
+        response.setEtapaAtual(salvo.getEtapaAtual());
 
         return response;
+    }
+
+    private void validateCpf(String cpf) {
+        if (!CpfUtils.isValid(cpf)) {
+            throw new IllegalArgumentException("CPF inválido");
+        }
+    }
+
+    private void validateAge(LocalDate dataNascimento) {
+        if (Period.between(dataNascimento, LocalDate.now()).getYears() < IDADE_MINIMA) {
+            throw new IllegalArgumentException("O representante precisa ser maior de idade");
+        }
+    }
+
+    private String serialize(RepresentanteCreateRequest request) {
+        Map<String, Object> dados = new LinkedHashMap<>();
+        dados.put("representante", request);
+        return objectMapper.writeValueAsString(dados);
     }
 }

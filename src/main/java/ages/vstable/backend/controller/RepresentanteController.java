@@ -3,12 +3,14 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.representante.RepresentanteCreateRequest;
 import ages.vstable.backend.dto.representante.RepresentanteResponse;
 import ages.vstable.backend.service.RepresentanteService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/representantes")
@@ -19,19 +21,10 @@ public class RepresentanteController {
 
     @PostMapping
     public ResponseEntity<RepresentanteResponse> create(
-            @RequestBody RepresentanteCreateRequest request) {
+            @Valid @RequestBody RepresentanteCreateRequest request) {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(representanteService.create(request));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<RepresentanteResponse> findById(
-            @PathVariable UUID id) {
-
-        return representanteService.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
     }
 }
