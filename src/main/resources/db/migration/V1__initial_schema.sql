@@ -35,7 +35,7 @@ CREATE TABLE empresas (
 -- ---------------------------------------------------------------------
 CREATE TABLE usuarios (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    empresa_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    empresa_id UUID REFERENCES empresas(id) ON DELETE CASCADE,
     nome_completo VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     hash_senha VARCHAR(255) NOT NULL,
@@ -178,8 +178,8 @@ CREATE TABLE administradores (
 -- ---------------------------------------------------------------------
 CREATE TABLE progresso_cadastros (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     empresa_id UUID REFERENCES empresas(id) ON DELETE CASCADE,
-    email_contato VARCHAR(255) NOT NULL,
     etapa_atual INTEGER DEFAULT 1,
     status_geral status_onboarding_enum DEFAULT 'RASCUNHO',
     status_compliance_final status_compliance_enum DEFAULT 'PENDENTE',
@@ -202,4 +202,4 @@ CREATE INDEX idx_transferencias_status_data ON transferencias(status, criado_em 
 CREATE INDEX idx_administradores_email ON administradores(email);
 CREATE INDEX idx_faturas_codigo ON faturas_exportacao(codigo_cobranca_externa);
 CREATE INDEX idx_faturas_empresa ON faturas_exportacao(empresa_id);
-CREATE INDEX idx_progresso_cadastros_empresa ON progresso_cadastros(empresa_id);
+CREATE INDEX idx_progresso_cadastros_usuario ON progresso_cadastros(usuario_id);

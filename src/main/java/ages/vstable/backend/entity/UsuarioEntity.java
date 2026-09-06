@@ -2,8 +2,6 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -14,26 +12,25 @@ import java.util.UUID;
 @AllArgsConstructor
 @Getter
 @Setter
-@Table(name = "progresso_cadastros")
-public class ProgressoCadastroEntity {
+@Table(name = "usuarios")
+public class UsuarioEntity {
 
     @Id
     @GeneratedValue
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "usuario_id", nullable = false)
-    private UUID usuarioId;
-
     @Column(name = "empresa_id")
     private UUID empresaId;
 
-    @Column(name = "etapa_atual")
-    private Integer etapaAtual = 1;
+    @Column(name = "nome_completo", nullable = false, length = 255)
+    private String nomeCompleto;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "dados_temporarios", columnDefinition = "jsonb")
-    private String dadosTemporarios = "{}";
+    @Column(name = "email", nullable = false, unique = true, length = 255)
+    private String email;
+
+    @Column(name = "hash_senha", nullable = false, length = 255)
+    private String hashSenha;
 
     @Column(name = "criado_em")
     private OffsetDateTime criadoEm;

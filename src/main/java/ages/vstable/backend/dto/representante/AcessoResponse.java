@@ -5,8 +5,10 @@ import lombok.Data;
 import java.util.UUID;
 
 @Data
-public class RepresentanteResponse {
+public class AcessoResponse {
 
-    private UUID progressoId;
+    private UUID token;
     private Integer etapaAtual;
+    private String nomeCompleto;
+    private String email;
 }
