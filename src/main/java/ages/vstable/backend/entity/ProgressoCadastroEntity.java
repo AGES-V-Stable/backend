@@ -2,8 +2,6 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -25,15 +23,14 @@ public class ProgressoCadastroEntity {
     @Column(name = "usuario_id", nullable = false)
     private UUID usuarioId;
 
-    @Column(name = "empresa_id")
-    private UUID empresaId;
+    @Column(name = "idempotency_key", nullable = false, unique = true)
+    private String idempotencyKey;
+
+    @Column(name = "payload_hash", nullable = false)
+    private String payloadHash;
 
     @Column(name = "etapa_atual")
     private Integer etapaAtual = 1;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "dados_temporarios", columnDefinition = "jsonb")
-    private String dadosTemporarios = "{}";
 
     @Column(name = "criado_em")
     private OffsetDateTime criadoEm;

@@ -179,11 +179,11 @@ CREATE TABLE administradores (
 CREATE TABLE progresso_cadastros (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    empresa_id UUID REFERENCES empresas(id) ON DELETE CASCADE,
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    payload_hash VARCHAR(64) NOT NULL,
     etapa_atual INTEGER DEFAULT 1,
     status_geral status_onboarding_enum DEFAULT 'RASCUNHO',
     status_compliance_final status_compliance_enum DEFAULT 'PENDENTE',
-    dados_temporarios JSONB DEFAULT '{}'::jsonb,
     criado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     atualizado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
