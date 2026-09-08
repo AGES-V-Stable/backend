@@ -15,6 +15,7 @@ CREATE TYPE direcao_operacao_enum AS ENUM ('IMPORTACAO', 'EXPORTACAO');
 -- IMPORTACAO: Empresa envia dinheiro para fora (Paga fornecedor)
 -- EXPORTACAO: Empresa recebe dinheiro de fora (Recebe de cliente estrangeiro)
 CREATE TYPE status_fatura_enum AS ENUM ('AGUARDANDO_PAGAMENTO', 'PAGA', 'CANCELADA', 'EXPIRADA');
+CREATE TYPE status_onboarding_enum AS ENUM ('RASCUNHO', 'AGUARDANDO_COMPLIANCE', 'CONCLUIDO', 'ABANDONADO');
 -- ---------------------------------------------------------------------
 -- 1. TABELA DE EMPRESAS (PME / COOPERATIVAS DO AGRO)
 -- ---------------------------------------------------------------------
@@ -34,7 +35,7 @@ CREATE TABLE empresas (
 -- ---------------------------------------------------------------------
 CREATE TABLE usuarios (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    empresa_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    empresa_id UUID REFERENCES empresas(id) ON DELETE CASCADE,
     nome_completo VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     hash_senha VARCHAR(255) NOT NULL,
@@ -173,6 +174,21 @@ CREATE TABLE administradores (
 );
 
 -- ---------------------------------------------------------------------
+-- 9. PROGRESSO DE CADASTRO (ONBOARDING)
+-- ---------------------------------------------------------------------
+CREATE TABLE progresso_cadastros (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    payload_hash VARCHAR(64) NOT NULL,
+    etapa_atual INTEGER DEFAULT 1,
+    status_geral status_onboarding_enum DEFAULT 'RASCUNHO',
+    status_compliance_final status_compliance_enum DEFAULT 'PENDENTE',
+    criado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
 -- ÍNDICES DE PERFORMANCE
 -- ---------------------------------------------------------------------
 CREATE INDEX idx_empresas_cnpj ON empresas(cnpj);
@@ -186,3 +202,4 @@ CREATE INDEX idx_transferencias_status_data ON transferencias(status, criado_em 
 CREATE INDEX idx_administradores_email ON administradores(email);
 CREATE INDEX idx_faturas_codigo ON faturas_exportacao(codigo_cobranca_externa);
 CREATE INDEX idx_faturas_empresa ON faturas_exportacao(empresa_id);
+CREATE INDEX idx_progresso_cadastros_usuario ON progresso_cadastros(usuario_id);
