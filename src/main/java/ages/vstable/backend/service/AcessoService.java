@@ -11,6 +11,7 @@ import ages.vstable.backend.repository.UsuarioRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -35,16 +36,18 @@ public class AcessoService {
     private final ProgressoCadastroRepository progressoCadastroRepository;
     private final TransactionTemplate transactionTemplate;
     private final String idempotencySecret;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final PasswordEncoder passwordEncoder;
 
     public AcessoService(UsuarioRepository usuarioRepository,
-                          ProgressoCadastroRepository progressoCadastroRepository,
-                          TransactionTemplate transactionTemplate,
-                          @Value("${app.idempotency.secret}") String idempotencySecret) {
+                         ProgressoCadastroRepository progressoCadastroRepository,
+                         TransactionTemplate transactionTemplate,
+                         @Value("${app.idempotency.secret}") String idempotencySecret,
+                         PasswordEncoder passwordEncoder) {
         this.usuarioRepository = usuarioRepository;
         this.progressoCadastroRepository = progressoCadastroRepository;
         this.transactionTemplate = transactionTemplate;
         this.idempotencySecret = idempotencySecret;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public AcessoResponse create(String idempotencyKey, AcessoCreateRequest request) {
@@ -112,6 +115,8 @@ public class AcessoService {
         UsuarioEntity usuario = new UsuarioEntity();
         usuario.setNomeCompleto(request.getNomeCompleto());
         usuario.setEmail(request.getEmail());
+        System.out.println(request.getSenha());
+        System.out.println(passwordEncoder.encode(request.getSenha()));
         usuario.setHashSenha(passwordEncoder.encode(request.getSenha()));
         usuario = usuarioRepository.save(usuario);
 
