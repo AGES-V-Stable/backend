@@ -26,6 +26,12 @@ repositories {
 	mavenCentral()
 }
 
+configurations {
+	// Mockito's inline mock maker must be attached as a -javaagent on JDK 21+;
+	// runtime self-attach is unsupported. See tasks.named('test') below.
+	mockitoAgent
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
@@ -44,8 +50,12 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+	mockitoAgent('org.mockito:mockito-core') {
+		transitive = false
+	}
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+	jvmArgs("-javaagent:${configurations.mockitoAgent.asPath}")
 }
