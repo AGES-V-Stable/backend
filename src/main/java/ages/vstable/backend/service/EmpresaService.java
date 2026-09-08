@@ -8,11 +8,14 @@ import ages.vstable.backend.dto.empresa.SituacaoCadastralResponse;
 import ages.vstable.backend.entity.DocumentoComplianceEntity;
 import ages.vstable.backend.entity.EmpresaEntity;
 import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.exception.CadastroInvalidoException;
 import ages.vstable.backend.exception.EmpresaNotFoundException;
 import ages.vstable.backend.repository.DocumentoComplianceRepository;
 import ages.vstable.backend.repository.EmpresaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -99,11 +102,20 @@ public class EmpresaService {
         return empresaRepository.existsById(id);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SituacaoCadastralResponse getSituacaoCadastral(UUID id) {
         EmpresaEntity empresa = empresaRepository.findById(id)
                 .orElseThrow(() -> new EmpresaNotFoundException(id));
 
+        if (empresa.getStatusKyb() == null || empresa.getStatusAml() == null) {
+            throw new CadastroInvalidoException(id);
+        }
+
         List<DocumentoComplianceEntity> documentos = documentoComplianceRepository.findByEmpresaId(id);
+
+        if (documentos.stream().anyMatch(documento -> documento.getStatus() == null)) {
+            throw new CadastroInvalidoException(id);
+        }
 
         SituacaoCadastralResponse response = new SituacaoCadastralResponse();
         response.setId(empresa.getId());

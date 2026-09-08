@@ -5,11 +5,15 @@ import ages.vstable.backend.entity.DocumentoComplianceEntity;
 import ages.vstable.backend.entity.EmpresaEntity;
 import ages.vstable.backend.entity.enums.StatusCompliance;
 import ages.vstable.backend.entity.enums.TipoDocumento;
+import ages.vstable.backend.exception.CadastroInvalidoException;
 import ages.vstable.backend.exception.EmpresaNotFoundException;
 import ages.vstable.backend.repository.DocumentoComplianceRepository;
 import ages.vstable.backend.repository.EmpresaRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,6 +66,39 @@ class EmpresaServiceTest {
 
         assertThatThrownBy(() -> empresaService.getSituacaoCadastral(id))
                 .isInstanceOf(EmpresaNotFoundException.class)
+                .hasMessageContaining(id.toString());
+    }
+
+    @Test
+    void getSituacaoCadastral_shouldThrowCadastroInvalidoException_whenStatusIsNull() {
+        UUID id = UUID.randomUUID();
+        EmpresaEntity empresa = buildEmpresa(id, null, StatusCompliance.APROVADO);
+
+        when(empresaRepository.findById(id)).thenReturn(Optional.of(empresa));
+
+        assertThatThrownBy(() -> empresaService.getSituacaoCadastral(id))
+                .isInstanceOf(CadastroInvalidoException.class)
+                .hasMessageContaining(id.toString());
+    }
+
+    @Test
+    void getSituacaoCadastral_shouldThrowCadastroInvalidoException_whenDocumentStatusIsNull() {
+        UUID id = UUID.randomUUID();
+        EmpresaEntity empresa = buildEmpresa(id, StatusCompliance.APROVADO, StatusCompliance.APROVADO);
+        DocumentoComplianceEntity documento = DocumentoComplianceEntity.builder()
+                .id(UUID.randomUUID())
+                .empresa(empresa)
+                .tipoDocumento(TipoDocumento.CONTRATO_SOCIAL)
+                .nomeArquivo("contrato.pdf")
+                .urlArquivo("https://storage.example/contrato.pdf")
+                .status(null)
+                .build();
+
+        when(empresaRepository.findById(id)).thenReturn(Optional.of(empresa));
+        when(documentoComplianceRepository.findByEmpresaId(id)).thenReturn(List.of(documento));
+
+        assertThatThrownBy(() -> empresaService.getSituacaoCadastral(id))
+                .isInstanceOf(CadastroInvalidoException.class)
                 .hasMessageContaining(id.toString());
     }
 
@@ -140,6 +178,44 @@ class EmpresaServiceTest {
         SituacaoCadastralResponse response = empresaService.getSituacaoCadastral(id);
 
         assertThat(response.getStatusGeral()).isEqualTo(StatusCompliance.REJEITADO);
+    }
+
+    @ParameterizedTest
+    @MethodSource("statusGeralCombinations")
+    void getSituacaoCadastral_shouldComputeStatusGeralForEveryCombination(
+            StatusCompliance kyb,
+            StatusCompliance aml,
+            StatusCompliance expected) {
+        UUID id = UUID.randomUUID();
+        EmpresaEntity empresa = buildEmpresa(id, kyb, aml);
+
+        when(empresaRepository.findById(id)).thenReturn(Optional.of(empresa));
+        when(documentoComplianceRepository.findByEmpresaId(id)).thenReturn(List.of());
+
+        SituacaoCadastralResponse response = empresaService.getSituacaoCadastral(id);
+
+        assertThat(response.getStatusGeral()).isEqualTo(expected);
+    }
+
+    private static Stream<Arguments> statusGeralCombinations() {
+        return Stream.of(
+                Arguments.of(StatusCompliance.PENDENTE, StatusCompliance.PENDENTE, StatusCompliance.PENDENTE),
+                Arguments.of(StatusCompliance.PENDENTE, StatusCompliance.EM_ANALISE, StatusCompliance.EM_ANALISE),
+                Arguments.of(StatusCompliance.PENDENTE, StatusCompliance.APROVADO, StatusCompliance.PENDENTE),
+                Arguments.of(StatusCompliance.PENDENTE, StatusCompliance.REJEITADO, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.EM_ANALISE, StatusCompliance.PENDENTE, StatusCompliance.EM_ANALISE),
+                Arguments.of(StatusCompliance.EM_ANALISE, StatusCompliance.EM_ANALISE, StatusCompliance.EM_ANALISE),
+                Arguments.of(StatusCompliance.EM_ANALISE, StatusCompliance.APROVADO, StatusCompliance.EM_ANALISE),
+                Arguments.of(StatusCompliance.EM_ANALISE, StatusCompliance.REJEITADO, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.APROVADO, StatusCompliance.PENDENTE, StatusCompliance.PENDENTE),
+                Arguments.of(StatusCompliance.APROVADO, StatusCompliance.EM_ANALISE, StatusCompliance.EM_ANALISE),
+                Arguments.of(StatusCompliance.APROVADO, StatusCompliance.APROVADO, StatusCompliance.APROVADO),
+                Arguments.of(StatusCompliance.APROVADO, StatusCompliance.REJEITADO, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.REJEITADO, StatusCompliance.PENDENTE, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.REJEITADO, StatusCompliance.EM_ANALISE, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.REJEITADO, StatusCompliance.APROVADO, StatusCompliance.REJEITADO),
+                Arguments.of(StatusCompliance.REJEITADO, StatusCompliance.REJEITADO, StatusCompliance.REJEITADO)
+        );
     }
 
     @Test

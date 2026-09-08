@@ -44,7 +44,8 @@ public class DocumentoComplianceEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status", columnDefinition = "status_compliance_enum")
+    @Column(name = "status", columnDefinition = "status_compliance_enum", nullable = false)
+    @Builder.Default
     private StatusCompliance status = StatusCompliance.EM_ANALISE;
 
     @Column(name = "enviado_em")

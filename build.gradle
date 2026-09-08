@@ -26,6 +26,10 @@ repositories {
 	mavenCentral()
 }
 
+configurations {
+	mockitoAgent
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
@@ -41,10 +45,23 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testCompileOnly 'org.projectlombok:lombok'
+	mockitoAgent('org.mockito:mockito-core') {
+		transitive = false
+	}
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+	jvmArgumentProviders.add(new CommandLineArgumentProvider() {
+		@InputFiles
+		@PathSensitive(PathSensitivity.RELATIVE)
+		FileCollection mockitoAgent = configurations.mockitoAgent
+
+		@Override
+		Iterable<String> asArguments() {
+			["-javaagent:${mockitoAgent.asPath}"]
+		}
+	})
 }
