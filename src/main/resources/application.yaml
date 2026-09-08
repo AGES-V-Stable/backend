@@ -22,3 +22,9 @@ spring:
 app:
   idempotency:
     secret: ${IDEMPOTENCY_HASH_SECRET:troque-este-segredo-em-producao}
+api:
+  auth:
+    jwt:
+      secret: ${JWT_SECRET:troqueestesegredoemproducao}
+    header:
+      name: X-AUTH-API-SECRET-KEY
