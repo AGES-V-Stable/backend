@@ -15,6 +15,10 @@ public class EmpresaResponse {
     private String razaoSocial;
     private String nomeFantasia;
     private String cnpj;
+    private String pais;
+    private String cep;
+    private String cidade;
+    private String estado;
 
     private StatusCompliance statusKyb;
     private StatusCompliance statusAml;

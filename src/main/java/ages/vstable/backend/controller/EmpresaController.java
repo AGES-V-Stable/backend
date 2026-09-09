@@ -4,6 +4,7 @@ import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
 import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
 import ages.vstable.backend.service.EmpresaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +22,7 @@ public class EmpresaController {
 
     @PostMapping
     public ResponseEntity<EmpresaResponse> create(
-            @RequestBody EmpresaCreateRequest request) {
+            @Valid @RequestBody EmpresaCreateRequest request) {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -45,7 +46,7 @@ public class EmpresaController {
     @PutMapping("/{id}")
     public ResponseEntity<EmpresaResponse> update(
             @PathVariable UUID id,
-            @RequestBody EmpresaUpdateRequest request) {
+            @Valid @RequestBody EmpresaUpdateRequest request) {
 
         if (!empresaService.existsById(id)) {
             return ResponseEntity.notFound().build();

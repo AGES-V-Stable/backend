@@ -145,6 +145,7 @@ public class AcessoService {
     private AcessoResponse toResponse(ProgressoCadastroEntity progresso, UsuarioEntity usuario) {
         AcessoResponse response = new AcessoResponse();
         response.setToken(progresso.getId());
+        response.setEmpresaId(progresso.getEmpresaId());
         response.setEtapaAtual(progresso.getEtapaAtual());
         response.setNomeCompleto(usuario.getNomeCompleto());
         response.setEmail(usuario.getEmail());
