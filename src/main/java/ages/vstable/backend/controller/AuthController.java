@@ -4,13 +4,6 @@ import ages.vstable.backend.dto.authentication.AuthRequestDTO;
 import ages.vstable.backend.entity.UsuarioEntity;
 import ages.vstable.backend.repository.UsuarioRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -22,7 +15,6 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.web.bind.annotation.*;
 
 @Slf4j
@@ -50,7 +42,7 @@ public class AuthController {
 
       return ResponseEntity
           .ok()
-          .header(HttpHeaders.AUTHORIZATION, jwtTokenUtil.generateToken(user))
+          .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(user))
           .build();
     } catch (LockedException le) {
       log.error(le.getMessage());
