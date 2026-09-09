@@ -2,43 +2,67 @@ package ages.vstable.backend.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import java.util.Map;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(EmpresaNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleEmpresaNotFound(EmpresaNotFoundException ex) {
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(
-                        HttpStatus.NOT_FOUND.value(),
-                        "Not Found",
-                        ex.getMessage()
-                ));
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", ex.getMessage()));
     }
 
-    @ExceptionHandler(CadastroInvalidoException.class)
-    public ResponseEntity<ErrorResponse> handleCadastroInvalido(CadastroInvalidoException ex) {
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .orElse("Dados inválidos");
         return ResponseEntity
-                .status(HttpStatus.UNPROCESSABLE_CONTENT)
-                .body(new ErrorResponse(
-                        HttpStatus.UNPROCESSABLE_CONTENT.value(),
-                        HttpStatus.UNPROCESSABLE_CONTENT.getReasonPhrase(),
-                        ex.getMessage()
-                ));
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", message));
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<Map<String, String>> handleMissingHeader(MissingRequestHeaderException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidPathParameter(MethodArgumentTypeMismatchException ex) {
+    public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(new ErrorResponse(
-                        HttpStatus.BAD_REQUEST.value(),
-                        "Bad Request",
-                        "Parâmetro '" + ex.getName() + "' inválido"
-                ));
+                .body(Map.of("message", "Parâmetro '" + ex.getName() + "' em formato inválido"));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(ConflictException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UnprocessableEntityException.class)
+    public ResponseEntity<Map<String, String>> handleUnprocessableEntity(UnprocessableEntityException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", "Erro interno"));
     }
 }

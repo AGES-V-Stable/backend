@@ -18,3 +18,7 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+app:
+  idempotency:
+    secret: ${IDEMPOTENCY_HASH_SECRET:troque-este-segredo-em-producao}

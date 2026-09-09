@@ -10,6 +10,7 @@ sonar {
 	properties {
     	property "sonar.projectKey", "AGES-V-Stable_backend"
     	property "sonar.organization", "ages-v-stable"
+    	property "sonar.coverage.jacoco.xmlReportPaths", "${layout.buildDirectory.get()}/reports/jacoco/test/jacocoTestReport.xml"
   }
 }
 
@@ -38,6 +39,9 @@ configurations {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.security:spring-security-crypto'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
 
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	implementation 'org.flywaydb:flyway-core'
@@ -59,22 +63,14 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
-	jvmArgumentProviders.add(new CommandLineArgumentProvider() {
-		@InputFiles
-		@PathSensitive(PathSensitivity.RELATIVE)
-		FileCollection mockitoAgent = configurations.mockitoAgent
-
-		@Override
-		Iterable<String> asArguments() {
-			["-javaagent:${mockitoAgent.asPath}"]
-		}
-	})
+	finalizedBy tasks.named('jacocoTestReport')
 }
 
 tasks.named('jacocoTestReport') {
 	dependsOn tasks.named('test')
 	reports {
 		xml.required = true
+		html.required = true
 	}
 }
 
