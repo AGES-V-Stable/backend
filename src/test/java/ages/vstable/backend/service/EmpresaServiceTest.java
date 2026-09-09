@@ -1,31 +1,38 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
+import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.SituacaoCadastralResponse;
 import ages.vstable.backend.entity.DocumentoComplianceEntity;
 import ages.vstable.backend.entity.EmpresaEntity;
 import ages.vstable.backend.entity.enums.StatusCompliance;
 import ages.vstable.backend.entity.enums.TipoDocumento;
 import ages.vstable.backend.exception.CadastroInvalidoException;
+import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.EmpresaNotFoundException;
 import ages.vstable.backend.repository.DocumentoComplianceRepository;
 import ages.vstable.backend.repository.EmpresaRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,8 +44,13 @@ class EmpresaServiceTest {
     @Mock
     private DocumentoComplianceRepository documentoComplianceRepository;
 
-    @InjectMocks
     private EmpresaService empresaService;
+
+    @BeforeEach
+    void setUp() {
+        empresaService = new EmpresaService(
+                empresaRepository, documentoComplianceRepository, new EmpresaDadosValidator());
+    }
 
     @Test
     void getSituacaoCadastral_shouldReturnResponse_whenEmpresaExists() {
@@ -234,6 +246,56 @@ class EmpresaServiceTest {
         assertThat(response.getDocumentos().getFirst().getTipoDocumento()).isEqualTo(TipoDocumento.CONTRATO_SOCIAL);
         assertThat(response.getDocumentos().getFirst().getStatus()).isEqualTo(StatusCompliance.EM_ANALISE);
         assertThat(response.getDocumentos().getFirst().getTamanhoArquivoBytes()).isEqualTo(204800L);
+    }
+
+    @Test
+    void create_normalizaEMapeiaNovosCampos() {
+        EmpresaCreateRequest request = requestValido();
+        UUID empresaId = UUID.randomUUID();
+        when(empresaRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            EmpresaEntity empresa = invocation.getArgument(0);
+            empresa.setId(empresaId);
+            return empresa;
+        });
+
+        EmpresaResponse response = empresaService.create(request);
+
+        assertThat(response.getId()).isEqualTo(empresaId);
+        assertThat(response.getCnpj()).isEqualTo("11222333000181");
+        assertThat(response.getCep()).isEqualTo("90000000");
+        assertThat(response.getPais()).isEqualTo("Brasil");
+        assertThat(response.getCidade()).isNull();
+        assertThat(response.getEstado()).isEqualTo("RS");
+        assertThat(response.getAtualizadoEm()).isNotNull();
+
+        ArgumentCaptor<EmpresaEntity> captor = ArgumentCaptor.forClass(EmpresaEntity.class);
+        verify(empresaRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getRazaoSocial()).isEqualTo("Empresa Legada Ltda");
+    }
+
+    @Test
+    void create_cnpjExistenteOuCorridaNaConstraint_retornaConflict() {
+        EmpresaCreateRequest request = requestValido();
+        when(empresaRepository.existsByCnpj("11222333000181")).thenReturn(true);
+        assertThatThrownBy(() -> empresaService.create(request))
+                .isInstanceOf(ConflictException.class);
+
+        when(empresaRepository.existsByCnpj("11222333000181")).thenReturn(false);
+        when(empresaRepository.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("unique constraint"));
+        assertThatThrownBy(() -> empresaService.create(request))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    private EmpresaCreateRequest requestValido() {
+        EmpresaCreateRequest request = new EmpresaCreateRequest();
+        request.setRazaoSocial(" Empresa Legada Ltda ");
+        request.setCnpj("11.222.333/0001-81");
+        request.setPais(" Brasil ");
+        request.setCep("90000-000");
+        request.setCidade(" ");
+        request.setEstado(" RS ");
+        return request;
     }
 
     private EmpresaEntity buildEmpresa(UUID id, StatusCompliance kyb, StatusCompliance aml) {

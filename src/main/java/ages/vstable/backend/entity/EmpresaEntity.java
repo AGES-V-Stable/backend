@@ -33,6 +33,18 @@ public class EmpresaEntity {
     @Column(name = "cnpj", nullable = false, unique = true, length = 18)
     private String cnpj;
 
+    @Column(name = "pais", nullable = false, length = 100)
+    private String pais;
+
+    @Column(name = "cep", nullable = false, length = 20)
+    private String cep;
+
+    @Column(name = "cidade", length = 255)
+    private String cidade;
+
+    @Column(name = "estado", nullable = false, length = 100)
+    private String estado;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status_kyb", columnDefinition = "status_compliance_enum", nullable = false)
@@ -54,6 +66,4 @@ public class EmpresaEntity {
 
     @Column(name = "atualizado_em")
     private OffsetDateTime atualizadoEm;
-
-    // getters/setters
 }

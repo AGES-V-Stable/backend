@@ -1,7 +1,11 @@
 package ages.vstable.backend.entity;
 
+import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.entity.enums.StatusOnboarding;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -23,6 +27,9 @@ public class ProgressoCadastroEntity {
     @Column(name = "usuario_id", nullable = false)
     private UUID usuarioId;
 
+    @Column(name = "empresa_id", unique = true)
+    private UUID empresaId;
+
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
 
@@ -31,6 +38,16 @@ public class ProgressoCadastroEntity {
 
     @Column(name = "etapa_atual")
     private Integer etapaAtual = 1;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "status_geral", columnDefinition = "status_onboarding_enum")
+    private StatusOnboarding statusGeral = StatusOnboarding.RASCUNHO;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "status_compliance_final", columnDefinition = "status_compliance_enum")
+    private StatusCompliance statusComplianceFinal = StatusCompliance.PENDENTE;
 
     @Column(name = "criado_em")
     private OffsetDateTime criadoEm;

@@ -164,10 +164,12 @@ class AcessoServiceTest {
     void findById_tokenValido_retornaDadosSalvos() {
         UUID progressoId = UUID.randomUUID();
         UUID usuarioId = UUID.randomUUID();
+        UUID empresaId = UUID.randomUUID();
 
         ProgressoCadastroEntity progresso = ProgressoCadastroEntity.builder()
                 .id(progressoId)
                 .usuarioId(usuarioId)
+                .empresaId(empresaId)
                 .etapaAtual(2)
                 .build();
 
@@ -185,6 +187,7 @@ class AcessoServiceTest {
 
         assertThat(response).isPresent();
         assertThat(response.get().getToken()).isEqualTo(progressoId);
+        assertThat(response.get().getEmpresaId()).isEqualTo(empresaId);
         assertThat(response.get().getNomeCompleto()).isEqualTo("Joao da Silva");
         assertThat(response.get().getEmail()).isEqualTo("joao@example.com");
     }
