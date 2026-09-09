@@ -84,6 +84,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
 
         securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
         securityContextRepository.saveContext(securityContext, httpServletRequest, httpServletResponse);
 
         chain.doFilter(httpServletRequest, httpServletResponse);

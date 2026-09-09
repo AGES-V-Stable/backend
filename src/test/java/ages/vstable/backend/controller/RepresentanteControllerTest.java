@@ -1,10 +1,13 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.representante.RepresentanteResponse;
+import ages.vstable.backend.repository.UsuarioRepository;
 import ages.vstable.backend.service.RepresentanteService;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -25,6 +28,15 @@ class RepresentanteControllerTest {
 
     @MockitoBean
     private RepresentanteService representanteService;
+
+    @MockitoBean
+    private SecurityContextRepository securityContextRepository;
+
+    @MockitoBean
+    private JwtTokenUtils jwtTokenUtils;
+
+    @MockitoBean
+    private UsuarioRepository usuarioRepository;
 
     private RepresentanteResponse representante(UUID id, UUID empresaId) {
         RepresentanteResponse response = new RepresentanteResponse();

@@ -3,12 +3,15 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.representante.AcessoResponse;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.repository.UsuarioRepository;
 import ages.vstable.backend.service.AcessoService;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,6 +38,15 @@ class AcessoControllerTest {
 
     @MockitoBean
     private AcessoService acessoService;
+
+    @MockitoBean
+    private SecurityContextRepository securityContextRepository;
+
+    @MockitoBean
+    private JwtTokenUtils jwtTokenUtils;
+
+    @MockitoBean
+    private UsuarioRepository usuarioRepository;
 
     private String payloadValido() throws Exception {
         return objectMapper.writeValueAsString(new java.util.HashMap<>() {{
