@@ -47,15 +47,18 @@ public class EmpresaEntity {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status_kyb", columnDefinition = "status_compliance_enum")
+    @Column(name = "status_kyb", columnDefinition = "status_compliance_enum", nullable = false)
+    @Builder.Default
     private StatusCompliance statusKyb = StatusCompliance.PENDENTE;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status_aml", columnDefinition = "status_compliance_enum")
+    @Column(name = "status_aml", columnDefinition = "status_compliance_enum", nullable = false)
+    @Builder.Default
     private StatusCompliance statusAml = StatusCompliance.PENDENTE;
 
     @Column(name = "saldo_disponivel_brl", precision = 15, scale = 2)
+    @Builder.Default
     private BigDecimal saldoDisponivelBrl = BigDecimal.ZERO;
 
     @Column(name = "criado_em")

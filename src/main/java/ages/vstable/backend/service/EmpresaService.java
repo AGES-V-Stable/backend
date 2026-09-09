@@ -1,15 +1,23 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.empresa.DocumentoComplianceResponse;
 import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
 import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
+import ages.vstable.backend.dto.empresa.SituacaoCadastralResponse;
+import ages.vstable.backend.entity.DocumentoComplianceEntity;
 import ages.vstable.backend.entity.EmpresaEntity;
 import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.exception.CadastroInvalidoException;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.EmpresaNotFoundException;
+import ages.vstable.backend.repository.DocumentoComplianceRepository;
 import ages.vstable.backend.repository.EmpresaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -23,6 +31,7 @@ import java.util.UUID;
 public class EmpresaService {
 
     private final EmpresaRepository empresaRepository;
+    private final DocumentoComplianceRepository documentoComplianceRepository;
     private final EmpresaDadosValidator empresaDadosValidator;
 
     public List<EmpresaResponse> findAll() {
@@ -101,6 +110,58 @@ public class EmpresaService {
 
     public boolean existsById(UUID id) {
         return empresaRepository.existsById(id);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public SituacaoCadastralResponse getSituacaoCadastral(UUID id) {
+        EmpresaEntity empresa = empresaRepository.findById(id)
+                .orElseThrow(() -> new EmpresaNotFoundException(id));
+
+        if (empresa.getStatusKyb() == null || empresa.getStatusAml() == null) {
+            throw new CadastroInvalidoException(id);
+        }
+
+        List<DocumentoComplianceEntity> documentos = documentoComplianceRepository.findByEmpresaId(id);
+
+        if (documentos.stream().anyMatch(documento -> documento.getStatus() == null)) {
+            throw new CadastroInvalidoException(id);
+        }
+
+        SituacaoCadastralResponse response = new SituacaoCadastralResponse();
+        response.setId(empresa.getId());
+        response.setRazaoSocial(empresa.getRazaoSocial());
+        response.setNomeFantasia(empresa.getNomeFantasia());
+        response.setCnpj(empresa.getCnpj());
+        response.setStatusKyb(empresa.getStatusKyb());
+        response.setStatusAml(empresa.getStatusAml());
+        response.setStatusGeral(computeStatusGeral(empresa.getStatusKyb(), empresa.getStatusAml()));
+        response.setDocumentos(documentos.stream().map(this::toDocumentoResponse).toList());
+
+        return response;
+    }
+
+    private StatusCompliance computeStatusGeral(StatusCompliance kyb, StatusCompliance aml) {
+        if (kyb == StatusCompliance.REJEITADO || aml == StatusCompliance.REJEITADO) {
+            return StatusCompliance.REJEITADO;
+        }
+        if (kyb == StatusCompliance.EM_ANALISE || aml == StatusCompliance.EM_ANALISE) {
+            return StatusCompliance.EM_ANALISE;
+        }
+        if (kyb == StatusCompliance.APROVADO && aml == StatusCompliance.APROVADO) {
+            return StatusCompliance.APROVADO;
+        }
+        return StatusCompliance.PENDENTE;
+    }
+
+    private DocumentoComplianceResponse toDocumentoResponse(DocumentoComplianceEntity entity) {
+        DocumentoComplianceResponse response = new DocumentoComplianceResponse();
+        response.setId(entity.getId());
+        response.setTipoDocumento(entity.getTipoDocumento());
+        response.setNomeArquivo(entity.getNomeArquivo());
+        response.setTamanhoArquivoBytes(entity.getTamanhoArquivoBytes());
+        response.setStatus(entity.getStatus());
+        response.setEnviadoEm(entity.getEnviadoEm());
+        return response;
     }
 
     private EmpresaResponse toResponse(EmpresaEntity entity) {

@@ -47,10 +47,33 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Parâmetro '" + ex.getName() + "' em formato inválido"));
+                .body(Map.of(
+                        "status", HttpStatus.BAD_REQUEST.value(),
+                        "error", HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                        "message", "Parâmetro '" + ex.getName() + "' inválido"));
+    }
+
+    @ExceptionHandler(EmpresaNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleEmpresaNotFound(EmpresaNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of(
+                        "status", HttpStatus.NOT_FOUND.value(),
+                        "error", HttpStatus.NOT_FOUND.getReasonPhrase(),
+                        "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(CadastroInvalidoException.class)
+    public ResponseEntity<Map<String, Object>> handleCadastroInvalido(CadastroInvalidoException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(Map.of(
+                        "status", HttpStatus.UNPROCESSABLE_CONTENT.value(),
+                        "error", HttpStatus.UNPROCESSABLE_CONTENT.getReasonPhrase(),
+                        "message", ex.getMessage()));
     }
 
     @ExceptionHandler(ConflictException.class)

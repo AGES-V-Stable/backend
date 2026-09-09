@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
 import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
+import ages.vstable.backend.dto.empresa.SituacaoCadastralResponse;
 import ages.vstable.backend.service.EmpresaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +56,13 @@ public class EmpresaController {
         return ResponseEntity.ok(
                 empresaService.update(id, request)
         );
+    }
+
+    @GetMapping("/{id}/situacao-cadastral")
+    public ResponseEntity<SituacaoCadastralResponse> getSituacaoCadastral(
+            @PathVariable UUID id) {
+
+        return ResponseEntity.ok(empresaService.getSituacaoCadastral(id));
     }
 
     @DeleteMapping("/{id}")

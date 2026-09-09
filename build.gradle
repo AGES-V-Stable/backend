@@ -14,6 +14,10 @@ sonar {
   }
 }
 
+jacoco {
+	toolVersion = '0.8.15'
+}
+
 group = 'ages.vstable'
 version = '0.0.1-SNAPSHOT'
 description = 'backend'
@@ -26,6 +30,10 @@ java {
 
 repositories {
 	mavenCentral()
+}
+
+configurations {
+	mockitoAgent
 }
 
 dependencies {
@@ -48,6 +56,9 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testCompileOnly 'org.projectlombok:lombok'
+	mockitoAgent('org.mockito:mockito-core') {
+		transitive = false
+	}
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
