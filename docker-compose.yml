@@ -32,6 +32,9 @@ services:
       SPRING_PROFILES_ACTIVE: "${SPRING_PROFILE:-dev}"
       DATABASE_DDL: "update"
       SPRING_SERVER_PORT: 8070
+      AVENIA_BASE_URL: "${AVENIA_BASE_URL:-https://api.sandbox.avenia.io:10952}"
+      AVENIA_API_KEY: "${AVENIA_API_KEY:-}"
+      AVENIA_PRIVATE_KEY: "${AVENIA_PRIVATE_KEY:-}"
     ports:
       - "8070:8070"
     depends_on:

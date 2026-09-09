@@ -32,6 +32,9 @@ public class ProgressoCadastroEntity {
     @Column(name = "etapa_atual")
     private Integer etapaAtual = 1;
 
+    @Column(name = "liveness_id")
+    private String livenessId;
+
     @Column(name = "criado_em")
     private OffsetDateTime criadoEm;
 
