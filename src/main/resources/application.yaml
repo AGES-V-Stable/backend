@@ -25,6 +25,6 @@ app:
 api:
   auth:
     jwt:
-      secret: ${JWT_SECRET:troqueestesegredoemproducao}
+      secret: ${JWT_SECRET:lR4kEZSOXyCXvzbmgrfLAmSWKtHJnCZ6fJLp5Pm/980a5xogpjaahKGuLPou8P8647IQthO/iX61VWueFl00hA==}
     header:
       name: X-AUTH-API-SECRET-KEY
