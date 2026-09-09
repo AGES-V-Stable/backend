@@ -78,7 +78,7 @@ class AuthControllerTest {
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals(token, response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
+        assertEquals("Bearer " + token, response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
 
         verify(userRepository).findByEmail("user@email.com");
         verify(authenticationManager).authenticate(any(
