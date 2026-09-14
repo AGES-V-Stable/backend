@@ -8,6 +8,7 @@ import java.util.UUID;
 public class AcessoResponse {
 
     private UUID token;
+    private UUID empresaId;
     private Integer etapaAtual;
     private String nomeCompleto;
     private String email;

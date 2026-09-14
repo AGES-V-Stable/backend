@@ -95,11 +95,17 @@ class AcessoControllerTest {
     @Test
     void get_tokenValido_retorna200ComDados() throws Exception {
         UUID token = UUID.randomUUID();
-        when(acessoService.findById(token)).thenReturn(Optional.of(respostaValida(token)));
+        UUID empresaId = UUID.randomUUID();
+        AcessoResponse response = respostaValida(token);
+        response.setEmpresaId(empresaId);
+        response.setEtapaAtual(3);
+        when(acessoService.findById(token)).thenReturn(Optional.of(response));
 
         mockMvc.perform(get("/v1/cadastros/{id}", token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value(token.toString()))
+                .andExpect(jsonPath("$.empresaId").value(empresaId.toString()))
+                .andExpect(jsonPath("$.etapaAtual").value(3))
                 .andExpect(jsonPath("$.nomeCompleto").value("Joao da Silva"))
                 .andExpect(jsonPath("$.hashSenha").doesNotExist());
     }

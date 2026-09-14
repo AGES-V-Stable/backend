@@ -5,11 +5,15 @@ import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
 import ages.vstable.backend.entity.EmpresaEntity;
 import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.repository.EmpresaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +23,7 @@ import java.util.UUID;
 public class EmpresaService {
 
     private final EmpresaRepository empresaRepository;
+    private final EmpresaDadosValidator empresaDadosValidator;
 
     public List<EmpresaResponse> findAll() {
         return empresaRepository.findAll()
@@ -38,24 +43,27 @@ public class EmpresaService {
     }
 
     public EmpresaResponse create(EmpresaCreateRequest request) {
+        EmpresaDadosNormalizados dados = empresaDadosValidator.normalize(
+                request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
+                request.getCidade(), request.getEstado());
 
-        if (empresaRepository.existsByCnpj(request.getCnpj())) {
-            throw new IllegalArgumentException(
-                    "An empresa with this CNPJ already exists"
-            );
+        if (empresaRepository.existsByCnpj(dados.cnpj())) {
+            throw new ConflictException("CNPJ já cadastrado");
         }
 
         EmpresaEntity empresa = new EmpresaEntity();
 
-        empresa.setRazaoSocial(request.getRazaoSocial());
-        empresa.setNomeFantasia(request.getNomeFantasia());
-        empresa.setCnpj(request.getCnpj());
+        applyDados(empresa, dados);
+        empresa.setNomeFantasia(normalizeOptional(request.getNomeFantasia()));
 
         empresa.setStatusKyb(StatusCompliance.PENDENTE);
         empresa.setStatusAml(StatusCompliance.PENDENTE);
         empresa.setSaldoDisponivelBrl(BigDecimal.ZERO);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        empresa.setCriadoEm(now);
+        empresa.setAtualizadoEm(now);
 
-        return toResponse(empresaRepository.save(empresa));
+        return toResponse(saveOrConflict(empresa));
     }
 
     public EmpresaResponse update(
@@ -67,18 +75,20 @@ public class EmpresaService {
                         new IllegalArgumentException("Empresa not found")
                 );
 
-        if (!empresa.getCnpj().equals(request.getCnpj())
-                && empresaRepository.existsByCnpj(request.getCnpj())) {
-            throw new IllegalArgumentException(
-                    "An empresa with this CNPJ already exists"
-            );
+        EmpresaDadosNormalizados dados = empresaDadosValidator.normalize(
+                request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
+                request.getCidade(), request.getEstado());
+
+        if (!empresa.getCnpj().equals(dados.cnpj())
+                && empresaRepository.existsByCnpj(dados.cnpj())) {
+            throw new ConflictException("CNPJ já cadastrado");
         }
 
-        empresa.setRazaoSocial(request.getRazaoSocial());
-        empresa.setNomeFantasia(request.getNomeFantasia());
-        empresa.setCnpj(request.getCnpj());
+        applyDados(empresa, dados);
+        empresa.setNomeFantasia(normalizeOptional(request.getNomeFantasia()));
+        empresa.setAtualizadoEm(OffsetDateTime.now(ZoneOffset.UTC));
 
-        return toResponse(empresaRepository.save(empresa));
+        return toResponse(saveOrConflict(empresa));
     }
 
     public void deleteById(UUID id) {
@@ -100,6 +110,10 @@ public class EmpresaService {
         response.setRazaoSocial(entity.getRazaoSocial());
         response.setNomeFantasia(entity.getNomeFantasia());
         response.setCnpj(entity.getCnpj());
+        response.setPais(entity.getPais());
+        response.setCep(entity.getCep());
+        response.setCidade(entity.getCidade());
+        response.setEstado(entity.getEstado());
         response.setStatusKyb(entity.getStatusKyb());
         response.setStatusAml(entity.getStatusAml());
         response.setSaldoDisponivelBrl(entity.getSaldoDisponivelBrl());
@@ -107,5 +121,26 @@ public class EmpresaService {
         response.setAtualizadoEm(entity.getAtualizadoEm());
 
         return response;
+    }
+
+    private void applyDados(EmpresaEntity empresa, EmpresaDadosNormalizados dados) {
+        empresa.setRazaoSocial(dados.razaoSocial());
+        empresa.setCnpj(dados.cnpj());
+        empresa.setPais(dados.pais());
+        empresa.setCep(dados.cep());
+        empresa.setCidade(dados.cidade());
+        empresa.setEstado(dados.estado());
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private EmpresaEntity saveOrConflict(EmpresaEntity empresa) {
+        try {
+            return empresaRepository.saveAndFlush(empresa);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ConflictException("CNPJ já cadastrado");
+        }
     }
 }
