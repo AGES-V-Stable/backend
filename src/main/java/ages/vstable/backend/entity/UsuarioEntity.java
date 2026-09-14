@@ -2,8 +2,13 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -13,7 +18,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @Table(name = "usuarios")
-public class UsuarioEntity {
+public class UsuarioEntity implements UserDetails {
 
     @Id
     @GeneratedValue
@@ -37,4 +42,19 @@ public class UsuarioEntity {
 
     @Column(name = "atualizado_em")
     private OffsetDateTime atualizadoEm;
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority("ROLE_USUARIO"));
+    }
+
+    @Override
+    public String getPassword() {
+        return hashSenha;
+    }
+
+    @Override
+    public String getUsername() {
+        return email;
+    }
 }

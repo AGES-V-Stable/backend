@@ -4,11 +4,14 @@ import ages.vstable.backend.dto.empresa.CadastroEmpresaResponse;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.repository.UsuarioRepository;
 import ages.vstable.backend.service.CadastroEmpresaService;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -30,6 +33,15 @@ class CadastroEmpresaControllerTest {
 
     @MockitoBean
     private CadastroEmpresaService cadastroEmpresaService;
+
+    @MockitoBean
+    private SecurityContextRepository securityContextRepository;
+
+    @MockitoBean
+    private JwtTokenUtils jwtTokenUtils;
+
+    @MockitoBean
+    private UsuarioRepository usuarioRepository;
 
     @Test
     void post_payloadValido_retorna201NoContratoSnakeCase() throws Exception {

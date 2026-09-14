@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -50,7 +51,8 @@ class AcessoServiceTest {
                 usuarioRepository,
                 progressoCadastroRepository,
                 transactionTemplate,
-                SECRET
+                SECRET,
+                new BCryptPasswordEncoder()
         );
     }
 
