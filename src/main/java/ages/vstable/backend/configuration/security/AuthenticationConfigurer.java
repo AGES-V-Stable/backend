@@ -1,7 +1,5 @@
 package ages.vstable.backend.configuration.security;
 
-
-import ages.vstable.backend.repository.UsuarioRepository;
 import ages.vstable.backend.service.UsuarioService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
