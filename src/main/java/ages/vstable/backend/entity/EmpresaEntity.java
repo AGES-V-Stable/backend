@@ -48,12 +48,12 @@ public class EmpresaEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "kyb_status", columnDefinition = "compliance_status_enum")
-    private ComplianceStatus kybStatus = ComplianceStatus.PENDENTE;
+    private ComplianceStatus kybStatus = ComplianceStatus.PENDING;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "aml_status", columnDefinition = "compliance_status_enum")
-    private ComplianceStatus amlStatus = ComplianceStatus.PENDENTE;
+    private ComplianceStatus amlStatus = ComplianceStatus.PENDING;
 
     @Column(name = "available_balance_brl", precision = 15, scale = 2)
     private BigDecimal availableBalanceBrl = BigDecimal.ZERO;

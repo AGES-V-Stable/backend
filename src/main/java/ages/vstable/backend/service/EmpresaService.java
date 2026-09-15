@@ -56,8 +56,8 @@ public class EmpresaService {
         applyDados(empresa, dados);
         empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
 
-        empresa.setKybStatus(ComplianceStatus.PENDENTE);
-        empresa.setAmlStatus(ComplianceStatus.PENDENTE);
+        empresa.setKybStatus(ComplianceStatus.PENDING);
+        empresa.setAmlStatus(ComplianceStatus.PENDING);
         empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         empresa.setCreatedAt(now);

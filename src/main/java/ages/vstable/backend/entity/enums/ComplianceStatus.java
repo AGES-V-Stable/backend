@@ -1,8 +1,8 @@
 package ages.vstable.backend.entity.enums;
 
 public enum ComplianceStatus {
-    PENDENTE,
-    EM_ANALISE,
-    APROVADO,
-    REJEITADO
+    PENDING,
+    UNDER_REVIEW,
+    APPROVED,
+    REJECTED
 }

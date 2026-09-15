@@ -70,7 +70,7 @@ class OnboardingIntegrationTest {
                 .isEqualTo(response.getUsuarioId());
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM avenia_kyc_verifications WHERE id = ?", String.class, response.getVerificacaoKycId()))
-                .isEqualTo("PENDENTE");
+                .isEqualTo("PENDING");
     }
 
     @Test

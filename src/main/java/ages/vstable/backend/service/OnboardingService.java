@@ -75,8 +75,8 @@ public class OnboardingService {
         empresa.setZipCode(dadosEmpresa.cep());
         empresa.setCity(dadosEmpresa.cidade());
         empresa.setState(dadosEmpresa.estado());
-        empresa.setKybStatus(ComplianceStatus.PENDENTE);
-        empresa.setAmlStatus(ComplianceStatus.PENDENTE);
+        empresa.setKybStatus(ComplianceStatus.PENDING);
+        empresa.setAmlStatus(ComplianceStatus.PENDING);
         empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
         empresa.setCreatedAt(now);
         empresa.setUpdatedAt(now);
@@ -94,7 +94,7 @@ public class OnboardingService {
 
         AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
         kyc.setUserId(usuario.getId());
-        kyc.setStatus(ComplianceStatus.PENDENTE);
+        kyc.setStatus(ComplianceStatus.PENDING);
         kyc.setResponsePayload("{}");
         kyc.setCreatedAt(now);
         kyc.setUpdatedAt(now);

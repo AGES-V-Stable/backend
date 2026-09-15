@@ -32,7 +32,7 @@ public class AveniaKycVerificationEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", columnDefinition = "compliance_status_enum")
-    private ComplianceStatus status = ComplianceStatus.PENDENTE;
+    private ComplianceStatus status = ComplianceStatus.PENDING;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "response_payload", columnDefinition = "jsonb", nullable = false)

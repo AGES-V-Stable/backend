@@ -3,14 +3,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==============================================================================
 -- 2. CRIACAO DOS TIPOS (ENUMS) - v8
 -- ==============================================================================
-CREATE TYPE admin_access_level_enum AS ENUM ('SUPER_ADMIN', 'ANALISTA_COMPLIANCE', 'SUPORTE');
-CREATE TYPE receiving_method_enum AS ENUM ('CONTA_BANCARIA', 'CHAVE_PIX', 'WALLET_CRYPTO');
+CREATE TYPE admin_access_level_enum AS ENUM ('SUPER_ADMIN', 'COMPLIANCE_ANALYST', 'SUPPORT');
+CREATE TYPE receiving_method_enum AS ENUM ('BANK_ACCOUNT', 'PIX_KEY', 'CRYPTO_WALLET');
 CREATE TYPE bank_account_type_enum AS ENUM ('checking', 'payment', 'savings', 'salary');
 CREATE TYPE blockchain_network_enum AS ENUM ('ethereum', 'polygon', 'celo', 'gnosis', 'moonbeam', 'tron');
-CREATE TYPE document_type_enum AS ENUM ('CONTRATO_SOCIAL', 'COMPROVANTE_ENDERECO', 'DOCUMENTO_REPRESENTANTE', 'OUTROS');
-CREATE TYPE compliance_status_enum AS ENUM ('PENDENTE', 'EM_ANALISE', 'APROVADO', 'REJEITADO');
-CREATE TYPE transaction_status_enum AS ENUM ('AGUARDANDO_PAGAMENTO', 'PROCESSANDO', 'RETIDO', 'LIQUIDADO', 'FALHA', 'FALHA_PARCIAL', 'CANCELADO', 'EXPIRADA');
-CREATE TYPE transfer_method_enum AS ENUM ('TED', 'PIX', 'SALDO_EM_CONTA', 'BLOCKCHAIN');
+CREATE TYPE document_type_enum AS ENUM ('ARTICLES_OF_INCORPORATION', 'PROOF_OF_ADDRESS', 'REPRESENTATIVE_ID', 'OTHER');
+CREATE TYPE compliance_status_enum AS ENUM ('PENDING', 'UNDER_REVIEW', 'APPROVED', 'REJECTED');
+CREATE TYPE transaction_status_enum AS ENUM ('AWAITING_PAYMENT', 'PROCESSING', 'HELD', 'SETTLED', 'FAILED', 'PARTIAL_FAILURE', 'CANCELED', 'EXPIRED');
+CREATE TYPE transfer_method_enum AS ENUM ('TED', 'PIX', 'ACCOUNT_BALANCE', 'BLOCKCHAIN');
 
 -- ==============================================================================
 -- 3. CRIACAO DAS TABELAS - v8
@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS public.companies
     transactions_purpose character varying(255) COLLATE pg_catalog."default",
     estimated_annual_revenue character varying(100) COLLATE pg_catalog."default",
     source_of_funds character varying(255) COLLATE pg_catalog."default",
-    kyb_status compliance_status_enum DEFAULT 'PENDENTE'::compliance_status_enum,
-    aml_status compliance_status_enum DEFAULT 'PENDENTE'::compliance_status_enum,
+    kyb_status compliance_status_enum DEFAULT 'PENDING'::compliance_status_enum,
+    aml_status compliance_status_enum DEFAULT 'PENDING'::compliance_status_enum,
     kyc_usd_approved boolean DEFAULT false,
     kyc_cop_approved boolean DEFAULT false,
     available_balance_brl numeric(15, 2) DEFAULT 0.00,
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS public.avenia_kyc_verifications
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     user_id uuid NOT NULL,
     avenia_process_id character varying(255) COLLATE pg_catalog."default",
-    status compliance_status_enum DEFAULT 'PENDENTE'::compliance_status_enum,
+    status compliance_status_enum DEFAULT 'PENDING'::compliance_status_enum,
     response_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS public.beneficiaries
     avenia_wallet_id uuid,
     nickname character varying(100) COLLATE pg_catalog."default" NOT NULL,
     internal_description character varying(255) COLLATE pg_catalog."default",
-    receiving_method receiving_method_enum NOT NULL DEFAULT 'CONTA_BANCARIA'::receiving_method_enum,
+    receiving_method receiving_method_enum NOT NULL DEFAULT 'BANK_ACCOUNT'::receiving_method_enum,
     pix_key character varying(255) COLLATE pg_catalog."default",
     identification_document character varying(20) COLLATE pg_catalog."default",
     account_holder_name character varying(255) COLLATE pg_catalog."default",
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS public.compliance_documents
     file_name character varying(255) COLLATE pg_catalog."default" NOT NULL,
     file_url text COLLATE pg_catalog."default" NOT NULL,
     file_size_bytes bigint,
-    status compliance_status_enum DEFAULT 'EM_ANALISE'::compliance_status_enum,
+    status compliance_status_enum DEFAULT 'UNDER_REVIEW'::compliance_status_enum,
     uploaded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT compliance_documents_pkey PRIMARY KEY (id)
 );
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS public.base_transactions
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     company_id uuid NOT NULL,
     creator_user_id uuid,
-    status transaction_status_enum DEFAULT 'PROCESSANDO'::transaction_status_enum,
+    status transaction_status_enum DEFAULT 'PROCESSING'::transaction_status_enum,
     foreign_currency character varying(3) COLLATE pg_catalog."default" NOT NULL,
     foreign_amount numeric(15, 2) NOT NULL,
     settlement_amount_brl numeric(15, 2),

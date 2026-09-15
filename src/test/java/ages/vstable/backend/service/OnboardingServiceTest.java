@@ -92,7 +92,7 @@ class OnboardingServiceTest {
         ArgumentCaptor<AveniaKycVerificationEntity> kycCaptor = ArgumentCaptor.forClass(AveniaKycVerificationEntity.class);
         org.mockito.Mockito.verify(aveniaKycVerificationRepository).save(kycCaptor.capture());
         assertThat(kycCaptor.getValue().getUserId()).isEqualTo(usuarioId);
-        assertThat(kycCaptor.getValue().getStatus()).isEqualTo(ComplianceStatus.PENDENTE);
+        assertThat(kycCaptor.getValue().getStatus()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test
