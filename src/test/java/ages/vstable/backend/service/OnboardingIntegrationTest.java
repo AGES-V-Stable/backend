@@ -3,19 +3,35 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.exception.ConflictException;
-import ages.vstable.backend.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.UUID;
 
-import static ages.vstable.backend.support.OnboardingRequestFixtures.requestValido;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class OnboardingIntegrationTest extends PostgresIntegrationTest {
+@SpringBootTest
+@Testcontainers
+class OnboardingIntegrationTest {
+
+    @Container
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16.4");
+
+    @DynamicPropertySource
+    static void configureDatabase(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
 
     @Autowired
     private OnboardingService onboardingService;
@@ -70,5 +86,20 @@ class OnboardingIntegrationTest extends PostgresIntegrationTest {
         Integer totalUsuarios = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, "outro@example.com");
         assertThat(totalUsuarios).isZero();
+    }
+
+    private OnboardingRequestDTO requestValido() {
+        OnboardingRequestDTO request = new OnboardingRequestDTO();
+        request.setNomeCompleto("Joao da Silva");
+        request.setEmail("joao@example.com");
+        request.setSenha("Senha@123");
+        request.setConfirmarSenha("Senha@123");
+        request.setRazaoSocial("Empresa Exemplo Ltda");
+        request.setCnpj("11.222.333/0001-81");
+        request.setPais("Brasil");
+        request.setCep("90000-000");
+        request.setCidade("Porto Alegre");
+        request.setEstado("RS");
+        return request;
     }
 }
