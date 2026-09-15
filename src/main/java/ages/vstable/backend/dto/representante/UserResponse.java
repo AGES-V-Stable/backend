@@ -1,17 +1,15 @@
 package ages.vstable.backend.dto.representante;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Data
-public class RepresentanteResponse {
+@AllArgsConstructor
+public class UserResponse {
 
     private UUID id;
-    private UUID empresaId;
     private String nomeCompleto;
     private String email;
-    private OffsetDateTime criadoEm;
-    private OffsetDateTime atualizadoEm;
 }

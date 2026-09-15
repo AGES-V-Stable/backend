@@ -1,4 +1,4 @@
-package ages.vstable.backend.dto.empresa;
+package ages.vstable.backend.dto.company;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -7,23 +7,26 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
-@Schema(description = "Dados da empresa para a segunda etapa do cadastro")
-public class CadastroEmpresaRequest {
+@Schema(description = "Company data for account creation")
+public class CompanyCreateRequest {
 
     @JsonProperty("razao_social")
-    @Schema(example = "Empresa Exemplo Ltda")
+    @Schema(example = "Example Company")
     @NotBlank
     @Size(min = 3, max = 255)
     private String razaoSocial;
 
-    @NotBlank
-    @Size(max = 100)
-    @Schema(example = "Brasil")
-    private String pais;
+    @Size(max = 255)
+    private String nomeFantasia;
 
     @NotBlank
     @Schema(example = "11.222.333/0001-81")
     private String cnpj;
+
+    @NotBlank
+    @Size(max = 100)
+    @Schema(example = "Brazil")
+    private String pais;
 
     @NotBlank
     @Size(max = 20)

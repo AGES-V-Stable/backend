@@ -1,6 +1,6 @@
 package ages.vstable.backend.configuration.security;
 
-import ages.vstable.backend.service.UsuarioService;
+import ages.vstable.backend.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class AuthenticationConfigurerTest {
 
     @Mock
-    private UsuarioService userService;
+    private UserService userService;
 
     @Mock
     private AuthenticationConfiguration authenticationConfiguration;
@@ -44,7 +44,7 @@ class AuthenticationConfigurerTest {
 
 
     @Test
-    void shouldReturnAuthenticationManager() throws Exception {
+    void shouldReturnAuthenticationManager() {
         when(authenticationConfiguration.getAuthenticationManager())
                 .thenReturn(authenticationManager);
 

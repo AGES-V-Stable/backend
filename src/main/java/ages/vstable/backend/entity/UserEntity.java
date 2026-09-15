@@ -2,6 +2,7 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -18,7 +19,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @Table(name = "usuarios")
-public class UsuarioEntity implements UserDetails {
+public class UserEntity implements UserDetails {
 
     @Id
     @GeneratedValue
@@ -28,13 +29,13 @@ public class UsuarioEntity implements UserDetails {
     @Column(name = "empresa_id")
     private UUID empresaId;
 
-    @Column(name = "nome_completo", nullable = false, length = 255)
+    @Column(name = "nome_completo", nullable = false)
     private String nomeCompleto;
 
-    @Column(name = "email", nullable = false, unique = true, length = 255)
+    @Column(name = "email", nullable = false, unique = true)
     private String email;
 
-    @Column(name = "hash_senha", nullable = false, length = 255)
+    @Column(name = "hash_senha", nullable = false)
     private String hashSenha;
 
     @Column(name = "criado_em")
@@ -44,8 +45,9 @@ public class UsuarioEntity implements UserDetails {
     private OffsetDateTime atualizadoEm;
 
     @Override
+    @NullMarked
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_USUARIO"));
+        return List.of(new SimpleGrantedAuthority("ROLE_USER"));
     }
 
     @Override
@@ -54,6 +56,7 @@ public class UsuarioEntity implements UserDetails {
     }
 
     @Override
+    @NullMarked
     public String getUsername() {
         return email;
     }

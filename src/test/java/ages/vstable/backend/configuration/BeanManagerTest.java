@@ -1,4 +1,4 @@
-package ages.vstable.backend.configuration.security;
+package ages.vstable.backend.configuration;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;

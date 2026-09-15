@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.ToString;
 
 @Data
-public class AcessoCreateRequest {
+public class UserCreateRequest {
 
     @NotBlank
     private String nomeCompleto;
