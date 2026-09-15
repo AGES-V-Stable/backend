@@ -1,6 +1,6 @@
 package ages.vstable.backend.entity;
 
-import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -16,7 +16,7 @@ import java.util.*;
 @AllArgsConstructor
 @Getter
 @Setter
-@Table(name = "empresas")
+@Table(name = "companies")
 public class EmpresaEntity {
 
     @Id
@@ -24,43 +24,43 @@ public class EmpresaEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "razao_social", nullable = false, length = 255)
-    private String razaoSocial;
+    @Column(name = "legal_name", nullable = false, length = 255)
+    private String legalName;
 
-    @Column(name = "nome_fantasia", length = 255)
-    private String nomeFantasia;
+    @Column(name = "trade_name", length = 255)
+    private String tradeName;
 
     @Column(name = "cnpj", nullable = false, unique = true, length = 18)
     private String cnpj;
 
-    @Column(name = "pais", nullable = false, length = 100)
-    private String pais;
+    @Column(name = "country", nullable = false, length = 100)
+    private String country;
 
-    @Column(name = "cep", nullable = false, length = 20)
-    private String cep;
+    @Column(name = "zip_code", nullable = false, length = 20)
+    private String zipCode;
 
-    @Column(name = "cidade", length = 255)
-    private String cidade;
+    @Column(name = "city", length = 255)
+    private String city;
 
-    @Column(name = "estado", nullable = false, length = 100)
-    private String estado;
-
-    @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status_kyb", columnDefinition = "status_compliance_enum")
-    private StatusCompliance statusKyb = StatusCompliance.PENDENTE;
+    @Column(name = "state", nullable = false, length = 100)
+    private String state;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "status_aml", columnDefinition = "status_compliance_enum")
-    private StatusCompliance statusAml = StatusCompliance.PENDENTE;
+    @Column(name = "kyb_status", columnDefinition = "compliance_status_enum")
+    private ComplianceStatus kybStatus = ComplianceStatus.PENDENTE;
 
-    @Column(name = "saldo_disponivel_brl", precision = 15, scale = 2)
-    private BigDecimal saldoDisponivelBrl = BigDecimal.ZERO;
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "aml_status", columnDefinition = "compliance_status_enum")
+    private ComplianceStatus amlStatus = ComplianceStatus.PENDENTE;
 
-    @Column(name = "criado_em")
-    private OffsetDateTime criadoEm;
+    @Column(name = "available_balance_brl", precision = 15, scale = 2)
+    private BigDecimal availableBalanceBrl = BigDecimal.ZERO;
 
-    @Column(name = "atualizado_em")
-    private OffsetDateTime atualizadoEm;
+    @Column(name = "created_at")
+    private OffsetDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private OffsetDateTime updatedAt;
 }

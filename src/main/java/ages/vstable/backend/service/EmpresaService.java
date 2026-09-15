@@ -4,7 +4,7 @@ import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
 import ages.vstable.backend.dto.empresa.EmpresaResponse;
 import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
 import ages.vstable.backend.entity.EmpresaEntity;
-import ages.vstable.backend.entity.enums.StatusCompliance;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.repository.EmpresaRepository;
 import lombok.RequiredArgsConstructor;
@@ -54,14 +54,14 @@ public class EmpresaService {
         EmpresaEntity empresa = new EmpresaEntity();
 
         applyDados(empresa, dados);
-        empresa.setNomeFantasia(normalizeOptional(request.getNomeFantasia()));
+        empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
 
-        empresa.setStatusKyb(StatusCompliance.PENDENTE);
-        empresa.setStatusAml(StatusCompliance.PENDENTE);
-        empresa.setSaldoDisponivelBrl(BigDecimal.ZERO);
+        empresa.setKybStatus(ComplianceStatus.PENDENTE);
+        empresa.setAmlStatus(ComplianceStatus.PENDENTE);
+        empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        empresa.setCriadoEm(now);
-        empresa.setAtualizadoEm(now);
+        empresa.setCreatedAt(now);
+        empresa.setUpdatedAt(now);
 
         return toResponse(saveOrConflict(empresa));
     }
@@ -85,8 +85,8 @@ public class EmpresaService {
         }
 
         applyDados(empresa, dados);
-        empresa.setNomeFantasia(normalizeOptional(request.getNomeFantasia()));
-        empresa.setAtualizadoEm(OffsetDateTime.now(ZoneOffset.UTC));
+        empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
+        empresa.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
         return toResponse(saveOrConflict(empresa));
     }
@@ -107,29 +107,29 @@ public class EmpresaService {
         EmpresaResponse response = new EmpresaResponse();
 
         response.setId(entity.getId());
-        response.setRazaoSocial(entity.getRazaoSocial());
-        response.setNomeFantasia(entity.getNomeFantasia());
+        response.setRazaoSocial(entity.getLegalName());
+        response.setNomeFantasia(entity.getTradeName());
         response.setCnpj(entity.getCnpj());
-        response.setPais(entity.getPais());
-        response.setCep(entity.getCep());
-        response.setCidade(entity.getCidade());
-        response.setEstado(entity.getEstado());
-        response.setStatusKyb(entity.getStatusKyb());
-        response.setStatusAml(entity.getStatusAml());
-        response.setSaldoDisponivelBrl(entity.getSaldoDisponivelBrl());
-        response.setCriadoEm(entity.getCriadoEm());
-        response.setAtualizadoEm(entity.getAtualizadoEm());
+        response.setPais(entity.getCountry());
+        response.setCep(entity.getZipCode());
+        response.setCidade(entity.getCity());
+        response.setEstado(entity.getState());
+        response.setStatusKyb(entity.getKybStatus());
+        response.setStatusAml(entity.getAmlStatus());
+        response.setSaldoDisponivelBrl(entity.getAvailableBalanceBrl());
+        response.setCriadoEm(entity.getCreatedAt());
+        response.setAtualizadoEm(entity.getUpdatedAt());
 
         return response;
     }
 
     private void applyDados(EmpresaEntity empresa, EmpresaDadosNormalizados dados) {
-        empresa.setRazaoSocial(dados.razaoSocial());
+        empresa.setLegalName(dados.razaoSocial());
         empresa.setCnpj(dados.cnpj());
-        empresa.setPais(dados.pais());
-        empresa.setCep(dados.cep());
-        empresa.setCidade(dados.cidade());
-        empresa.setEstado(dados.estado());
+        empresa.setCountry(dados.pais());
+        empresa.setZipCode(dados.cep());
+        empresa.setCity(dados.cidade());
+        empresa.setState(dados.estado());
     }
 
     private String normalizeOptional(String value) {

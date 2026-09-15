@@ -25,11 +25,11 @@ public class RepresentanteService {
         RepresentanteResponse response = new RepresentanteResponse();
 
         response.setId(entity.getId());
-        response.setEmpresaId(entity.getEmpresaId());
-        response.setNomeCompleto(entity.getNomeCompleto());
+        response.setEmpresaId(entity.getCompanyId());
+        response.setNomeCompleto(entity.getFullName());
         response.setEmail(entity.getEmail());
-        response.setCriadoEm(entity.getCriadoEm());
-        response.setAtualizadoEm(entity.getAtualizadoEm());
+        response.setCriadoEm(entity.getCreatedAt());
+        response.setAtualizadoEm(entity.getUpdatedAt());
 
         return response;
     }

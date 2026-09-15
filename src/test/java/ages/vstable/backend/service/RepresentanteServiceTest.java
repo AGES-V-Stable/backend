@@ -29,10 +29,10 @@ class RepresentanteServiceTest {
         UUID empresaId = UUID.randomUUID();
         UsuarioEntity usuario = UsuarioEntity.builder()
                 .id(UUID.randomUUID())
-                .empresaId(empresaId)
-                .nomeCompleto("Joao da Silva")
+                .companyId(empresaId)
+                .fullName("Joao da Silva")
                 .email("joao@example.com")
-                .hashSenha("hash-nunca-deve-vazar")
+                .passwordHash("hash-nunca-deve-vazar")
                 .build();
 
         when(usuarioRepository.findAll()).thenReturn(List.of(usuario));

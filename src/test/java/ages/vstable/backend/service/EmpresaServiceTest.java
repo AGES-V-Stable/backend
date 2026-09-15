@@ -56,7 +56,7 @@ class EmpresaServiceTest {
 
         ArgumentCaptor<EmpresaEntity> captor = ArgumentCaptor.forClass(EmpresaEntity.class);
         verify(empresaRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getRazaoSocial()).isEqualTo("Empresa Legada Ltda");
+        assertThat(captor.getValue().getLegalName()).isEqualTo("Empresa Legada Ltda");
     }
 
     @Test
