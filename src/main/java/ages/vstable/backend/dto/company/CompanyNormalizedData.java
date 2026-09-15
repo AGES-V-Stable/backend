@@ -1,6 +1,6 @@
-package ages.vstable.backend.service;
+package ages.vstable.backend.dto.company;
 
-record EmpresaDadosNormalizados(
+public record CompanyNormalizedData(
         String razaoSocial,
         String cnpj,
         String pais,

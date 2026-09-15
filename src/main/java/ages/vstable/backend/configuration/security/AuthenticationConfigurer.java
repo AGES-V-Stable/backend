@@ -1,6 +1,6 @@
 package ages.vstable.backend.configuration.security;
 
-import ages.vstable.backend.service.UsuarioService;
+import ages.vstable.backend.service.UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,9 +14,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuthenticationConfigurer {
 
-    private final UsuarioService userService;
+    private final UserService userService;
 
-    public AuthenticationConfigurer(@Lazy UsuarioService userService) {
+    public AuthenticationConfigurer(@Lazy UserService userService) {
         this.userService = userService;
     }
 
@@ -26,7 +26,7 @@ public class AuthenticationConfigurer {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
