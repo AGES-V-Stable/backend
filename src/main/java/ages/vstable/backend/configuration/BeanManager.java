@@ -1,4 +1,4 @@
-package ages.vstable.backend.configuration.security;
+package ages.vstable.backend.configuration;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
