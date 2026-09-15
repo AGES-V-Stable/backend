@@ -15,7 +15,6 @@ CREATE TYPE transfer_method_enum AS ENUM ('TED', 'PIX', 'SALDO_EM_CONTA', 'BLOCK
 -- ==============================================================================
 -- 3. CRIACAO DAS TABELAS - v8
 -- ==============================================================================
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.administrators
 (
@@ -231,8 +230,6 @@ ALTER TABLE IF EXISTS public.export_transactions
     REFERENCES public.base_transactions (id) MATCH SIMPLE
     ON UPDATE CASCADE
     ON DELETE CASCADE;
-CREATE INDEX IF NOT EXISTS export_transactions_pkey
-    ON public.export_transactions(transaction_id);
 
 ALTER TABLE IF EXISTS public.import_transactions
     ADD CONSTRAINT import_transactions_beneficiary_id_fkey FOREIGN KEY (beneficiary_id)
@@ -247,7 +244,3 @@ ALTER TABLE IF EXISTS public.import_transactions
     REFERENCES public.base_transactions (id) MATCH SIMPLE
     ON UPDATE CASCADE
     ON DELETE CASCADE;
-CREATE INDEX IF NOT EXISTS import_transactions_pkey
-    ON public.import_transactions(transaction_id);
-
-END;
