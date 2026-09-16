@@ -147,6 +147,8 @@ public class AcessoService {
         response.setToken(progresso.getId());
         response.setEmpresaId(progresso.getEmpresaId());
         response.setEtapaAtual(progresso.getEtapaAtual());
+        response.setStatusGeral(progresso.getStatusGeral());
+        response.setStatusComplianceFinal(progresso.getStatusComplianceFinal());
         response.setNomeCompleto(usuario.getNomeCompleto());
         response.setEmail(usuario.getEmail());
         return response;
