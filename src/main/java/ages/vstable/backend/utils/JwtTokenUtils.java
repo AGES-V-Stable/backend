@@ -1,6 +1,6 @@
 package ages.vstable.backend.utils;
 
-import ages.vstable.backend.entity.UsuarioEntity;
+import ages.vstable.backend.entity.UserEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -59,7 +59,7 @@ public class JwtTokenUtils implements Serializable {
     }
 
     //generate token for user
-    public String generateToken(UsuarioEntity user) {
+    public String generateToken(UserEntity user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", user.getAuthorities().stream().map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList()));

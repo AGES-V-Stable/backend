@@ -1,8 +1,8 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +24,12 @@ public class AuthController {
 
   private final AuthenticationManager authenticationManager;
   private final JwtTokenUtils jwtTokenUtil;
-  private final UsuarioRepository userRepository;
+  private final UserRepository userRepository;
 
   @PostMapping(path = "login")
   public ResponseEntity<?> getPermissions(@RequestBody AuthRequestDTO request) {
     try {
-      UsuarioEntity user = userRepository
+      UserEntity user = userRepository
           .findByEmail(request.getEmail())
           .orElseThrow(() -> new BadCredentialsException("User not found"));
       UsernamePasswordAuthenticationToken userPassAuth = new UsernamePasswordAuthenticationToken(

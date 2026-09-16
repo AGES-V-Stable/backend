@@ -1,8 +1,8 @@
 package ages.vstable.backend.controller;
 
-import ages.vstable.backend.dto.representante.RepresentanteResponse;
-import ages.vstable.backend.repository.UsuarioRepository;
-import ages.vstable.backend.service.RepresentanteService;
+import ages.vstable.backend.dto.user.UserResponse;
+import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +27,7 @@ class RepresentanteControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private RepresentanteService representanteService;
+    private UserService userService;
 
     @MockitoBean
     private SecurityContextRepository securityContextRepository;
@@ -36,16 +36,16 @@ class RepresentanteControllerTest {
     private JwtTokenUtils jwtTokenUtils;
 
     @MockitoBean
-    private UsuarioRepository usuarioRepository;
+    private UserRepository userRepository;
 
-    private RepresentanteResponse representante(UUID id, UUID empresaId) {
-        RepresentanteResponse response = new RepresentanteResponse();
+    private UserResponse representante(UUID id, UUID empresaId) {
+        UserResponse response = new UserResponse();
         response.setId(id);
-        response.setEmpresaId(empresaId);
-        response.setNomeCompleto("Joao da Silva");
+        response.setCompanyId(empresaId);
+        response.setFullName("Joao da Silva");
         response.setEmail("joao@example.com");
-        response.setCriadoEm(OffsetDateTime.now());
-        response.setAtualizadoEm(OffsetDateTime.now());
+        response.setCreatedAt(OffsetDateTime.now());
+        response.setUpdatedAt(OffsetDateTime.now());
         return response;
     }
 
@@ -53,20 +53,20 @@ class RepresentanteControllerTest {
     void get_listaTodosOsRepresentantes_retorna200() throws Exception {
         UUID id = UUID.randomUUID();
         UUID empresaId = UUID.randomUUID();
-        when(representanteService.findAll()).thenReturn(List.of(representante(id, empresaId)));
+        when(userService.findAll()).thenReturn(List.of(representante(id, empresaId)));
 
         mockMvc.perform(get("/v1/representantes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].id").value(id.toString()))
-                .andExpect(jsonPath("$[0].empresaId").value(empresaId.toString()))
+                .andExpect(jsonPath("$[0].companyId").value(empresaId.toString()))
                 .andExpect(jsonPath("$[0].email").value("joao@example.com"))
-                .andExpect(jsonPath("$[0].hashSenha").doesNotExist());
+                .andExpect(jsonPath("$[0].passwordHash").doesNotExist());
     }
 
     @Test
     void get_semRepresentantesCadastrados_retorna200ComListaVazia() throws Exception {
-        when(representanteService.findAll()).thenReturn(List.of());
+        when(userService.findAll()).thenReturn(List.of());
 
         mockMvc.perform(get("/v1/representantes"))
                 .andExpect(status().isOk())

@@ -1,8 +1,8 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ class AuthControllerTest {
     private JwtTokenUtils jwtTokenUtil;
 
     @Mock
-    private UsuarioRepository userRepository;
+    private UserRepository userRepository;
 
     @Mock
     private Authentication authentication;
@@ -46,7 +46,7 @@ class AuthControllerTest {
     private AuthController authController;
 
     private AuthRequestDTO request;
-    private UsuarioEntity user;
+    private UserEntity user;
 
     @BeforeEach
     void setUp() {
@@ -54,7 +54,7 @@ class AuthControllerTest {
         request.setEmail("user@email.com");
         request.setPassword("password");
 
-        user = new UsuarioEntity();
+        user = new UserEntity();
         user.setEmail("user@email.com");
     }
 

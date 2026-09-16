@@ -1,7 +1,7 @@
 package ages.vstable.backend.controller;
 
-import ages.vstable.backend.dto.representante.RepresentanteResponse;
-import ages.vstable.backend.service.RepresentanteService;
+import ages.vstable.backend.dto.user.UserResponse;
+import ages.vstable.backend.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -20,14 +20,14 @@ import java.util.List;
 @Tag(name = "Representantes - Painel administrativo")
 public class RepresentanteController {
 
-    private final RepresentanteService representanteService;
+    private final UserService userService;
 
     @GetMapping
     @Operation(summary = "Lista todos os representantes cadastrados (uso do painel administrativo)")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Lista de representantes retornada com sucesso"),
     })
-    public ResponseEntity<List<RepresentanteResponse>> findAll() {
-        return ResponseEntity.ok(representanteService.findAll());
+    public ResponseEntity<List<UserResponse>> findAll() {
+        return ResponseEntity.ok(userService.findAll());
     }
 }
