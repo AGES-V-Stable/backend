@@ -1,8 +1,8 @@
 package ages.vstable.backend.service;
 
-import ages.vstable.backend.dto.representante.RepresentanteResponse;
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.dto.user.UserResponse;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -15,19 +15,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class RepresentanteServiceTest {
+class UserServiceTest {
 
     @Mock
-    private UsuarioRepository usuarioRepository;
+    private UserRepository userRepository;
 
-    private RepresentanteService representanteService;
+    private UserService userService;
 
     @Test
     void findAll_retornaTodosOsRepresentantesSemExporHashDaSenha() {
-        representanteService = new RepresentanteService(usuarioRepository);
+        userService = new UserService(userRepository);
 
         UUID empresaId = UUID.randomUUID();
-        UsuarioEntity usuario = UsuarioEntity.builder()
+        UserEntity usuario = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .companyId(empresaId)
                 .fullName("Joao da Silva")
@@ -35,25 +35,25 @@ class RepresentanteServiceTest {
                 .passwordHash("hash-nunca-deve-vazar")
                 .build();
 
-        when(usuarioRepository.findAll()).thenReturn(List.of(usuario));
+        when(userRepository.findAll()).thenReturn(List.of(usuario));
 
-        List<RepresentanteResponse> resultado = representanteService.findAll();
+        List<UserResponse> resultado = userService.findAll();
 
         assertThat(resultado).hasSize(1);
-        RepresentanteResponse response = resultado.get(0);
+        UserResponse response = resultado.get(0);
         assertThat(response.getId()).isEqualTo(usuario.getId());
-        assertThat(response.getEmpresaId()).isEqualTo(empresaId);
-        assertThat(response.getNomeCompleto()).isEqualTo("Joao da Silva");
+        assertThat(response.getCompanyId()).isEqualTo(empresaId);
+        assertThat(response.getFullName()).isEqualTo("Joao da Silva");
         assertThat(response.getEmail()).isEqualTo("joao@example.com");
     }
 
     @Test
     void findAll_semRepresentantes_retornaListaVazia() {
-        representanteService = new RepresentanteService(usuarioRepository);
+        userService = new UserService(userRepository);
 
-        when(usuarioRepository.findAll()).thenReturn(List.of());
+        when(userRepository.findAll()).thenReturn(List.of());
 
-        List<RepresentanteResponse> resultado = representanteService.findAll();
+        List<UserResponse> resultado = userService.findAll();
 
         assertThat(resultado).isEmpty();
     }

@@ -1,9 +1,8 @@
 package ages.vstable.backend.configuration.security;
 
 
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.repository.UsuarioRepository;
-import ages.vstable.backend.service.UsuarioService;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -31,12 +30,12 @@ public class JwtTokenFilter extends OncePerRequestFilter {
 
     private final SecurityContextRepository securityContextRepository;
     private final JwtTokenUtils jwtTokenUtils;
-    private final UsuarioService userService;
+    private final UserService userService;
 
     public JwtTokenFilter(
             SecurityContextRepository securityContextRepository,
             JwtTokenUtils jwtTokenUtils,
-            @Lazy UsuarioService userService) {
+            @Lazy UserService userService) {
         this.securityContextRepository = securityContextRepository;
         this.jwtTokenUtils = jwtTokenUtils;
         this.userService = userService;
@@ -60,7 +59,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
         final String token = headerAuthorization.split(" ")[1].trim();
 
         // Get user identity and set it on the spring security context
-        UsuarioEntity user = userService
+        UserEntity user = userService
                 .getByEmail(jwtTokenUtils.getUsernameFromToken(token));
 
         if (!jwtTokenUtils.validateToken(token, user)) {

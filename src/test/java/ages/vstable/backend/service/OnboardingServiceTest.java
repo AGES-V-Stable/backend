@@ -3,14 +3,14 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
-import ages.vstable.backend.entity.EmpresaEntity;
-import ages.vstable.backend.entity.UsuarioEntity;
+import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
-import ages.vstable.backend.repository.EmpresaRepository;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,10 +31,10 @@ import static org.mockito.Mockito.when;
 class OnboardingServiceTest {
 
     @Mock
-    private UsuarioRepository usuarioRepository;
+    private UserRepository userRepository;
 
     @Mock
-    private EmpresaRepository empresaRepository;
+    private CompanyRepository companyRepository;
 
     @Mock
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
@@ -47,8 +47,8 @@ class OnboardingServiceTest {
     @BeforeEach
     void setUp() {
         onboardingService = new OnboardingService(
-                usuarioRepository, empresaRepository, aveniaKycVerificationRepository,
-                new EmpresaDadosValidator(), passwordEncoder);
+                userRepository, companyRepository, aveniaKycVerificationRepository,
+                new CompanyDataValidator(), passwordEncoder);
     }
 
     @Test
@@ -58,13 +58,13 @@ class OnboardingServiceTest {
         UUID usuarioId = UUID.randomUUID();
         UUID kycId = UUID.randomUUID();
 
-        when(empresaRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            EmpresaEntity empresa = invocation.getArgument(0);
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            CompanyEntity empresa = invocation.getArgument(0);
             empresa.setId(empresaId);
             return empresa;
         });
-        when(usuarioRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            UsuarioEntity usuario = invocation.getArgument(0);
+        when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            UserEntity usuario = invocation.getArgument(0);
             usuario.setId(usuarioId);
             return usuario;
         });
@@ -81,9 +81,9 @@ class OnboardingServiceTest {
         assertThat(response.getUsuarioId()).isEqualTo(usuarioId);
         assertThat(response.getVerificacaoKycId()).isEqualTo(kycId);
 
-        ArgumentCaptor<UsuarioEntity> usuarioCaptor = ArgumentCaptor.forClass(UsuarioEntity.class);
-        org.mockito.Mockito.verify(usuarioRepository).saveAndFlush(usuarioCaptor.capture());
-        UsuarioEntity usuarioSalvo = usuarioCaptor.getValue();
+        ArgumentCaptor<UserEntity> usuarioCaptor = ArgumentCaptor.forClass(UserEntity.class);
+        org.mockito.Mockito.verify(userRepository).saveAndFlush(usuarioCaptor.capture());
+        UserEntity usuarioSalvo = usuarioCaptor.getValue();
         assertThat(usuarioSalvo.getFullName()).isEqualTo("Joao da Silva");
         assertThat(usuarioSalvo.getCompanyId()).isEqualTo(empresaId);
         assertThat(usuarioSalvo.getPasswordHash()).isEqualTo("hash-bcrypt");
@@ -97,7 +97,7 @@ class OnboardingServiceTest {
 
     @Test
     void realizarOnboarding_emailJaCadastrado_lancaConflict() {
-        when(usuarioRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
                 .isInstanceOf(ConflictException.class);
@@ -105,7 +105,7 @@ class OnboardingServiceTest {
 
     @Test
     void realizarOnboarding_cnpjJaCadastrado_lancaConflict() {
-        when(empresaRepository.existsByCnpj("11222333000181")).thenReturn(true);
+        when(companyRepository.existsByCnpj("11222333000181")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
                 .isInstanceOf(ConflictException.class);
@@ -113,10 +113,10 @@ class OnboardingServiceTest {
 
     @Test
     void realizarOnboarding_corridaNaConstraintDeEmail_retornaConflict() {
-        when(empresaRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(usuarioRepository.saveAndFlush(any()))
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("unique constraint"));
-        when(usuarioRepository.existsByEmail("joao@example.com")).thenReturn(false, true);
+        when(userRepository.existsByEmail("joao@example.com")).thenReturn(false, true);
 
         assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
                 .isInstanceOf(ConflictException.class);

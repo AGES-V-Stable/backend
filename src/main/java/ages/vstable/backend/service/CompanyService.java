@@ -1,12 +1,12 @@
 package ages.vstable.backend.service;
 
-import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
-import ages.vstable.backend.dto.empresa.EmpresaResponse;
-import ages.vstable.backend.dto.empresa.EmpresaUpdateRequest;
-import ages.vstable.backend.entity.EmpresaEntity;
+import ages.vstable.backend.dto.company.CompanyCreateRequest;
+import ages.vstable.backend.dto.company.CompanyResponse;
+import ages.vstable.backend.dto.company.CompanyUpdateRequest;
+import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
-import ages.vstable.backend.repository.EmpresaRepository;
+import ages.vstable.backend.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -20,38 +20,38 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class EmpresaService {
+public class CompanyService {
 
-    private final EmpresaRepository empresaRepository;
-    private final EmpresaDadosValidator empresaDadosValidator;
+    private final CompanyRepository companyRepository;
+    private final CompanyDataValidator companyDataValidator;
 
-    public List<EmpresaResponse> findAll() {
-        return empresaRepository.findAll()
+    public List<CompanyResponse> findAll() {
+        return companyRepository.findAll()
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    public Optional<EmpresaResponse> findById(UUID id) {
-        return empresaRepository.findById(id)
+    public Optional<CompanyResponse> findById(UUID id) {
+        return companyRepository.findById(id)
                 .map(this::toResponse);
     }
 
-    public Optional<EmpresaResponse> findByCnpj(String cnpj) {
-        return empresaRepository.findByCnpj(cnpj)
+    public Optional<CompanyResponse> findByCnpj(String cnpj) {
+        return companyRepository.findByCnpj(cnpj)
                 .map(this::toResponse);
     }
 
-    public EmpresaResponse create(EmpresaCreateRequest request) {
-        EmpresaDadosNormalizados dados = empresaDadosValidator.normalize(
+    public CompanyResponse create(CompanyCreateRequest request) {
+        CompanyNormalizedData dados = companyDataValidator.normalize(
                 request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
                 request.getCidade(), request.getEstado());
 
-        if (empresaRepository.existsByCnpj(dados.cnpj())) {
+        if (companyRepository.existsByCnpj(dados.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
-        EmpresaEntity empresa = new EmpresaEntity();
+        CompanyEntity empresa = new CompanyEntity();
 
         applyDados(empresa, dados);
         empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
@@ -66,21 +66,21 @@ public class EmpresaService {
         return toResponse(saveOrConflict(empresa));
     }
 
-    public EmpresaResponse update(
+    public CompanyResponse update(
             UUID id,
-            EmpresaUpdateRequest request
+            CompanyUpdateRequest request
     ) {
-        EmpresaEntity empresa = empresaRepository.findById(id)
+        CompanyEntity empresa = companyRepository.findById(id)
                 .orElseThrow(() ->
                         new IllegalArgumentException("Empresa not found")
                 );
 
-        EmpresaDadosNormalizados dados = empresaDadosValidator.normalize(
+        CompanyNormalizedData dados = companyDataValidator.normalize(
                 request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
                 request.getCidade(), request.getEstado());
 
         if (!empresa.getCnpj().equals(dados.cnpj())
-                && empresaRepository.existsByCnpj(dados.cnpj())) {
+                && companyRepository.existsByCnpj(dados.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
@@ -92,19 +92,19 @@ public class EmpresaService {
     }
 
     public void deleteById(UUID id) {
-        if (!empresaRepository.existsById(id)) {
+        if (!companyRepository.existsById(id)) {
             throw new IllegalArgumentException("Empresa not found");
         }
 
-        empresaRepository.deleteById(id);
+        companyRepository.deleteById(id);
     }
 
     public boolean existsById(UUID id) {
-        return empresaRepository.existsById(id);
+        return companyRepository.existsById(id);
     }
 
-    private EmpresaResponse toResponse(EmpresaEntity entity) {
-        EmpresaResponse response = new EmpresaResponse();
+    private CompanyResponse toResponse(CompanyEntity entity) {
+        CompanyResponse response = new CompanyResponse();
 
         response.setId(entity.getId());
         response.setRazaoSocial(entity.getLegalName());
@@ -123,7 +123,7 @@ public class EmpresaService {
         return response;
     }
 
-    private void applyDados(EmpresaEntity empresa, EmpresaDadosNormalizados dados) {
+    private void applyDados(CompanyEntity empresa, CompanyNormalizedData dados) {
         empresa.setLegalName(dados.razaoSocial());
         empresa.setCnpj(dados.cnpj());
         empresa.setCountry(dados.pais());
@@ -136,9 +136,9 @@ public class EmpresaService {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 
-    private EmpresaEntity saveOrConflict(EmpresaEntity empresa) {
+    private CompanyEntity saveOrConflict(CompanyEntity empresa) {
         try {
-            return empresaRepository.saveAndFlush(empresa);
+            return companyRepository.saveAndFlush(empresa);
         } catch (DataIntegrityViolationException ex) {
             throw new ConflictException("CNPJ já cadastrado");
         }

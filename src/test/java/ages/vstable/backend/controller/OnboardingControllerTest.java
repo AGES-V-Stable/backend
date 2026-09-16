@@ -3,7 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.OnboardingService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,7 +41,7 @@ class OnboardingControllerTest {
     private JwtTokenUtils jwtTokenUtils;
 
     @MockitoBean
-    private UsuarioRepository usuarioRepository;
+    private UserRepository userRepository;
 
     private String payloadValido() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {{

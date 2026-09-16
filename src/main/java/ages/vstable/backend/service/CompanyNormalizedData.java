@@ -1,6 +1,6 @@
 package ages.vstable.backend.service;
 
-record EmpresaDadosNormalizados(
+record CompanyNormalizedData(
         String razaoSocial,
         String cnpj,
         String pais,

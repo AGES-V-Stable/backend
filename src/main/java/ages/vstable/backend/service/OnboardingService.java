@@ -3,14 +3,14 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
-import ages.vstable.backend.entity.EmpresaEntity;
-import ages.vstable.backend.entity.UsuarioEntity;
+import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
-import ages.vstable.backend.repository.EmpresaRepository;
-import ages.vstable.backend.repository.UsuarioRepository;
+import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCrypt;
@@ -30,44 +30,44 @@ public class OnboardingService {
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern SENHA_FORTE_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
 
-    private final UsuarioRepository usuarioRepository;
-    private final EmpresaRepository empresaRepository;
+    private final UserRepository userRepository;
+    private final CompanyRepository companyRepository;
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
-    private final EmpresaDadosValidator empresaDadosValidator;
+    private final CompanyDataValidator companyDataValidator;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public OnboardingResponseDTO realizarOnboarding(OnboardingRequestDTO request) {
         validatePayload(request);
 
-        EmpresaDadosNormalizados dadosEmpresa = empresaDadosValidator.normalize(
+        CompanyNormalizedData dadosEmpresa = companyDataValidator.normalize(
                 request.getRazaoSocial(), request.getCnpj(), request.getPais(),
                 request.getCep(), request.getCidade(), request.getEstado());
 
-        if (usuarioRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new ConflictException("E-mail já cadastrado");
         }
-        if (empresaRepository.existsByCnpj(dadosEmpresa.cnpj())) {
+        if (companyRepository.existsByCnpj(dadosEmpresa.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
         try {
             return criarEmpresaUsuarioEKyc(request, dadosEmpresa);
         } catch (DataIntegrityViolationException e) {
-            if (usuarioRepository.existsByEmail(request.getEmail())) {
+            if (userRepository.existsByEmail(request.getEmail())) {
                 throw new ConflictException("E-mail já cadastrado");
             }
-            if (empresaRepository.existsByCnpj(dadosEmpresa.cnpj())) {
+            if (companyRepository.existsByCnpj(dadosEmpresa.cnpj())) {
                 throw new ConflictException("CNPJ já cadastrado");
             }
             throw e;
         }
     }
 
-    private OnboardingResponseDTO criarEmpresaUsuarioEKyc(OnboardingRequestDTO request, EmpresaDadosNormalizados dadosEmpresa) {
+    private OnboardingResponseDTO criarEmpresaUsuarioEKyc(OnboardingRequestDTO request, CompanyNormalizedData dadosEmpresa) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        EmpresaEntity empresa = new EmpresaEntity();
+        CompanyEntity empresa = new CompanyEntity();
         empresa.setLegalName(dadosEmpresa.razaoSocial());
         empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
         empresa.setCnpj(dadosEmpresa.cnpj());
@@ -80,9 +80,9 @@ public class OnboardingService {
         empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
         empresa.setCreatedAt(now);
         empresa.setUpdatedAt(now);
-        empresa = empresaRepository.saveAndFlush(empresa);
+        empresa = companyRepository.saveAndFlush(empresa);
 
-        UsuarioEntity usuario = new UsuarioEntity();
+        UserEntity usuario = new UserEntity();
         usuario.setCompanyId(empresa.getId());
         usuario.setFullName(request.getNomeCompleto());
         usuario.setEmail(request.getEmail());
@@ -90,7 +90,7 @@ public class OnboardingService {
         usuario.setPasswordHash(passwordEncoder.encode(request.getSenha()));
         usuario.setCreatedAt(now);
         usuario.setUpdatedAt(now);
-        usuario = usuarioRepository.saveAndFlush(usuario);
+        usuario = userRepository.saveAndFlush(usuario);
 
         AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
         kyc.setUserId(usuario.getId());

@@ -18,7 +18,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @Table(name = "users")
-public class UsuarioEntity implements UserDetails {
+public class UserEntity implements UserDetails {
 
     @Id
     @GeneratedValue

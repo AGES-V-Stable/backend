@@ -6,14 +6,14 @@ import org.springframework.stereotype.Component;
 import java.util.regex.Pattern;
 
 @Component
-class EmpresaDadosValidator {
+class CompanyDataValidator {
 
     private static final Pattern CNPJ_DIGITOS = Pattern.compile("\\d{14}");
     private static final Pattern CNPJ_MASCARADO = Pattern.compile("\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}");
     private static final Pattern CEP_DIGITOS = Pattern.compile("\\d{8}");
     private static final Pattern CEP_MASCARADO = Pattern.compile("\\d{5}-\\d{3}");
 
-    EmpresaDadosNormalizados normalize(
+    CompanyNormalizedData normalize(
             String razaoSocial,
             String cnpj,
             String pais,
@@ -30,7 +30,7 @@ class EmpresaDadosValidator {
         String estadoNormalizado = required(estado, "estado", 100);
         String cidadeNormalizada = optional(cidade, "cidade", 255);
 
-        return new EmpresaDadosNormalizados(
+        return new CompanyNormalizedData(
                 razaoSocialNormalizada,
                 normalizeCnpj(cnpj),
                 paisNormalizado,

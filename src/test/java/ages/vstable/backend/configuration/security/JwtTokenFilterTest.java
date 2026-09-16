@@ -1,7 +1,7 @@
 package ages.vstable.backend.configuration.security;
 
-import ages.vstable.backend.entity.UsuarioEntity;
-import ages.vstable.backend.service.UsuarioService;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
@@ -35,13 +35,13 @@ class JwtTokenFilterTest {
     private JwtTokenUtils jwtTokenUtils;
 
     @Mock
-    private UsuarioService userService;
+    private UserService userService;
 
     @Mock
     private FilterChain filterChain;
 
     @Mock
-    private UsuarioEntity user;
+    private UserEntity user;
 
     private JwtTokenFilter filter;
 

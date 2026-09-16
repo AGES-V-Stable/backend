@@ -1,10 +1,10 @@
 package ages.vstable.backend.service;
 
-import ages.vstable.backend.dto.empresa.EmpresaCreateRequest;
-import ages.vstable.backend.dto.empresa.EmpresaResponse;
-import ages.vstable.backend.entity.EmpresaEntity;
+import ages.vstable.backend.dto.company.CompanyCreateRequest;
+import ages.vstable.backend.dto.company.CompanyResponse;
+import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.exception.ConflictException;
-import ages.vstable.backend.repository.EmpresaRepository;
+import ages.vstable.backend.repository.CompanyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,29 +22,29 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class EmpresaServiceTest {
+class CompanyServiceTest {
 
     @Mock
-    private EmpresaRepository empresaRepository;
+    private CompanyRepository companyRepository;
 
-    private EmpresaService empresaService;
+    private CompanyService companyService;
 
     @BeforeEach
     void setUp() {
-        empresaService = new EmpresaService(empresaRepository, new EmpresaDadosValidator());
+        companyService = new CompanyService(companyRepository, new CompanyDataValidator());
     }
 
     @Test
     void create_normalizaEMapeiaNovosCampos() {
-        EmpresaCreateRequest request = requestValido();
+        CompanyCreateRequest request = requestValido();
         UUID empresaId = UUID.randomUUID();
-        when(empresaRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            EmpresaEntity empresa = invocation.getArgument(0);
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            CompanyEntity empresa = invocation.getArgument(0);
             empresa.setId(empresaId);
             return empresa;
         });
 
-        EmpresaResponse response = empresaService.create(request);
+        CompanyResponse response = companyService.create(request);
 
         assertThat(response.getId()).isEqualTo(empresaId);
         assertThat(response.getCnpj()).isEqualTo("11222333000181");
@@ -54,27 +54,27 @@ class EmpresaServiceTest {
         assertThat(response.getEstado()).isEqualTo("RS");
         assertThat(response.getAtualizadoEm()).isNotNull();
 
-        ArgumentCaptor<EmpresaEntity> captor = ArgumentCaptor.forClass(EmpresaEntity.class);
-        verify(empresaRepository).saveAndFlush(captor.capture());
+        ArgumentCaptor<CompanyEntity> captor = ArgumentCaptor.forClass(CompanyEntity.class);
+        verify(companyRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getLegalName()).isEqualTo("Empresa Legada Ltda");
     }
 
     @Test
     void create_cnpjExistenteOuCorridaNaConstraint_retornaConflict() {
-        EmpresaCreateRequest request = requestValido();
-        when(empresaRepository.existsByCnpj("11222333000181")).thenReturn(true);
-        assertThatThrownBy(() -> empresaService.create(request))
+        CompanyCreateRequest request = requestValido();
+        when(companyRepository.existsByCnpj("11222333000181")).thenReturn(true);
+        assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
 
-        when(empresaRepository.existsByCnpj("11222333000181")).thenReturn(false);
-        when(empresaRepository.saveAndFlush(any()))
+        when(companyRepository.existsByCnpj("11222333000181")).thenReturn(false);
+        when(companyRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("unique constraint"));
-        assertThatThrownBy(() -> empresaService.create(request))
+        assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
     }
 
-    private EmpresaCreateRequest requestValido() {
-        EmpresaCreateRequest request = new EmpresaCreateRequest();
+    private CompanyCreateRequest requestValido() {
+        CompanyCreateRequest request = new CompanyCreateRequest();
         request.setRazaoSocial(" Empresa Legada Ltda ");
         request.setCnpj("11.222.333/0001-81");
         request.setPais(" Brasil ");

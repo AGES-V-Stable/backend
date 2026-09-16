@@ -1,11 +1,11 @@
-package ages.vstable.backend.dto.empresa;
+package ages.vstable.backend.dto.company;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
-public class EmpresaUpdateRequest {
+public class CompanyCreateRequest {
 
     @NotBlank
     @Size(min = 3, max = 255)

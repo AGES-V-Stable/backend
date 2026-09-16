@@ -17,17 +17,17 @@ import java.util.*;
 @Getter
 @Setter
 @Table(name = "companies")
-public class EmpresaEntity {
+public class CompanyEntity {
 
     @Id
     @GeneratedValue
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "legal_name", nullable = false, length = 255)
+    @Column(name = "legal_name", nullable = false)
     private String legalName;
 
-    @Column(name = "trade_name", length = 255)
+    @Column(name = "trade_name")
     private String tradeName;
 
     @Column(name = "cnpj", nullable = false, unique = true, length = 18)
@@ -39,7 +39,7 @@ public class EmpresaEntity {
     @Column(name = "zip_code", nullable = false, length = 20)
     private String zipCode;
 
-    @Column(name = "city", length = 255)
+    @Column(name = "city")
     private String city;
 
     @Column(name = "state", nullable = false, length = 100)
