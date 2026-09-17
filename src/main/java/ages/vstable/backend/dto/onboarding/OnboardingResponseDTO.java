@@ -8,7 +8,7 @@ import java.util.UUID;
 @Value
 @Builder
 public class OnboardingResponseDTO {
-    UUID usuarioId;
-    UUID empresaId;
-    UUID verificacaoKycId;
+    UUID userId;
+    UUID companyId;
+    UUID kycVerificationId;
 }

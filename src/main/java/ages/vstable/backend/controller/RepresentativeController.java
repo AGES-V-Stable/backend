@@ -15,17 +15,17 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/v1/representantes")
+@RequestMapping("/v1/representatives")
 @RequiredArgsConstructor
-@Tag(name = "Representantes - Painel administrativo")
-public class RepresentanteController {
+@Tag(name = "Representatives - Admin panel")
+public class RepresentativeController {
 
     private final UserService userService;
 
     @GetMapping
-    @Operation(summary = "Lista todos os representantes cadastrados (uso do painel administrativo)")
+    @Operation(summary = "Lists all registered representatives (used by the admin panel)")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Lista de representantes retornada com sucesso"),
+            @ApiResponse(responseCode = "200", description = "List of representatives returned successfully"),
     })
     public ResponseEntity<List<UserResponse>> findAll() {
         return ResponseEntity.ok(userService.findAll());

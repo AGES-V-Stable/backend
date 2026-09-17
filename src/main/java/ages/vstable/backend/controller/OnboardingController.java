@@ -17,24 +17,24 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/v1/cadastros")
+@RequestMapping("/v1/onboarding")
 @RequiredArgsConstructor
-@Tag(name = "Onboarding do representante e da empresa")
+@Tag(name = "Representative and company onboarding")
 public class OnboardingController {
 
     private final OnboardingService onboardingService;
 
-    @PostMapping("/onboarding")
-    @Operation(summary = "Cadastra o representante e a empresa de uma vez, antes do KYC facial (Avenia)")
+    @PostMapping
+    @Operation(summary = "Registers the representative and the company at once, before facial KYC (Avenia)")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Representante e empresa cadastrados; verificação de KYC criada como pendente"),
-            @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente"),
-            @ApiResponse(responseCode = "409", description = "E-mail ou CNPJ já cadastrado"),
-            @ApiResponse(responseCode = "422", description = "Senha e confirmação divergentes, senha fraca, e-mail/CNPJ/CEP em formato inválido"),
+            @ApiResponse(responseCode = "201", description = "Representative and company registered; KYC verification created as pending"),
+            @ApiResponse(responseCode = "400", description = "Missing required field"),
+            @ApiResponse(responseCode = "409", description = "Email or CNPJ already registered"),
+            @ApiResponse(responseCode = "422", description = "Password and confirmation mismatch, weak password, invalid email/CNPJ/zip code format"),
     })
     public ResponseEntity<OnboardingResponseDTO> create(@Valid @RequestBody OnboardingRequestDTO request) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(onboardingService.realizarOnboarding(request));
+                .body(onboardingService.performOnboarding(request));
     }
 }

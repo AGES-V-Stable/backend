@@ -9,26 +9,26 @@ public class CompanyUpdateRequest {
 
     @NotBlank
     @Size(min = 3, max = 255)
-    private String razaoSocial;
+    private String legalName;
 
     @Size(max = 255)
-    private String nomeFantasia;
+    private String tradeName;
 
     @NotBlank
     private String cnpj;
 
     @NotBlank
     @Size(max = 100)
-    private String pais;
+    private String country;
 
     @NotBlank
     @Size(max = 20)
-    private String cep;
+    private String zipCode;
 
     @Size(max = 255)
-    private String cidade;
+    private String city;
 
     @NotBlank
     @Size(max = 100)
-    private String estado;
+    private String state;
 }

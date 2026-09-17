@@ -8,41 +8,41 @@ import java.util.regex.Pattern;
 @Component
 class CompanyDataValidator {
 
-    private static final Pattern CNPJ_DIGITOS = Pattern.compile("\\d{14}");
-    private static final Pattern CNPJ_MASCARADO = Pattern.compile("\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}");
-    private static final Pattern CEP_DIGITOS = Pattern.compile("\\d{8}");
-    private static final Pattern CEP_MASCARADO = Pattern.compile("\\d{5}-\\d{3}");
+    private static final Pattern CNPJ_DIGITS_ONLY = Pattern.compile("\\d{14}");
+    private static final Pattern CNPJ_MASKED = Pattern.compile("\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}");
+    private static final Pattern CEP_DIGITS_ONLY = Pattern.compile("\\d{8}");
+    private static final Pattern CEP_MASKED = Pattern.compile("\\d{5}-\\d{3}");
 
     CompanyNormalizedData normalize(
-            String razaoSocial,
+            String legalName,
             String cnpj,
-            String pais,
-            String cep,
-            String cidade,
-            String estado
+            String country,
+            String zipCode,
+            String city,
+            String state
     ) {
-        String razaoSocialNormalizada = required(razaoSocial, "razaoSocial", 255);
-        if (razaoSocialNormalizada.length() < 3) {
-            throw new IllegalArgumentException("razaoSocial: tamanho deve ser entre 3 e 255");
+        String normalizedLegalName = required(legalName, "legalName", 255);
+        if (normalizedLegalName.length() < 3) {
+            throw new IllegalArgumentException("legalName: tamanho deve ser entre 3 e 255");
         }
 
-        String paisNormalizado = required(pais, "pais", 100);
-        String estadoNormalizado = required(estado, "estado", 100);
-        String cidadeNormalizada = optional(cidade, "cidade", 255);
+        String normalizedCountry = required(country, "country", 100);
+        String normalizedState = required(state, "state", 100);
+        String normalizedCity = optional(city, "city", 255);
 
         return new CompanyNormalizedData(
-                razaoSocialNormalizada,
+                normalizedLegalName,
                 normalizeCnpj(cnpj),
-                paisNormalizado,
-                normalizeCep(paisNormalizado, cep),
-                cidadeNormalizada,
-                estadoNormalizado
+                normalizedCountry,
+                normalizeCep(normalizedCountry, zipCode),
+                normalizedCity,
+                normalizedState
         );
     }
 
     private String normalizeCnpj(String cnpj) {
         String value = cnpj == null ? "" : cnpj.trim();
-        if (!CNPJ_DIGITOS.matcher(value).matches() && !CNPJ_MASCARADO.matcher(value).matches()) {
+        if (!CNPJ_DIGITS_ONLY.matcher(value).matches() && !CNPJ_MASKED.matcher(value).matches()) {
             throw new UnprocessableEntityException("CNPJ em formato inválido");
         }
 
@@ -64,12 +64,12 @@ class CompanyDataValidator {
         return remainder < 2 ? 0 : 11 - remainder;
     }
 
-    private String normalizeCep(String pais, String cep) {
-        String value = required(cep, "cep", 20);
-        if (!"Brasil".equalsIgnoreCase(pais)) {
+    private String normalizeCep(String country, String zipCode) {
+        String value = required(zipCode, "zipCode", 20);
+        if (!"Brasil".equalsIgnoreCase(country)) {
             return value;
         }
-        if (!CEP_DIGITOS.matcher(value).matches() && !CEP_MASCARADO.matcher(value).matches()) {
+        if (!CEP_DIGITS_ONLY.matcher(value).matches() && !CEP_MASKED.matcher(value).matches()) {
             throw new UnprocessableEntityException("CEP em formato inválido");
         }
         return value.replace("-", "");

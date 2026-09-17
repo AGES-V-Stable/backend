@@ -47,59 +47,59 @@ class OnboardingIntegrationTest {
     }
 
     @Test
-    void realizarOnboarding_persisteEmpresaUsuarioEKycComMigrationReal() {
-        OnboardingResponseDTO response = onboardingService.realizarOnboarding(requestValido());
+    void performOnboarding_persistsCompanyUserAndKycWithRealMigration() {
+        OnboardingResponseDTO response = onboardingService.performOnboarding(validRequest());
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT legal_name FROM companies WHERE id = ?", String.class, response.getEmpresaId()))
+                "SELECT legal_name FROM companies WHERE id = ?", String.class, response.getCompanyId()))
                 .isEqualTo("Empresa Exemplo Ltda");
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT city FROM companies WHERE id = ?", String.class, response.getEmpresaId()))
+                "SELECT city FROM companies WHERE id = ?", String.class, response.getCompanyId()))
                 .isEqualTo("Porto Alegre");
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT company_id FROM users WHERE id = ?", UUID.class, response.getUsuarioId()))
-                .isEqualTo(response.getEmpresaId());
+                "SELECT company_id FROM users WHERE id = ?", UUID.class, response.getUserId()))
+                .isEqualTo(response.getCompanyId());
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT password_salt IS NOT NULL AND password_hash IS NOT NULL FROM users WHERE id = ?",
-                Boolean.class, response.getUsuarioId()))
+                Boolean.class, response.getUserId()))
                 .isTrue();
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT user_id FROM avenia_kyc_verifications WHERE id = ?", UUID.class, response.getVerificacaoKycId()))
-                .isEqualTo(response.getUsuarioId());
+                "SELECT user_id FROM avenia_kyc_verifications WHERE id = ?", UUID.class, response.getKycVerificationId()))
+                .isEqualTo(response.getUserId());
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT status FROM avenia_kyc_verifications WHERE id = ?", String.class, response.getVerificacaoKycId()))
+                "SELECT status FROM avenia_kyc_verifications WHERE id = ?", String.class, response.getKycVerificationId()))
                 .isEqualTo("PENDING");
     }
 
     @Test
-    void realizarOnboarding_cnpjJaCadastrado_naoPersisteUsuario() {
-        onboardingService.realizarOnboarding(requestValido());
+    void performOnboarding_cnpjAlreadyRegistered_doesNotPersistUser() {
+        onboardingService.performOnboarding(validRequest());
 
-        OnboardingRequestDTO segundaTentativa = requestValido();
-        segundaTentativa.setEmail("outro@example.com");
+        OnboardingRequestDTO secondAttempt = validRequest();
+        secondAttempt.setEmail("outro@example.com");
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(segundaTentativa))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(secondAttempt))
                 .isInstanceOf(ConflictException.class);
 
-        Integer totalUsuarios = jdbcTemplate.queryForObject(
+        Integer totalUsers = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, "outro@example.com");
-        assertThat(totalUsuarios).isZero();
+        assertThat(totalUsers).isZero();
     }
 
-    private OnboardingRequestDTO requestValido() {
+    private OnboardingRequestDTO validRequest() {
         OnboardingRequestDTO request = new OnboardingRequestDTO();
-        request.setNomeCompleto("Joao da Silva");
+        request.setFullName("Joao da Silva");
         request.setEmail("joao@example.com");
-        request.setSenha("Senha@123");
-        request.setConfirmarSenha("Senha@123");
-        request.setRazaoSocial("Empresa Exemplo Ltda");
+        request.setPassword("Senha@123");
+        request.setConfirmPassword("Senha@123");
+        request.setLegalName("Empresa Exemplo Ltda");
         request.setCnpj("11.222.333/0001-81");
-        request.setPais("Brasil");
-        request.setCep("90000-000");
-        request.setCidade("Porto Alegre");
-        request.setEstado("RS");
+        request.setCountry("Brasil");
+        request.setZipCode("90000-000");
+        request.setCity("Porto Alegre");
+        request.setState("RS");
         return request;
     }
 }

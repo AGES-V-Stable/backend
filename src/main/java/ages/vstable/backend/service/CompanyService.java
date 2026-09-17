@@ -43,57 +43,57 @@ public class CompanyService {
     }
 
     public CompanyResponse create(CompanyCreateRequest request) {
-        CompanyNormalizedData dados = companyDataValidator.normalize(
-                request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
-                request.getCidade(), request.getEstado());
+        CompanyNormalizedData data = companyDataValidator.normalize(
+                request.getLegalName(), request.getCnpj(), request.getCountry(), request.getZipCode(),
+                request.getCity(), request.getState());
 
-        if (companyRepository.existsByCnpj(dados.cnpj())) {
+        if (companyRepository.existsByCnpj(data.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
-        CompanyEntity empresa = new CompanyEntity();
+        CompanyEntity company = new CompanyEntity();
 
-        applyDados(empresa, dados);
-        empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
+        applyCompanyData(company, data);
+        company.setTradeName(normalizeOptional(request.getTradeName()));
 
-        empresa.setKybStatus(ComplianceStatus.PENDING);
-        empresa.setAmlStatus(ComplianceStatus.PENDING);
-        empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
+        company.setKybStatus(ComplianceStatus.PENDING);
+        company.setAmlStatus(ComplianceStatus.PENDING);
+        company.setAvailableBalanceBrl(BigDecimal.ZERO);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        empresa.setCreatedAt(now);
-        empresa.setUpdatedAt(now);
+        company.setCreatedAt(now);
+        company.setUpdatedAt(now);
 
-        return toResponse(saveOrConflict(empresa));
+        return toResponse(saveOrConflict(company));
     }
 
     public CompanyResponse update(
             UUID id,
             CompanyUpdateRequest request
     ) {
-        CompanyEntity empresa = companyRepository.findById(id)
+        CompanyEntity company = companyRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Empresa not found")
+                        new IllegalArgumentException("Company not found")
                 );
 
-        CompanyNormalizedData dados = companyDataValidator.normalize(
-                request.getRazaoSocial(), request.getCnpj(), request.getPais(), request.getCep(),
-                request.getCidade(), request.getEstado());
+        CompanyNormalizedData data = companyDataValidator.normalize(
+                request.getLegalName(), request.getCnpj(), request.getCountry(), request.getZipCode(),
+                request.getCity(), request.getState());
 
-        if (!empresa.getCnpj().equals(dados.cnpj())
-                && companyRepository.existsByCnpj(dados.cnpj())) {
+        if (!company.getCnpj().equals(data.cnpj())
+                && companyRepository.existsByCnpj(data.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
-        applyDados(empresa, dados);
-        empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
-        empresa.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        applyCompanyData(company, data);
+        company.setTradeName(normalizeOptional(request.getTradeName()));
+        company.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-        return toResponse(saveOrConflict(empresa));
+        return toResponse(saveOrConflict(company));
     }
 
     public void deleteById(UUID id) {
         if (!companyRepository.existsById(id)) {
-            throw new IllegalArgumentException("Empresa not found");
+            throw new IllegalArgumentException("Company not found");
         }
 
         companyRepository.deleteById(id);
@@ -107,38 +107,38 @@ public class CompanyService {
         CompanyResponse response = new CompanyResponse();
 
         response.setId(entity.getId());
-        response.setRazaoSocial(entity.getLegalName());
-        response.setNomeFantasia(entity.getTradeName());
+        response.setLegalName(entity.getLegalName());
+        response.setTradeName(entity.getTradeName());
         response.setCnpj(entity.getCnpj());
-        response.setPais(entity.getCountry());
-        response.setCep(entity.getZipCode());
-        response.setCidade(entity.getCity());
-        response.setEstado(entity.getState());
+        response.setCountry(entity.getCountry());
+        response.setZipCode(entity.getZipCode());
+        response.setCity(entity.getCity());
+        response.setState(entity.getState());
         response.setStatusKyb(entity.getKybStatus());
         response.setStatusAml(entity.getAmlStatus());
-        response.setSaldoDisponivelBrl(entity.getAvailableBalanceBrl());
-        response.setCriadoEm(entity.getCreatedAt());
-        response.setAtualizadoEm(entity.getUpdatedAt());
+        response.setAvailableBalanceBrl(entity.getAvailableBalanceBrl());
+        response.setCreatedAt(entity.getCreatedAt());
+        response.setUpdatedAt(entity.getUpdatedAt());
 
         return response;
     }
 
-    private void applyDados(CompanyEntity empresa, CompanyNormalizedData dados) {
-        empresa.setLegalName(dados.razaoSocial());
-        empresa.setCnpj(dados.cnpj());
-        empresa.setCountry(dados.pais());
-        empresa.setZipCode(dados.cep());
-        empresa.setCity(dados.cidade());
-        empresa.setState(dados.estado());
+    private void applyCompanyData(CompanyEntity company, CompanyNormalizedData data) {
+        company.setLegalName(data.legalName());
+        company.setCnpj(data.cnpj());
+        company.setCountry(data.country());
+        company.setZipCode(data.zipCode());
+        company.setCity(data.city());
+        company.setState(data.state());
     }
 
     private String normalizeOptional(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 
-    private CompanyEntity saveOrConflict(CompanyEntity empresa) {
+    private CompanyEntity saveOrConflict(CompanyEntity company) {
         try {
-            return companyRepository.saveAndFlush(empresa);
+            return companyRepository.saveAndFlush(company);
         } catch (DataIntegrityViolationException ex) {
             throw new ConflictException("CNPJ já cadastrado");
         }

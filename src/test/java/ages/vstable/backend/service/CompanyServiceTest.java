@@ -35,24 +35,24 @@ class CompanyServiceTest {
     }
 
     @Test
-    void create_normalizaEMapeiaNovosCampos() {
-        CompanyCreateRequest request = requestValido();
-        UUID empresaId = UUID.randomUUID();
+    void create_normalizesAndMapsNewFields() {
+        CompanyCreateRequest request = validRequest();
+        UUID companyId = UUID.randomUUID();
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            CompanyEntity empresa = invocation.getArgument(0);
-            empresa.setId(empresaId);
-            return empresa;
+            CompanyEntity company = invocation.getArgument(0);
+            company.setId(companyId);
+            return company;
         });
 
         CompanyResponse response = companyService.create(request);
 
-        assertThat(response.getId()).isEqualTo(empresaId);
+        assertThat(response.getId()).isEqualTo(companyId);
         assertThat(response.getCnpj()).isEqualTo("11222333000181");
-        assertThat(response.getCep()).isEqualTo("90000000");
-        assertThat(response.getPais()).isEqualTo("Brasil");
-        assertThat(response.getCidade()).isNull();
-        assertThat(response.getEstado()).isEqualTo("RS");
-        assertThat(response.getAtualizadoEm()).isNotNull();
+        assertThat(response.getZipCode()).isEqualTo("90000000");
+        assertThat(response.getCountry()).isEqualTo("Brasil");
+        assertThat(response.getCity()).isNull();
+        assertThat(response.getState()).isEqualTo("RS");
+        assertThat(response.getUpdatedAt()).isNotNull();
 
         ArgumentCaptor<CompanyEntity> captor = ArgumentCaptor.forClass(CompanyEntity.class);
         verify(companyRepository).saveAndFlush(captor.capture());
@@ -60,8 +60,8 @@ class CompanyServiceTest {
     }
 
     @Test
-    void create_cnpjExistenteOuCorridaNaConstraint_retornaConflict() {
-        CompanyCreateRequest request = requestValido();
+    void create_existingCnpjOrConstraintRace_returnsConflict() {
+        CompanyCreateRequest request = validRequest();
         when(companyRepository.existsByCnpj("11222333000181")).thenReturn(true);
         assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
@@ -73,14 +73,14 @@ class CompanyServiceTest {
                 .isInstanceOf(ConflictException.class);
     }
 
-    private CompanyCreateRequest requestValido() {
+    private CompanyCreateRequest validRequest() {
         CompanyCreateRequest request = new CompanyCreateRequest();
-        request.setRazaoSocial(" Empresa Legada Ltda ");
+        request.setLegalName(" Empresa Legada Ltda ");
         request.setCnpj("11.222.333/0001-81");
-        request.setPais(" Brasil ");
-        request.setCep("90000-000");
-        request.setCidade(" ");
-        request.setEstado(" RS ");
+        request.setCountry(" Brasil ");
+        request.setZipCode("90000-000");
+        request.setCity(" ");
+        request.setState(" RS ");
         return request;
     }
 }

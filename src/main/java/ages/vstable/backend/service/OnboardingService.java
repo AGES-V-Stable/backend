@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 public class OnboardingService {
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-    private static final Pattern SENHA_FORTE_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
+    private static final Pattern STRONG_PASSWORD_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
 
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
@@ -37,63 +37,63 @@ public class OnboardingService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public OnboardingResponseDTO realizarOnboarding(OnboardingRequestDTO request) {
+    public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
         validatePayload(request);
 
-        CompanyNormalizedData dadosEmpresa = companyDataValidator.normalize(
-                request.getRazaoSocial(), request.getCnpj(), request.getPais(),
-                request.getCep(), request.getCidade(), request.getEstado());
+        CompanyNormalizedData companyData = companyDataValidator.normalize(
+                request.getLegalName(), request.getCnpj(), request.getCountry(),
+                request.getZipCode(), request.getCity(), request.getState());
 
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new ConflictException("E-mail já cadastrado");
         }
-        if (companyRepository.existsByCnpj(dadosEmpresa.cnpj())) {
+        if (companyRepository.existsByCnpj(companyData.cnpj())) {
             throw new ConflictException("CNPJ já cadastrado");
         }
 
         try {
-            return criarEmpresaUsuarioEKyc(request, dadosEmpresa);
+            return createCompanyUserAndKyc(request, companyData);
         } catch (DataIntegrityViolationException e) {
             if (userRepository.existsByEmail(request.getEmail())) {
                 throw new ConflictException("E-mail já cadastrado");
             }
-            if (companyRepository.existsByCnpj(dadosEmpresa.cnpj())) {
+            if (companyRepository.existsByCnpj(companyData.cnpj())) {
                 throw new ConflictException("CNPJ já cadastrado");
             }
             throw e;
         }
     }
 
-    private OnboardingResponseDTO criarEmpresaUsuarioEKyc(OnboardingRequestDTO request, CompanyNormalizedData dadosEmpresa) {
+    private OnboardingResponseDTO createCompanyUserAndKyc(OnboardingRequestDTO request, CompanyNormalizedData companyData) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        CompanyEntity empresa = new CompanyEntity();
-        empresa.setLegalName(dadosEmpresa.razaoSocial());
-        empresa.setTradeName(normalizeOptional(request.getNomeFantasia()));
-        empresa.setCnpj(dadosEmpresa.cnpj());
-        empresa.setCountry(dadosEmpresa.pais());
-        empresa.setZipCode(dadosEmpresa.cep());
-        empresa.setCity(dadosEmpresa.cidade());
-        empresa.setState(dadosEmpresa.estado());
-        empresa.setKybStatus(ComplianceStatus.PENDING);
-        empresa.setAmlStatus(ComplianceStatus.PENDING);
-        empresa.setAvailableBalanceBrl(BigDecimal.ZERO);
-        empresa.setCreatedAt(now);
-        empresa.setUpdatedAt(now);
-        empresa = companyRepository.saveAndFlush(empresa);
+        CompanyEntity company = new CompanyEntity();
+        company.setLegalName(companyData.legalName());
+        company.setTradeName(normalizeOptional(request.getTradeName()));
+        company.setCnpj(companyData.cnpj());
+        company.setCountry(companyData.country());
+        company.setZipCode(companyData.zipCode());
+        company.setCity(companyData.city());
+        company.setState(companyData.state());
+        company.setKybStatus(ComplianceStatus.PENDING);
+        company.setAmlStatus(ComplianceStatus.PENDING);
+        company.setAvailableBalanceBrl(BigDecimal.ZERO);
+        company.setCreatedAt(now);
+        company.setUpdatedAt(now);
+        company = companyRepository.saveAndFlush(company);
 
-        UserEntity usuario = new UserEntity();
-        usuario.setCompanyId(empresa.getId());
-        usuario.setFullName(request.getNomeCompleto());
-        usuario.setEmail(request.getEmail());
-        usuario.setPasswordSalt(BCrypt.gensalt());
-        usuario.setPasswordHash(passwordEncoder.encode(request.getSenha()));
-        usuario.setCreatedAt(now);
-        usuario.setUpdatedAt(now);
-        usuario = userRepository.saveAndFlush(usuario);
+        UserEntity user = new UserEntity();
+        user.setCompanyId(company.getId());
+        user.setFullName(request.getFullName());
+        user.setEmail(request.getEmail());
+        user.setPasswordSalt(BCrypt.gensalt());
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+        user = userRepository.saveAndFlush(user);
 
         AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
-        kyc.setUserId(usuario.getId());
+        kyc.setUserId(user.getId());
         kyc.setStatus(ComplianceStatus.PENDING);
         kyc.setResponsePayload("{}");
         kyc.setCreatedAt(now);
@@ -101,9 +101,9 @@ public class OnboardingService {
         kyc = aveniaKycVerificationRepository.save(kyc);
 
         return OnboardingResponseDTO.builder()
-                .usuarioId(usuario.getId())
-                .empresaId(empresa.getId())
-                .verificacaoKycId(kyc.getId())
+                .userId(user.getId())
+                .companyId(company.getId())
+                .kycVerificationId(kyc.getId())
                 .build();
     }
 
@@ -111,10 +111,10 @@ public class OnboardingService {
         if (!EMAIL_PATTERN.matcher(request.getEmail()).matches()) {
             throw new UnprocessableEntityException("E-mail em formato inválido");
         }
-        if (request.getSenha() == null || !request.getSenha().equals(request.getConfirmarSenha())) {
+        if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
             throw new UnprocessableEntityException("Senha e confirmação não coincidem");
         }
-        if (!SENHA_FORTE_PATTERN.matcher(request.getSenha()).matches()) {
+        if (!STRONG_PASSWORD_PATTERN.matcher(request.getPassword()).matches()) {
             throw new UnprocessableEntityException("Senha deve ter ao menos 8 caracteres, incluindo número e caractere especial");
         }
     }

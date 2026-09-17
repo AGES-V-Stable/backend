@@ -1,11 +1,11 @@
 package ages.vstable.backend.service;
 
 record CompanyNormalizedData(
-        String razaoSocial,
+        String legalName,
         String cnpj,
-        String pais,
-        String cep,
-        String cidade,
-        String estado
+        String country,
+        String zipCode,
+        String city,
+        String state
 ) {
 }
