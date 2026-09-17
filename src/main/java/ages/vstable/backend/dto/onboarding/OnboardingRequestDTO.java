@@ -7,45 +7,45 @@ import lombok.Data;
 import lombok.ToString;
 
 @Data
-@Schema(description = "Dados do representante e da empresa para o cadastro completo (etapa unica, antes do KYC facial)")
+@Schema(description = "Representative and company data for the full onboarding (single step, before facial KYC)")
 public class OnboardingRequestDTO {
 
     @NotBlank
-    private String nomeCompleto;
+    private String fullName;
 
     @NotBlank
     private String email;
 
     @ToString.Exclude
     @NotBlank
-    private String senha;
+    private String password;
 
     @ToString.Exclude
     @NotBlank
-    private String confirmarSenha;
+    private String confirmPassword;
 
     @NotBlank
     @Size(min = 3, max = 255)
-    private String razaoSocial;
+    private String legalName;
 
     @Size(max = 255)
-    private String nomeFantasia;
+    private String tradeName;
 
     @NotBlank
     private String cnpj;
 
     @NotBlank
     @Size(max = 100)
-    private String pais;
+    private String country;
 
     @NotBlank
     @Size(max = 20)
-    private String cep;
+    private String zipCode;
 
     @Size(max = 255)
-    private String cidade;
+    private String city;
 
     @NotBlank
     @Size(max = 100)
-    private String estado;
+    private String state;
 }

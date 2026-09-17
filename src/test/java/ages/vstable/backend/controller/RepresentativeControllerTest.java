@@ -20,8 +20,8 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(RepresentanteController.class)
-class RepresentanteControllerTest {
+@WebMvcTest(RepresentativeController.class)
+class RepresentativeControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -38,10 +38,10 @@ class RepresentanteControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
-    private UserResponse representante(UUID id, UUID empresaId) {
+    private UserResponse representative(UUID id, UUID companyId) {
         UserResponse response = new UserResponse();
         response.setId(id);
-        response.setCompanyId(empresaId);
+        response.setCompanyId(companyId);
         response.setFullName("Joao da Silva");
         response.setEmail("joao@example.com");
         response.setCreatedAt(OffsetDateTime.now());
@@ -50,25 +50,25 @@ class RepresentanteControllerTest {
     }
 
     @Test
-    void get_listaTodosOsRepresentantes_retorna200() throws Exception {
+    void get_listsAllRepresentatives_returns200() throws Exception {
         UUID id = UUID.randomUUID();
-        UUID empresaId = UUID.randomUUID();
-        when(userService.findAll()).thenReturn(List.of(representante(id, empresaId)));
+        UUID companyId = UUID.randomUUID();
+        when(userService.findAll()).thenReturn(List.of(representative(id, companyId)));
 
-        mockMvc.perform(get("/v1/representantes"))
+        mockMvc.perform(get("/v1/representatives"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].id").value(id.toString()))
-                .andExpect(jsonPath("$[0].companyId").value(empresaId.toString()))
+                .andExpect(jsonPath("$[0].companyId").value(companyId.toString()))
                 .andExpect(jsonPath("$[0].email").value("joao@example.com"))
                 .andExpect(jsonPath("$[0].passwordHash").doesNotExist());
     }
 
     @Test
-    void get_semRepresentantesCadastrados_retorna200ComListaVazia() throws Exception {
+    void get_noRepresentativesRegistered_returns200WithEmptyList() throws Exception {
         when(userService.findAll()).thenReturn(List.of());
 
-        mockMvc.perform(get("/v1/representantes"))
+        mockMvc.perform(get("/v1/representatives"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(0)));
     }

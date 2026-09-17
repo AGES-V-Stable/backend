@@ -23,38 +23,38 @@ class UserServiceTest {
     private UserService userService;
 
     @Test
-    void findAll_retornaTodosOsRepresentantesSemExporHashDaSenha() {
+    void findAll_returnsAllRepresentativesWithoutExposingPasswordHash() {
         userService = new UserService(userRepository);
 
-        UUID empresaId = UUID.randomUUID();
-        UserEntity usuario = UserEntity.builder()
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID())
-                .companyId(empresaId)
+                .companyId(companyId)
                 .fullName("Joao da Silva")
                 .email("joao@example.com")
                 .passwordHash("hash-nunca-deve-vazar")
                 .build();
 
-        when(userRepository.findAll()).thenReturn(List.of(usuario));
+        when(userRepository.findAll()).thenReturn(List.of(user));
 
-        List<UserResponse> resultado = userService.findAll();
+        List<UserResponse> result = userService.findAll();
 
-        assertThat(resultado).hasSize(1);
-        UserResponse response = resultado.get(0);
-        assertThat(response.getId()).isEqualTo(usuario.getId());
-        assertThat(response.getCompanyId()).isEqualTo(empresaId);
+        assertThat(result).hasSize(1);
+        UserResponse response = result.get(0);
+        assertThat(response.getId()).isEqualTo(user.getId());
+        assertThat(response.getCompanyId()).isEqualTo(companyId);
         assertThat(response.getFullName()).isEqualTo("Joao da Silva");
         assertThat(response.getEmail()).isEqualTo("joao@example.com");
     }
 
     @Test
-    void findAll_semRepresentantes_retornaListaVazia() {
+    void findAll_noRepresentatives_returnsEmptyList() {
         userService = new UserService(userRepository);
 
         when(userRepository.findAll()).thenReturn(List.of());
 
-        List<UserResponse> resultado = userService.findAll();
+        List<UserResponse> result = userService.findAll();
 
-        assertThat(resultado).isEmpty();
+        assertThat(result).isEmpty();
     }
 }

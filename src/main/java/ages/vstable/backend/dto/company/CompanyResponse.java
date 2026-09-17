@@ -12,19 +12,19 @@ public class CompanyResponse {
 
     private UUID id;
 
-    private String razaoSocial;
-    private String nomeFantasia;
+    private String legalName;
+    private String tradeName;
     private String cnpj;
-    private String pais;
-    private String cep;
-    private String cidade;
-    private String estado;
+    private String country;
+    private String zipCode;
+    private String city;
+    private String state;
 
     private ComplianceStatus statusKyb;
     private ComplianceStatus statusAml;
 
-    private BigDecimal saldoDisponivelBrl;
+    private BigDecimal availableBalanceBrl;
 
-    private OffsetDateTime criadoEm;
-    private OffsetDateTime atualizadoEm;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime updatedAt;
 }

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/empresas")
+@RequestMapping("/api/companies")
 @RequiredArgsConstructor
 public class CompanyController {
 

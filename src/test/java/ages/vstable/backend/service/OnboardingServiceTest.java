@@ -52,21 +52,21 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void realizarOnboarding_criaEmpresaUsuarioEKycPendente() {
-        OnboardingRequestDTO request = requestValido();
-        UUID empresaId = UUID.randomUUID();
-        UUID usuarioId = UUID.randomUUID();
+    void performOnboarding_createsCompanyUserAndPendingKyc() {
+        OnboardingRequestDTO request = validRequest();
+        UUID companyId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
         UUID kycId = UUID.randomUUID();
 
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            CompanyEntity empresa = invocation.getArgument(0);
-            empresa.setId(empresaId);
-            return empresa;
+            CompanyEntity company = invocation.getArgument(0);
+            company.setId(companyId);
+            return company;
         });
         when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> {
-            UserEntity usuario = invocation.getArgument(0);
-            usuario.setId(usuarioId);
-            return usuario;
+            UserEntity user = invocation.getArgument(0);
+            user.setId(userId);
+            return user;
         });
         when(aveniaKycVerificationRepository.save(any())).thenAnswer(invocation -> {
             AveniaKycVerificationEntity kyc = invocation.getArgument(0);
@@ -75,93 +75,93 @@ class OnboardingServiceTest {
         });
         when(passwordEncoder.encode("Senha@123")).thenReturn("hash-bcrypt");
 
-        OnboardingResponseDTO response = onboardingService.realizarOnboarding(request);
+        OnboardingResponseDTO response = onboardingService.performOnboarding(request);
 
-        assertThat(response.getEmpresaId()).isEqualTo(empresaId);
-        assertThat(response.getUsuarioId()).isEqualTo(usuarioId);
-        assertThat(response.getVerificacaoKycId()).isEqualTo(kycId);
+        assertThat(response.getCompanyId()).isEqualTo(companyId);
+        assertThat(response.getUserId()).isEqualTo(userId);
+        assertThat(response.getKycVerificationId()).isEqualTo(kycId);
 
-        ArgumentCaptor<UserEntity> usuarioCaptor = ArgumentCaptor.forClass(UserEntity.class);
-        org.mockito.Mockito.verify(userRepository).saveAndFlush(usuarioCaptor.capture());
-        UserEntity usuarioSalvo = usuarioCaptor.getValue();
-        assertThat(usuarioSalvo.getFullName()).isEqualTo("Joao da Silva");
-        assertThat(usuarioSalvo.getCompanyId()).isEqualTo(empresaId);
-        assertThat(usuarioSalvo.getPasswordHash()).isEqualTo("hash-bcrypt");
-        assertThat(usuarioSalvo.getPasswordSalt()).isNotBlank();
+        ArgumentCaptor<UserEntity> userCaptor = ArgumentCaptor.forClass(UserEntity.class);
+        org.mockito.Mockito.verify(userRepository).saveAndFlush(userCaptor.capture());
+        UserEntity savedUser = userCaptor.getValue();
+        assertThat(savedUser.getFullName()).isEqualTo("Joao da Silva");
+        assertThat(savedUser.getCompanyId()).isEqualTo(companyId);
+        assertThat(savedUser.getPasswordHash()).isEqualTo("hash-bcrypt");
+        assertThat(savedUser.getPasswordSalt()).isNotBlank();
 
         ArgumentCaptor<AveniaKycVerificationEntity> kycCaptor = ArgumentCaptor.forClass(AveniaKycVerificationEntity.class);
         org.mockito.Mockito.verify(aveniaKycVerificationRepository).save(kycCaptor.capture());
-        assertThat(kycCaptor.getValue().getUserId()).isEqualTo(usuarioId);
+        assertThat(kycCaptor.getValue().getUserId()).isEqualTo(userId);
         assertThat(kycCaptor.getValue().getStatus()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test
-    void realizarOnboarding_emailJaCadastrado_lancaConflict() {
+    void performOnboarding_emailAlreadyRegistered_throwsConflict() {
         when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void realizarOnboarding_cnpjJaCadastrado_lancaConflict() {
+    void performOnboarding_cnpjAlreadyRegistered_throwsConflict() {
         when(companyRepository.existsByCnpj("11222333000181")).thenReturn(true);
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void realizarOnboarding_corridaNaConstraintDeEmail_retornaConflict() {
+    void performOnboarding_emailConstraintRaceCondition_returnsConflict() {
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(userRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("unique constraint"));
         when(userRepository.existsByEmail("joao@example.com")).thenReturn(false, true);
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(requestValido()))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void realizarOnboarding_senhaEConfirmacaoDivergentes_lancaUnprocessable() {
-        OnboardingRequestDTO request = requestValido();
-        request.setConfirmarSenha("Outra@123");
+    void performOnboarding_passwordAndConfirmationMismatch_throwsUnprocessable() {
+        OnboardingRequestDTO request = validRequest();
+        request.setConfirmPassword("Outra@123");
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(request))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
     }
 
     @Test
-    void realizarOnboarding_senhaFraca_lancaUnprocessable() {
-        OnboardingRequestDTO request = requestValido();
-        request.setSenha("fraca");
-        request.setConfirmarSenha("fraca");
+    void performOnboarding_weakPassword_throwsUnprocessable() {
+        OnboardingRequestDTO request = validRequest();
+        request.setPassword("fraca");
+        request.setConfirmPassword("fraca");
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(request))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
     }
 
     @Test
-    void realizarOnboarding_emailInvalido_lancaUnprocessable() {
-        OnboardingRequestDTO request = requestValido();
+    void performOnboarding_invalidEmail_throwsUnprocessable() {
+        OnboardingRequestDTO request = validRequest();
         request.setEmail("email-invalido");
 
-        assertThatThrownBy(() -> onboardingService.realizarOnboarding(request))
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
     }
 
-    private OnboardingRequestDTO requestValido() {
+    private OnboardingRequestDTO validRequest() {
         OnboardingRequestDTO request = new OnboardingRequestDTO();
-        request.setNomeCompleto("Joao da Silva");
+        request.setFullName("Joao da Silva");
         request.setEmail("joao@example.com");
-        request.setSenha("Senha@123");
-        request.setConfirmarSenha("Senha@123");
-        request.setRazaoSocial("Empresa Exemplo Ltda");
+        request.setPassword("Senha@123");
+        request.setConfirmPassword("Senha@123");
+        request.setLegalName("Empresa Exemplo Ltda");
         request.setCnpj("11.222.333/0001-81");
-        request.setPais("Brasil");
-        request.setCep("90000-000");
-        request.setCidade("Porto Alegre");
-        request.setEstado("RS");
+        request.setCountry("Brasil");
+        request.setZipCode("90000-000");
+        request.setCity("Porto Alegre");
+        request.setState("RS");
         return request;
     }
 }

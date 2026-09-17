@@ -43,84 +43,84 @@ class OnboardingControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
-    private String payloadValido() throws Exception {
+    private String validPayload() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("nomeCompleto", "Joao da Silva");
+            put("fullName", "Joao da Silva");
             put("email", "joao@example.com");
-            put("senha", "Senha@123");
-            put("confirmarSenha", "Senha@123");
-            put("razaoSocial", "Empresa Exemplo Ltda");
+            put("password", "Senha@123");
+            put("confirmPassword", "Senha@123");
+            put("legalName", "Empresa Exemplo Ltda");
             put("cnpj", "11.222.333/0001-81");
-            put("pais", "Brasil");
-            put("cep", "90000-000");
-            put("cidade", "Porto Alegre");
-            put("estado", "RS");
+            put("country", "Brasil");
+            put("zipCode", "90000-000");
+            put("city", "Porto Alegre");
+            put("state", "RS");
         }});
     }
 
     @Test
-    void post_payloadValido_retorna201ComIds() throws Exception {
+    void post_validPayload_returns201WithIds() throws Exception {
         OnboardingResponseDTO response = OnboardingResponseDTO.builder()
-                .usuarioId(UUID.randomUUID())
-                .empresaId(UUID.randomUUID())
-                .verificacaoKycId(UUID.randomUUID())
+                .userId(UUID.randomUUID())
+                .companyId(UUID.randomUUID())
+                .kycVerificationId(UUID.randomUUID())
                 .build();
-        when(onboardingService.realizarOnboarding(any())).thenReturn(response);
+        when(onboardingService.performOnboarding(any())).thenReturn(response);
 
-        mockMvc.perform(post("/v1/cadastros/onboarding")
+        mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadValido()))
+                        .content(validPayload()))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.usuarioId").value(response.getUsuarioId().toString()))
-                .andExpect(jsonPath("$.empresaId").value(response.getEmpresaId().toString()))
-                .andExpect(jsonPath("$.verificacaoKycId").value(response.getVerificacaoKycId().toString()))
-                .andExpect(jsonPath("$.senha").doesNotExist())
-                .andExpect(jsonPath("$.hashSenha").doesNotExist());
+                .andExpect(jsonPath("$.userId").value(response.getUserId().toString()))
+                .andExpect(jsonPath("$.companyId").value(response.getCompanyId().toString()))
+                .andExpect(jsonPath("$.kycVerificationId").value(response.getKycVerificationId().toString()))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist());
     }
 
     @Test
-    void post_semCamposObrigatorios_retorna400() throws Exception {
-        String payloadSemCampos = objectMapper.writeValueAsString(new HashMap<>() {{
+    void post_missingRequiredFields_returns400() throws Exception {
+        String payloadWithoutFields = objectMapper.writeValueAsString(new HashMap<>() {{
             put("email", "joao@example.com");
         }});
 
-        mockMvc.perform(post("/v1/cadastros/onboarding")
+        mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadSemCampos))
+                        .content(payloadWithoutFields))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void post_emailOuCnpjJaCadastrado_retorna409() throws Exception {
-        when(onboardingService.realizarOnboarding(any()))
+    void post_emailOrCnpjAlreadyRegistered_returns409() throws Exception {
+        when(onboardingService.performOnboarding(any()))
                 .thenThrow(new ConflictException("E-mail já cadastrado"));
 
-        mockMvc.perform(post("/v1/cadastros/onboarding")
+        mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadValido()))
+                        .content(validPayload()))
                 .andExpect(status().isConflict());
     }
 
     @Test
-    void post_senhaEConfirmacaoDivergentes_retorna422() throws Exception {
-        when(onboardingService.realizarOnboarding(any()))
+    void post_passwordAndConfirmationMismatch_returns422() throws Exception {
+        when(onboardingService.performOnboarding(any()))
                 .thenThrow(new UnprocessableEntityException("Senha e confirmação não coincidem"));
 
-        mockMvc.perform(post("/v1/cadastros/onboarding")
+        mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadValido()))
+                        .content(validPayload()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message").value("Senha e confirmação não coincidem"));
     }
 
     @Test
-    void post_falhaInternaInesperada_retorna500() throws Exception {
-        when(onboardingService.realizarOnboarding(any()))
+    void post_unexpectedInternalFailure_returns500() throws Exception {
+        when(onboardingService.performOnboarding(any()))
                 .thenThrow(new RuntimeException("timeout simulado"));
 
-        mockMvc.perform(post("/v1/cadastros/onboarding")
+        mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadValido()))
+                        .content(validPayload()))
                 .andExpect(status().isInternalServerError());
     }
 }
