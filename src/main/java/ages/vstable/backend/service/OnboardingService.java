@@ -1,5 +1,6 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;

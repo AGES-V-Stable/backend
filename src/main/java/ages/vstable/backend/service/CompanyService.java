@@ -1,5 +1,6 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
