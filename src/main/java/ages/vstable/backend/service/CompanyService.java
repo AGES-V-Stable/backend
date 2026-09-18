@@ -49,21 +49,9 @@ public class CompanyService {
                 request.getLegalName(), request.getCnpj(), request.getCountry(), request.getZipCode(),
                 request.getCity(), request.getState());
 
-        if (companyRepository.existsByCnpj(data.cnpj())) {
-            throw new ConflictException("CNPJ already registered");
-        }
+        assertCnpjAvailable(data.cnpj());
 
-        CompanyEntity company = new CompanyEntity();
-
-        applyCompanyData(company, data);
-        company.setTradeName(normalizeOptional(request.getTradeName()));
-
-        company.setKybStatus(ComplianceStatus.PENDING);
-        company.setAmlStatus(ComplianceStatus.PENDING);
-        company.setAvailableBalanceBrl(BigDecimal.ZERO);
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        company.setCreatedAt(now);
-        company.setUpdatedAt(now);
+        CompanyEntity company = buildNewCompany(data, request.getTradeName(), OffsetDateTime.now(ZoneOffset.UTC));
 
         return toResponse(saveOrConflict(company));
     }
@@ -123,6 +111,27 @@ public class CompanyService {
         response.setUpdatedAt(entity.getUpdatedAt());
 
         return response;
+    }
+
+    void assertCnpjAvailable(String cnpj) {
+        if (companyRepository.existsByCnpj(cnpj)) {
+            throw new ConflictException("CNPJ already registered");
+        }
+    }
+
+    CompanyEntity buildNewCompany(CompanyNormalizedData data, String tradeName, OffsetDateTime now) {
+        CompanyEntity company = new CompanyEntity();
+
+        applyCompanyData(company, data);
+        company.setTradeName(normalizeOptional(tradeName));
+
+        company.setKybStatus(ComplianceStatus.PENDING);
+        company.setAmlStatus(ComplianceStatus.PENDING);
+        company.setAvailableBalanceBrl(BigDecimal.ZERO);
+        company.setCreatedAt(now);
+        company.setUpdatedAt(now);
+
+        return company;
     }
 
     private void applyCompanyData(CompanyEntity company, CompanyNormalizedData data) {

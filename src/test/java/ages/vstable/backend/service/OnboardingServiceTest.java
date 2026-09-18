@@ -46,9 +46,10 @@ class OnboardingServiceTest {
 
     @BeforeEach
     void setUp() {
+        CompanyService companyService = new CompanyService(companyRepository, new CompanyDataValidator());
         onboardingService = new OnboardingService(
                 userRepository, companyRepository, aveniaKycVerificationRepository,
-                new CompanyDataValidator(), passwordEncoder);
+                new CompanyDataValidator(), passwordEncoder, companyService);
     }
 
     @Test
