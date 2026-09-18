@@ -7,6 +7,7 @@ import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -73,7 +74,7 @@ public class CompanyService {
     ) {
         CompanyEntity company = companyRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Company not found")
+                        new NotFoundException("Company not found")
                 );
 
         CompanyNormalizedData data = companyDataValidator.normalize(
@@ -94,7 +95,7 @@ public class CompanyService {
 
     public void deleteById(UUID id) {
         if (!companyRepository.existsById(id)) {
-            throw new IllegalArgumentException("Company not found");
+            throw new NotFoundException("Company not found");
         }
 
         companyRepository.deleteById(id);
