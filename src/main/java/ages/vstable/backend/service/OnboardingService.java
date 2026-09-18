@@ -46,20 +46,20 @@ public class OnboardingService {
                 request.getZipCode(), request.getCity(), request.getState());
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new ConflictException("E-mail já cadastrado");
+            throw new ConflictException("Email already registered");
         }
         if (companyRepository.existsByCnpj(companyData.cnpj())) {
-            throw new ConflictException("CNPJ já cadastrado");
+            throw new ConflictException("CNPJ already registered");
         }
 
         try {
             return createCompanyUserAndKyc(request, companyData);
         } catch (DataIntegrityViolationException e) {
             if (userRepository.existsByEmail(request.getEmail())) {
-                throw new ConflictException("E-mail já cadastrado");
+                throw new ConflictException("Email already registered");
             }
             if (companyRepository.existsByCnpj(companyData.cnpj())) {
-                throw new ConflictException("CNPJ já cadastrado");
+                throw new ConflictException("CNPJ already registered");
             }
             throw e;
         }
@@ -110,13 +110,13 @@ public class OnboardingService {
 
     private void validatePayload(OnboardingRequestDTO request) {
         if (!EMAIL_PATTERN.matcher(request.getEmail()).matches()) {
-            throw new UnprocessableEntityException("E-mail em formato inválido");
+            throw new UnprocessableEntityException("Email has an invalid format");
         }
         if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
-            throw new UnprocessableEntityException("Senha e confirmação não coincidem");
+            throw new UnprocessableEntityException("Password and confirmation do not match");
         }
         if (!STRONG_PASSWORD_PATTERN.matcher(request.getPassword()).matches()) {
-            throw new UnprocessableEntityException("Senha deve ter ao menos 8 caracteres, incluindo número e caractere especial");
+            throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
         }
     }
 

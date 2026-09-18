@@ -50,7 +50,7 @@ public class CompanyService {
                 request.getCity(), request.getState());
 
         if (companyRepository.existsByCnpj(data.cnpj())) {
-            throw new ConflictException("CNPJ já cadastrado");
+            throw new ConflictException("CNPJ already registered");
         }
 
         CompanyEntity company = new CompanyEntity();
@@ -83,7 +83,7 @@ public class CompanyService {
 
         if (!company.getCnpj().equals(data.cnpj())
                 && companyRepository.existsByCnpj(data.cnpj())) {
-            throw new ConflictException("CNPJ já cadastrado");
+            throw new ConflictException("CNPJ already registered");
         }
 
         applyCompanyData(company, data);
@@ -142,7 +142,7 @@ public class CompanyService {
         try {
             return companyRepository.saveAndFlush(company);
         } catch (DataIntegrityViolationException ex) {
-            throw new ConflictException("CNPJ já cadastrado");
+            throw new ConflictException("CNPJ already registered");
         }
     }
 }
