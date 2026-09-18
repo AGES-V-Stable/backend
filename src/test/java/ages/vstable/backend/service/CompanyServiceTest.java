@@ -1,19 +1,31 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.ComplianceDocumentEntity;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
+import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,11 +39,14 @@ class CompanyServiceTest {
     @Mock
     private CompanyRepository companyRepository;
 
+    @Mock
+    private ComplianceDocumentRepository complianceDocumentRepository;
+
     private CompanyService companyService;
 
     @BeforeEach
     void setUp() {
-        companyService = new CompanyService(companyRepository, new CompanyDataValidator());
+        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator());
     }
 
     @Test
@@ -71,6 +86,98 @@ class CompanyServiceTest {
                 .thenThrow(new DataIntegrityViolationException("unique constraint"));
         assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void getComplianceStatus_returnsStatusAndDocuments_whenCompanyExists() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+
+        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
+        when(complianceDocumentRepository.findByCompanyId(id)).thenReturn(List.of());
+
+        CompanyComplianceStatusResponse response = companyService.getComplianceStatus(id);
+
+        assertThat(response.getId()).isEqualTo(id);
+        assertThat(response.getLegalName()).isEqualTo("Empresa Legada Ltda");
+        assertThat(response.getCnpj()).isEqualTo("11222333000181");
+        assertThat(response.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(response.getStatusAml()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(response.getOverallStatus()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(response.getDocuments()).isEmpty();
+    }
+
+    @Test
+    void getComplianceStatus_throwsNotFound_whenCompanyDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companyService.getComplianceStatus(id))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void getComplianceStatus_throwsUnprocessable_whenKybStatusIsNull() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity company = buildCompany(id, null, ComplianceStatus.APPROVED);
+        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
+
+        assertThatThrownBy(() -> companyService.getComplianceStatus(id))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @Test
+    void getComplianceStatus_throwsUnprocessable_whenDocumentStatusIsNull() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        ComplianceDocumentEntity document = ComplianceDocumentEntity.builder()
+                .id(UUID.randomUUID())
+                .company(company)
+                .status(null)
+                .build();
+
+        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
+        when(complianceDocumentRepository.findByCompanyId(id)).thenReturn(List.of(document));
+
+        assertThatThrownBy(() -> companyService.getComplianceStatus(id))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @ParameterizedTest
+    @MethodSource("overallStatusCombinations")
+    void getComplianceStatus_computesOverallStatusForEveryCombination(
+            ComplianceStatus kyb, ComplianceStatus aml, ComplianceStatus expected) {
+        UUID id = UUID.randomUUID();
+        CompanyEntity company = buildCompany(id, kyb, aml);
+
+        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
+        when(complianceDocumentRepository.findByCompanyId(id)).thenReturn(List.of());
+
+        CompanyComplianceStatusResponse response = companyService.getComplianceStatus(id);
+
+        assertThat(response.getOverallStatus()).isEqualTo(expected);
+    }
+
+    private static Stream<Arguments> overallStatusCombinations() {
+        return Stream.of(
+                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.PENDING, ComplianceStatus.PENDING),
+                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.UNDER_REVIEW, ComplianceStatus.UNDER_REVIEW),
+                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.APPROVED, ComplianceStatus.PENDING),
+                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED),
+                Arguments.of(ComplianceStatus.APPROVED, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED),
+                Arguments.of(ComplianceStatus.UNDER_REVIEW, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED),
+                Arguments.of(ComplianceStatus.REJECTED, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED)
+        );
+    }
+
+    private CompanyEntity buildCompany(UUID id, ComplianceStatus kybStatus, ComplianceStatus amlStatus) {
+        CompanyEntity company = new CompanyEntity();
+        company.setId(id);
+        company.setLegalName("Empresa Legada Ltda");
+        company.setCnpj("11222333000181");
+        company.setKybStatus(kybStatus);
+        company.setAmlStatus(amlStatus);
+        return company;
     }
 
     private CompanyCreateRequest validRequest() {

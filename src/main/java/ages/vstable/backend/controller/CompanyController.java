@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
@@ -61,6 +62,19 @@ public class CompanyController {
         return companyService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/compliance-status")
+    @Operation(summary = "Retrieves the current compliance (KYB/AML) status of a company")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Compliance status returned successfully"),
+            @ApiResponse(responseCode = "404", description = "Company not found"),
+            @ApiResponse(responseCode = "422", description = "Company has an invalid compliance status"),
+    })
+    public ResponseEntity<CompanyComplianceStatusResponse> getComplianceStatus(
+            @PathVariable UUID id) {
+
+        return ResponseEntity.ok(companyService.getComplianceStatus(id));
     }
 
     @PutMapping("/{id}")

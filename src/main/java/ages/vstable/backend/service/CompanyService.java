@@ -1,17 +1,24 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
+import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
+import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -25,6 +32,7 @@ import java.util.UUID;
 public class CompanyService {
 
     private final CompanyRepository companyRepository;
+    private final ComplianceDocumentRepository complianceDocumentRepository;
     private final CompanyDataValidator companyDataValidator;
 
     public List<CompanyResponse> findAll() {
@@ -91,6 +99,58 @@ public class CompanyService {
 
     public boolean existsById(UUID id) {
         return companyRepository.existsById(id);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public CompanyComplianceStatusResponse getComplianceStatus(UUID id) {
+        CompanyEntity company = companyRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Company not found"));
+
+        if (company.getKybStatus() == null || company.getAmlStatus() == null) {
+            throw new UnprocessableEntityException("Company has an invalid compliance status");
+        }
+
+        List<ComplianceDocumentEntity> documents = complianceDocumentRepository.findByCompanyId(id);
+
+        if (documents.stream().anyMatch(document -> document.getStatus() == null)) {
+            throw new UnprocessableEntityException("Company has an invalid compliance status");
+        }
+
+        CompanyComplianceStatusResponse response = new CompanyComplianceStatusResponse();
+        response.setId(company.getId());
+        response.setLegalName(company.getLegalName());
+        response.setTradeName(company.getTradeName());
+        response.setCnpj(company.getCnpj());
+        response.setStatusKyb(company.getKybStatus());
+        response.setStatusAml(company.getAmlStatus());
+        response.setOverallStatus(computeOverallStatus(company.getKybStatus(), company.getAmlStatus()));
+        response.setDocuments(documents.stream().map(this::toDocumentResponse).toList());
+
+        return response;
+    }
+
+    private ComplianceStatus computeOverallStatus(ComplianceStatus kyb, ComplianceStatus aml) {
+        if (kyb == ComplianceStatus.REJECTED || aml == ComplianceStatus.REJECTED) {
+            return ComplianceStatus.REJECTED;
+        }
+        if (kyb == ComplianceStatus.UNDER_REVIEW || aml == ComplianceStatus.UNDER_REVIEW) {
+            return ComplianceStatus.UNDER_REVIEW;
+        }
+        if (kyb == ComplianceStatus.APPROVED && aml == ComplianceStatus.APPROVED) {
+            return ComplianceStatus.APPROVED;
+        }
+        return ComplianceStatus.PENDING;
+    }
+
+    private ComplianceDocumentResponse toDocumentResponse(ComplianceDocumentEntity entity) {
+        ComplianceDocumentResponse response = new ComplianceDocumentResponse();
+        response.setId(entity.getId());
+        response.setDocumentType(entity.getDocumentType());
+        response.setFileName(entity.getFileName());
+        response.setFileSizeBytes(entity.getFileSizeBytes());
+        response.setStatus(entity.getStatus());
+        response.setUploadedAt(entity.getUploadedAt());
+        return response;
     }
 
     private CompanyResponse toResponse(CompanyEntity entity) {
