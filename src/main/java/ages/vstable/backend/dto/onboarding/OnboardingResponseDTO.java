@@ -11,4 +11,5 @@ public class OnboardingResponseDTO {
     UUID userId;
     UUID companyId;
     UUID kycVerificationId;
+    String accessToken;
 }

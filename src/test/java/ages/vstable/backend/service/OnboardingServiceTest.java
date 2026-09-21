@@ -11,6 +11,7 @@ import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,13 +43,16 @@ class OnboardingServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private JwtTokenUtils jwtTokenUtils;
+
     private OnboardingService onboardingService;
 
     @BeforeEach
     void setUp() {
         onboardingService = new OnboardingService(
                 userRepository, companyRepository, aveniaKycVerificationRepository,
-                new CompanyDataValidator(), passwordEncoder);
+                new CompanyDataValidator(), passwordEncoder, jwtTokenUtils);
     }
 
     @Test
@@ -74,12 +78,14 @@ class OnboardingServiceTest {
             return kyc;
         });
         when(passwordEncoder.encode("Senha@123")).thenReturn("hash-bcrypt");
+        when(jwtTokenUtils.generateToken(any())).thenReturn("jwt-token-123");
 
         OnboardingResponseDTO response = onboardingService.performOnboarding(request);
 
         assertThat(response.getCompanyId()).isEqualTo(companyId);
         assertThat(response.getUserId()).isEqualTo(userId);
         assertThat(response.getKycVerificationId()).isEqualTo(kycId);
+        assertThat(response.getAccessToken()).isEqualTo("jwt-token-123");
 
         ArgumentCaptor<UserEntity> userCaptor = ArgumentCaptor.forClass(UserEntity.class);
         org.mockito.Mockito.verify(userRepository).saveAndFlush(userCaptor.capture());

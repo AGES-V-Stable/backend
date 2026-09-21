@@ -12,6 +12,7 @@ import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCrypt;
@@ -36,6 +37,7 @@ public class OnboardingService {
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final CompanyDataValidator companyDataValidator;
     private final PasswordEncoder passwordEncoder;
+    private final JwtTokenUtils jwtTokenUtils;
 
     @Transactional
     public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
@@ -105,6 +107,7 @@ public class OnboardingService {
                 .userId(user.getId())
                 .companyId(company.getId())
                 .kycVerificationId(kyc.getId())
+                .accessToken(jwtTokenUtils.generateToken(user))
                 .build();
     }
 

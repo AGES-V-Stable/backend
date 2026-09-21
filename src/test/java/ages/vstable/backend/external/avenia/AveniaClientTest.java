@@ -1,9 +1,11 @@
 package ages.vstable.backend.external.avenia;
 
+import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -113,7 +115,8 @@ class AveniaClientTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    // Shape NÃO confirmado contra o sandbox real (ver TODO em AveniaDocumentUploadResponse)
+    // Shape real confirmado em 2026-09-21 contra o sandbox: POST /v2/documents/
+    // com documentType ID devolve "uploadURLFront"/"uploadURLBack" (URL maiúsculo).
     @Test
     void iniciarDocumento_respostaComSucesso_retornaCamposEEnviaBodyComDocumentType() throws Exception {
         KeyPair keyPair = gerarKeyPair();
@@ -122,8 +125,8 @@ class AveniaClientTest {
         server.createContext("/v2/documents/", exchange -> {
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
 
-            String responseBody = "{\"id\":\"doc-123\",\"uploadUrlFront\":\"https://s3/front\","
-                    + "\"uploadUrlBack\":\"https://s3/back\"}";
+            String responseBody = "{\"id\":\"doc-123\",\"uploadURLFront\":\"https://s3/front\","
+                    + "\"uploadURLBack\":\"https://s3/back\"}";
             byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
@@ -212,6 +215,88 @@ class AveniaClientTest {
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
         assertThatThrownBy(() -> client.consultarStatusDocumento("doc-123"))
+                .isInstanceOf(AveniaIntegrationException.class);
+    }
+
+    private KycSubmitRequest kycRequest() {
+        KycSubmitRequest request = new KycSubmitRequest();
+        request.setFullName("Maria da Silva");
+        request.setDateOfBirth("1990-05-20");
+        request.setTaxIdNumber("52998224725");
+        request.setEmail("maria@empresa.com");
+        request.setPhone("11987654321");
+        request.setCountry("Brasil");
+        request.setState("SP");
+        request.setCity("São Paulo");
+        request.setZipCode("90000000");
+        request.setStreetAddress("Rua Teste, 100");
+        return request;
+    }
+
+    // Shape NÃO confirmado contra o sandbox real
+    @Test
+    void finalizarKyc_respostaComSucesso_retornaIdEEnviaBodyComDadosPessoaisEIds() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+
+        server.createContext("/v2/kyc/new-level-1/api", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+
+            String responseBody = "{\"id\":\"kyc-process-123\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaKycResponse response = client.finalizarKyc(kycRequest(), "doc-123", "liveness-123");
+
+        assertThat(response.getId()).isEqualTo("kyc-process-123");
+        assertThat(requestBody.get()).contains("\"fullName\":\"Maria da Silva\"");
+        assertThat(requestBody.get()).contains("\"countryOfTaxId\":\"BR\"");
+        assertThat(requestBody.get()).contains("\"taxIdNumber\":\"52998224725\"");
+        assertThat(requestBody.get()).contains("\"uploadedDocumentId\":\"doc-123\"");
+        assertThat(requestBody.get()).contains("\"uploadedSelfieId\":\"liveness-123\"");
+        // Confirmado contra o sandbox real: a Avenia exige código ISO no "country" e
+        // rejeita "Brasil" por extenso com "InvalidFieldError: country is invalid".
+        assertThat(requestBody.get()).contains("\"country\":\"BR\"");
+    }
+
+    // Confirmado contra o sandbox real (400 "InvalidFieldError: country is invalid" ao
+    // enviar "Brasil" por extenso), daí a normalização para código ISO antes do envio.
+    @Test
+    void finalizarKyc_paisNaoSuportado_lancaUnprocessableEntityExceptionSemChamarAvenia() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        KycSubmitRequest request = kycRequest();
+        request.setCountry("Argentina");
+
+        assertThatThrownBy(() -> client.finalizarKyc(request, "doc-123", "liveness-123"))
+                .isInstanceOf(ages.vstable.backend.exception.UnprocessableEntityException.class);
+    }
+
+    @Test
+    void finalizarKyc_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/kyc/new-level-1/api", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123"))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 }
