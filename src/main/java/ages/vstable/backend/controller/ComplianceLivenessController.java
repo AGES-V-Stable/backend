@@ -1,6 +1,7 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.compliance.LivenessStartResponse;
+import ages.vstable.backend.dto.compliance.LivenessStatusResponse;
 import ages.vstable.backend.dto.compliance.LivenessSubmitRequest;
 import ages.vstable.backend.service.ComplianceLivenessService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,38 +17,59 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/v1/cadastros")
+@RequestMapping("/v1/onboarding")
 @RequiredArgsConstructor
-@Tag(name = "Cadastro do representante - Compliance/Liveness")
+@Tag(name = "Onboarding - Compliance/Liveness")
 public class ComplianceLivenessController {
 
     private final ComplianceLivenessService complianceLivenessService;
 
-    @PostMapping("/{progressoCadastroId}/compliance/liveness")
-    @Operation(summary = "Inicia a verificação de liveness na Avenia e retorna o link de redirecionamento (etapa 4b)")
+    @PostMapping("/{kycVerificationId}/compliance/liveness")
+    @Operation(summary = "Inicia a verificação de liveness na Avenia e retorna o link de redirecionamento")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Verificação de liveness iniciada, retorna id e link"),
-            @ApiResponse(responseCode = "404", description = "progressoCadastroId inválido ou inexistente"),
+            @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
     })
-    public ResponseEntity<LivenessStartResponse> iniciar(@PathVariable UUID progressoCadastroId) {
-        return complianceLivenessService.iniciar(progressoCadastroId)
+    public ResponseEntity<LivenessStartResponse> iniciar(@PathVariable UUID kycVerificationId) {
+        return complianceLivenessService.iniciar(kycVerificationId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PutMapping("/{progressoCadastroId}/compliance/liveness")
-    @Operation(summary = "Registra o id de liveness concluído no progresso de cadastro (etapa 4b)")
+    @GetMapping("/{kycVerificationId}/compliance/liveness/status")
+    @Operation(summary = "Consulta se a verificação de liveness já foi concluída na Avenia")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Status consultado com sucesso"),
+            @ApiResponse(responseCode = "400", description = "livenessId ausente ou vazio"),
+            @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
+            @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
+    })
+    public ResponseEntity<LivenessStatusResponse> consultarStatus(
+            @PathVariable UUID kycVerificationId,
+            @RequestParam(required = false) String livenessId) {
+
+        if (livenessId == null || livenessId.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        return complianceLivenessService.consultarStatus(kycVerificationId, livenessId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/{kycVerificationId}/compliance/liveness")
+    @Operation(summary = "Registra o id de liveness concluído na verificação de KYC")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Liveness registrado com sucesso"),
             @ApiResponse(responseCode = "400", description = "livenessId ausente ou vazio"),
-            @ApiResponse(responseCode = "404", description = "progressoCadastroId inválido ou inexistente"),
+            @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
     })
     public ResponseEntity<Void> concluir(
-            @PathVariable UUID progressoCadastroId,
+            @PathVariable UUID kycVerificationId,
             @Valid @RequestBody LivenessSubmitRequest request) {
 
-        boolean atualizado = complianceLivenessService.concluir(progressoCadastroId, request);
+        boolean atualizado = complianceLivenessService.concluir(kycVerificationId, request);
 
         return atualizado
                 ? ResponseEntity.noContent().build()

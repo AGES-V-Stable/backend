@@ -1,11 +1,12 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.compliance.LivenessStartResponse;
+import ages.vstable.backend.dto.compliance.LivenessStatusResponse;
 import ages.vstable.backend.dto.compliance.LivenessSubmitRequest;
-import ages.vstable.backend.entity.ProgressoCadastroEntity;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
-import ages.vstable.backend.repository.ProgressoCadastroRepository;
+import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,12 +17,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ComplianceLivenessService {
 
-    private final ProgressoCadastroRepository progressoCadastroRepository;
+    private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaClient aveniaClient;
 
-    public Optional<LivenessStartResponse> iniciar(UUID progressoCadastroId) {
-        return progressoCadastroRepository.findById(progressoCadastroId)
-                .map(progresso -> {
+    public Optional<LivenessStartResponse> iniciar(UUID kycVerificationId) {
+        return aveniaKycVerificationRepository.findById(kycVerificationId)
+                .map(kyc -> {
                     AveniaDocumentResponse aveniaResponse = aveniaClient.iniciarLiveness();
 
                     LivenessStartResponse response = new LivenessStartResponse();
@@ -33,11 +34,24 @@ public class ComplianceLivenessService {
                 });
     }
 
-    public boolean concluir(UUID progressoCadastroId, LivenessSubmitRequest request) {
-        return progressoCadastroRepository.findById(progressoCadastroId)
-                .map(progresso -> {
-                    progresso.setLivenessId(request.getLivenessId());
-                    progressoCadastroRepository.save(progresso);
+    public Optional<LivenessStatusResponse> consultarStatus(UUID kycVerificationId, String livenessId) {
+        return aveniaKycVerificationRepository.findById(kycVerificationId)
+                .map(kyc -> {
+                    AveniaDocumentStatusResponse aveniaResponse = aveniaClient.consultarStatusDocumento(livenessId);
+                    AveniaDocumentStatusResponse.Document document = aveniaResponse.getDocument();
+
+                    LivenessStatusResponse response = new LivenessStatusResponse();
+                    response.setReady(document.isReady());
+                    response.setStatus(document.getUploadStatusFront());
+                    return response;
+                });
+    }
+
+    public boolean concluir(UUID kycVerificationId, LivenessSubmitRequest request) {
+        return aveniaKycVerificationRepository.findById(kycVerificationId)
+                .map(kyc -> {
+                    kyc.setLivenessId(request.getLivenessId());
+                    aveniaKycVerificationRepository.save(kyc);
                     return true;
                 })
                 .orElse(false);

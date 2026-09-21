@@ -25,9 +25,14 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-  idempotency:
-    secret: ${IDEMPOTENCY_HASH_SECRET:troque-este-segredo-em-producao}
   avenia:
     base-url: ${AVENIA_BASE_URL:https://api.sandbox.avenia.io:10952}
     api-key: ${AVENIA_API_KEY:}
     private-key: ${AVENIA_PRIVATE_KEY:}
+
+api:
+  auth:
+    jwt:
+      secret: ${JWT_SECRET:lR4kEZSOXyCXvzbmgrfLAmSWKtHJnCZ6fJLp5Pm/980a5xogpjaahKGuLPou8P8647IQthO/iX61VWueFl00hA==}
+    header:
+      name: X-AUTH-API-SECRET-KEY

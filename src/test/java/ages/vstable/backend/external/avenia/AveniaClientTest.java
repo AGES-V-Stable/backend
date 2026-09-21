@@ -2,6 +2,8 @@ package ages.vstable.backend.external.avenia;
 
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,5 +111,107 @@ class AveniaClientTest {
 
         assertThatThrownBy(client::iniciarLiveness)
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    // Shape NÃO confirmado contra o sandbox real (ver TODO em AveniaDocumentUploadResponse)
+    @Test
+    void iniciarDocumento_respostaComSucesso_retornaCamposEEnviaBodyComDocumentType() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+
+        server.createContext("/v2/documents/", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+
+            String responseBody = "{\"id\":\"doc-123\",\"uploadUrlFront\":\"https://s3/front\","
+                    + "\"uploadUrlBack\":\"https://s3/back\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaDocumentUploadResponse response = client.iniciarDocumento("ID", true);
+
+        assertThat(response.getId()).isEqualTo("doc-123");
+        assertThat(response.getUploadUrlFront()).isEqualTo("https://s3/front");
+        assertThat(response.getUploadUrlBack()).isEqualTo("https://s3/back");
+        assertThat(requestBody.get()).isEqualTo("{\"documentType\":\"ID\",\"isDoubleSided\":true}");
+    }
+
+    @Test
+    void iniciarDocumento_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/documents/", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.iniciarDocumento("PASSPORT", false))
+                .isInstanceOf(AveniaIntegrationException.class);
+    }
+
+    // Shape real confirmado em 2026-09-16 contra o sandbox: GET /v2/documents/{id}
+    @Test
+    void consultarStatusDocumento_respostaComSucesso_retornaDocumentoComReadyEStatus() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestMethod = new AtomicReference<>();
+        AtomicReference<String> requestPath = new AtomicReference<>();
+
+        server.createContext("/v2/documents/doc-123", exchange -> {
+            requestMethod.set(exchange.getRequestMethod());
+            requestPath.set(exchange.getRequestURI().getPath());
+
+            String responseBody = "{\"document\":{\"id\":\"doc-123\",\"documentType\":\"SELFIE-FROM-LIVENESS\","
+                    + "\"uploadStatusFront\":\"WAITING-UPLOAD\",\"uploadErrorFront\":\"\","
+                    + "\"uploadStatusBack\":\"\",\"uploadErrorBack\":\"\",\"ready\":false}}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaDocumentStatusResponse response = client.consultarStatusDocumento("doc-123");
+
+        assertThat(response.getDocument().getId()).isEqualTo("doc-123");
+        assertThat(response.getDocument().isReady()).isFalse();
+        assertThat(response.getDocument().getUploadStatusFront()).isEqualTo("WAITING-UPLOAD");
+        assertThat(requestMethod.get()).isEqualTo("GET");
+        assertThat(requestPath.get()).isEqualTo("/v2/documents/doc-123");
+    }
+
+    @Test
+    void consultarStatusDocumento_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/documents/doc-123", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.consultarStatusDocumento("doc-123"))
+                .isInstanceOf(AveniaIntegrationException.class);
     }
 }
