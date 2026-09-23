@@ -25,14 +25,19 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ComplianceDocumentoServiceTest {
 
+    private static final String SUB_ACCOUNT_ID = "sub-1";
+
     @Mock
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
     @Mock
     private AveniaClient aveniaClient;
 
+    @Mock
+    private AveniaSubAccountProvisioningService subAccountProvisioningService;
+
     private ComplianceDocumentoService service() {
-        return new ComplianceDocumentoService(aveniaKycVerificationRepository, aveniaClient);
+        return new ComplianceDocumentoService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
     }
 
     private DocumentUploadStartRequest requestPara(String documentType, boolean doubleSided) {
@@ -43,7 +48,7 @@ class ComplianceDocumentoServiceTest {
     }
 
     @Test
-    void iniciar_kycExistente_chamaAveniaERetornaCampos() {
+    void iniciar_kycExistente_provisionaSubcontaEChamaAveniaComEla() {
         ComplianceDocumentoService service = service();
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
@@ -54,7 +59,8 @@ class ComplianceDocumentoServiceTest {
         aveniaResponse.setUploadUrlBack("https://s3/back");
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.iniciarDocumento("ID", true)).thenReturn(aveniaResponse);
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.iniciarDocumento("ID", true, SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
         Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, requestPara("ID", true));
 
@@ -74,6 +80,7 @@ class ComplianceDocumentoServiceTest {
 
         assertThat(resultado).isEmpty();
         verifyNoInteractions(aveniaClient);
+        verifyNoInteractions(subAccountProvisioningService);
     }
 
     @Test
@@ -83,7 +90,8 @@ class ComplianceDocumentoServiceTest {
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.iniciarDocumento("PASSPORT", false))
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.iniciarDocumento("PASSPORT", false, SUB_ACCOUNT_ID))
                 .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.iniciar(kycId, requestPara("PASSPORT", false)))

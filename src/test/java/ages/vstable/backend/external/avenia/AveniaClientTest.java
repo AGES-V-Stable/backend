@@ -5,7 +5,10 @@ import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
+import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,7 +81,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        AveniaDocumentResponse response = client.iniciarLiveness();
+        AveniaDocumentResponse response = client.iniciarLiveness(null);
 
         assertThat(response.getId()).isEqualTo("liveness-123");
         assertThat(response.getSessionId()).isEqualTo("session-456");
@@ -103,7 +106,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        assertThatThrownBy(client::iniciarLiveness)
+        assertThatThrownBy(() -> client.iniciarLiveness(null))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -111,8 +114,35 @@ class AveniaClientTest {
     void iniciarLiveness_semChavePrivadaConfigurada_lancaIllegalStateException() {
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", "", new AveniaRequestSigner());
 
-        assertThatThrownBy(client::iniciarLiveness)
+        assertThatThrownBy(() -> client.iniciarLiveness(null))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    // Confirmado contra o sandbox real em 2026-09-23: passar ?subAccountId= na URI
+    // faz a Avenia operar sobre a subconta em vez da conta principal da API key.
+    @Test
+    void iniciarLiveness_comSubAccountId_anexaComoQueryParamNaUri() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestPath = new AtomicReference<>();
+
+        server.createContext("/v2/documents/", exchange -> {
+            requestPath.set(exchange.getRequestURI().toString());
+            String responseBody = "{\"id\":\"liveness-123\",\"sessionId\":\"session-456\","
+                    + "\"livenessUrl\":\"https://app.sandbox.avenia.io/liveness/session-456?jwt=abc\","
+                    + "\"validateLivenessToken\":\"token-789\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+        client.iniciarLiveness("sub-123");
+
+        assertThat(requestPath.get()).isEqualTo("/v2/documents/?subAccountId=sub-123");
     }
 
     // Shape real confirmado em 2026-09-21 contra o sandbox: POST /v2/documents/
@@ -138,7 +168,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        AveniaDocumentUploadResponse response = client.iniciarDocumento("ID", true);
+        AveniaDocumentUploadResponse response = client.iniciarDocumento("ID", true, null);
 
         assertThat(response.getId()).isEqualTo("doc-123");
         assertThat(response.getUploadUrlFront()).isEqualTo("https://s3/front");
@@ -161,7 +191,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        assertThatThrownBy(() -> client.iniciarDocumento("PASSPORT", false))
+        assertThatThrownBy(() -> client.iniciarDocumento("PASSPORT", false, null))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -190,7 +220,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        AveniaDocumentStatusResponse response = client.consultarStatusDocumento("doc-123");
+        AveniaDocumentStatusResponse response = client.consultarStatusDocumento("doc-123", null);
 
         assertThat(response.getDocument().getId()).isEqualTo("doc-123");
         assertThat(response.getDocument().isReady()).isFalse();
@@ -214,7 +244,7 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        assertThatThrownBy(() -> client.consultarStatusDocumento("doc-123"))
+        assertThatThrownBy(() -> client.consultarStatusDocumento("doc-123", null))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -254,16 +284,17 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        AveniaKycResponse response = client.finalizarKyc(kycRequest(), "doc-123", "liveness-123");
+        AveniaKycResponse response = client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", null);
 
         assertThat(response.getId()).isEqualTo("kyc-process-123");
         assertThat(requestBody.get()).contains("\"fullName\":\"Maria da Silva\"");
-        assertThat(requestBody.get()).contains("\"countryOfTaxId\":\"BRA\"");
+        assertThat(requestBody.get()).contains("\"countryOfTaxId\":\"BR\"");
         assertThat(requestBody.get()).contains("\"taxIdNumber\":\"52998224725\"");
         assertThat(requestBody.get()).contains("\"uploadedDocumentId\":\"doc-123\"");
         assertThat(requestBody.get()).contains("\"uploadedSelfieId\":\"liveness-123\"");
-        // O KYC Level 1 exige código ISO 3166-1 alpha-3 para países.
-        assertThat(requestBody.get()).contains("\"country\":\"BRA\"");
+        // Confirmado contra o sandbox real: a Avenia exige código ISO no "country" e
+        // rejeita "Brasil" por extenso com "InvalidFieldError: country is invalid".
+        assertThat(requestBody.get()).contains("\"country\":\"BR\"");
     }
 
     // Confirmado contra o sandbox real (400 "InvalidFieldError: country is invalid" ao
@@ -276,7 +307,7 @@ class AveniaClientTest {
         KycSubmitRequest request = kycRequest();
         request.setCountry("Argentina");
 
-        assertThatThrownBy(() -> client.finalizarKyc(request, "doc-123", "liveness-123"))
+        assertThatThrownBy(() -> client.finalizarKyc(request, "doc-123", "liveness-123", null))
                 .isInstanceOf(ages.vstable.backend.exception.UnprocessableEntityException.class);
     }
 
@@ -295,11 +326,35 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123"))
-                .isInstanceOf(AveniaIntegrationException.class)
-                .hasMessageContaining("HTTP 500");
+        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", null))
+                .isInstanceOf(AveniaIntegrationException.class);
     }
 
+    @Test
+    void finalizarKyc_comSubAccountId_anexaComoQueryParamNaUri() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestPath = new AtomicReference<>();
+
+        server.createContext("/v2/kyc/new-level-1/api", exchange -> {
+            requestPath.set(exchange.getRequestURI().toString());
+            String responseBody = "{\"id\":\"kyc-process-123\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+        client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", "sub-123");
+
+        assertThat(requestPath.get()).isEqualTo("/v2/kyc/new-level-1/api?subAccountId=sub-123");
+    }
+
+    // Restaura o comportamento perdido num diff não commitado: o corpo completo do
+    // erro não é propagado (pode conter dados de KYC), só status + mensagem de validação.
     @Test
     void finalizarKyc_aveniaRetornaMensagemDeValidacao_propagaSomenteStatusEMensagem() throws Exception {
         KeyPair keyPair = gerarKeyPair();
@@ -317,10 +372,154 @@ class AveniaClientTest {
 
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
-        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123"))
+        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", null))
                 .isInstanceOf(AveniaIntegrationException.class)
-                .hasMessage("Falha ao finalizar KYC na Avenia: HTTP 400 - country is invalid")
+                .hasMessageContaining("HTTP 400 - country is invalid")
                 .hasMessageNotContaining("sensitiveData")
                 .hasMessageNotContaining("nao-propagar");
+    }
+
+    // Confirmado contra o sandbox real em 2026-09-23: POST /v2/account/sub-accounts
+    @Test
+    void criarSubconta_respostaComSucesso_retornaIdEEnviaAccountTypeIndividual() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+
+        server.createContext("/v2/account/sub-accounts", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            String responseBody = "{\"id\":\"sub-123\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(201, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaSubAccountResponse response = client.criarSubconta("kyc-abc");
+
+        assertThat(response.getId()).isEqualTo("sub-123");
+        assertThat(requestBody.get()).contains("\"accountType\":\"INDIVIDUAL\"");
+        assertThat(requestBody.get()).contains("\"name\":\"kyc-abc\"");
+    }
+
+    @Test
+    void criarSubconta_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/account/sub-accounts", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.criarSubconta("kyc-abc"))
+                .isInstanceOf(AveniaIntegrationException.class);
+    }
+
+    // Confirmado contra o sandbox real em 2026-09-23: GET /v2/kyc/attempts/?levelName=level-1&subAccountId=...
+    @Test
+    void listarTentativasKyc_respostaComSucesso_retornaListaDeAttempts() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestPath = new AtomicReference<>();
+
+        server.createContext("/v2/kyc/attempts/", exchange -> {
+            requestPath.set(exchange.getRequestURI().toString());
+            String responseBody = "{\"attempts\":[{\"id\":\"attempt-1\",\"status\":\"COMPLETED\","
+                    + "\"result\":\"APPROVED\",\"resultMessage\":\"\",\"rejectionLabels\":[],\"retryable\":false}],"
+                    + "\"cursor\":\"abc\"}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaKycAttemptsResponse response = client.listarTentativasKyc("sub-123");
+
+        assertThat(response.getAttempts()).hasSize(1);
+        AveniaKycAttempt attempt = response.getAttempts().get(0);
+        assertThat(attempt.getId()).isEqualTo("attempt-1");
+        assertThat(attempt.getStatus()).isEqualTo("COMPLETED");
+        assertThat(attempt.getResult()).isEqualTo("APPROVED");
+        assertThat(attempt.isRetryable()).isFalse();
+        assertThat(requestPath.get()).isEqualTo("/v2/kyc/attempts/?levelName=level-1&subAccountId=sub-123");
+    }
+
+    @Test
+    void listarTentativasKyc_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/kyc/attempts/", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.listarTentativasKyc("sub-123"))
+                .isInstanceOf(AveniaIntegrationException.class);
+    }
+
+    // Confirmado contra o sandbox real em 2026-09-23: GET /v2/kyc/attempts/{id}
+    @Test
+    void consultarTentativa_respostaComSucesso_retornaAttemptComSubAccountIdNaUri() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+        AtomicReference<String> requestPath = new AtomicReference<>();
+
+        server.createContext("/v2/kyc/attempts/attempt-1", exchange -> {
+            requestPath.set(exchange.getRequestURI().toString());
+            String responseBody = "{\"attempt\":{\"id\":\"attempt-1\",\"status\":\"PENDING\",\"retryable\":false}}";
+            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        AveniaKycAttempt attempt = client.consultarTentativa("attempt-1", "sub-123");
+
+        assertThat(attempt.getId()).isEqualTo("attempt-1");
+        assertThat(attempt.getStatus()).isEqualTo("PENDING");
+        assertThat(requestPath.get()).isEqualTo("/v2/kyc/attempts/attempt-1?subAccountId=sub-123");
+    }
+
+    @Test
+    void consultarTentativa_servidorRetornaErro_lancaAveniaIntegrationException() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/kyc/attempts/attempt-1", exchange -> {
+            byte[] bytes = "erro interno".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.consultarTentativa("attempt-1", "sub-123"))
+                .isInstanceOf(AveniaIntegrationException.class);
     }
 }

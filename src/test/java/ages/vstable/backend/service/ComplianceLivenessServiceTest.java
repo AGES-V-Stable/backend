@@ -26,20 +26,25 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ComplianceLivenessServiceTest {
 
+    private static final String SUB_ACCOUNT_ID = "sub-1";
+
     @Mock
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
     @Mock
     private AveniaClient aveniaClient;
 
+    @Mock
+    private AveniaSubAccountProvisioningService subAccountProvisioningService;
+
     private ComplianceLivenessService service;
 
     private ComplianceLivenessService service() {
-        return new ComplianceLivenessService(aveniaKycVerificationRepository, aveniaClient);
+        return new ComplianceLivenessService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
     }
 
     @Test
-    void iniciar_kycExistente_chamaAveniaERetornaCampos() {
+    void iniciar_kycExistente_provisionaSubcontaEChamaAveniaComEla() {
         service = service();
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
@@ -51,7 +56,8 @@ class ComplianceLivenessServiceTest {
         aveniaResponse.setValidateLivenessToken("token-789");
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.iniciarLiveness()).thenReturn(aveniaResponse);
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
         Optional<LivenessStartResponse> resultado = service.iniciar(kycId);
 
@@ -72,6 +78,7 @@ class ComplianceLivenessServiceTest {
 
         assertThat(resultado).isEmpty();
         verifyNoInteractions(aveniaClient);
+        verifyNoInteractions(subAccountProvisioningService);
     }
 
     @Test
@@ -81,17 +88,22 @@ class ComplianceLivenessServiceTest {
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.iniciarLiveness()).thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID))
+                .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.iniciar(kycId))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
     @Test
-    void consultarStatus_kycExistente_chamaAveniaERetornaReadyEStatus() {
+    void consultarStatus_kycExistente_chamaAveniaComSubcontaJaSalvaERetornaReadyEStatus() {
         service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId)
+                .aveniaSubAccountId(SUB_ACCOUNT_ID)
+                .build();
 
         AveniaDocumentStatusResponse aveniaResponse = new AveniaDocumentStatusResponse();
         AveniaDocumentStatusResponse.Document document = new AveniaDocumentStatusResponse.Document();
@@ -100,7 +112,7 @@ class ComplianceLivenessServiceTest {
         aveniaResponse.setDocument(document);
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.consultarStatusDocumento("liveness-123")).thenReturn(aveniaResponse);
+        when(aveniaClient.consultarStatusDocumento("liveness-123", SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
         Optional<LivenessStatusResponse> resultado = service.consultarStatus(kycId, "liveness-123");
 
@@ -125,10 +137,13 @@ class ComplianceLivenessServiceTest {
     void consultarStatus_falhaNaAvenia_propagaAveniaIntegrationException() {
         service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId)
+                .aveniaSubAccountId(SUB_ACCOUNT_ID)
+                .build();
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
-        when(aveniaClient.consultarStatusDocumento("liveness-123"))
+        when(aveniaClient.consultarStatusDocumento("liveness-123", SUB_ACCOUNT_ID))
                 .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.consultarStatus(kycId, "liveness-123"))

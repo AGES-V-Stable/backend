@@ -19,11 +19,13 @@ public class ComplianceLivenessService {
 
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaClient aveniaClient;
+    private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
     public Optional<LivenessStartResponse> iniciar(UUID kycVerificationId) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
-                    AveniaDocumentResponse aveniaResponse = aveniaClient.iniciarLiveness();
+                    String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
+                    AveniaDocumentResponse aveniaResponse = aveniaClient.iniciarLiveness(subAccountId);
 
                     LivenessStartResponse response = new LivenessStartResponse();
                     response.setId(aveniaResponse.getId());
@@ -37,7 +39,8 @@ public class ComplianceLivenessService {
     public Optional<LivenessStatusResponse> consultarStatus(UUID kycVerificationId, String livenessId) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
-                    AveniaDocumentStatusResponse aveniaResponse = aveniaClient.consultarStatusDocumento(livenessId);
+                    AveniaDocumentStatusResponse aveniaResponse =
+                            aveniaClient.consultarStatusDocumento(livenessId, kyc.getAveniaSubAccountId());
                     AveniaDocumentStatusResponse.Document document = aveniaResponse.getDocument();
 
                     LivenessStatusResponse response = new LivenessStatusResponse();

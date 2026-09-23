@@ -1,7 +1,9 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.compliance.KycSubmitResponse;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.AveniaIntegrationException;
+import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.ComplianceKycService;
@@ -61,17 +63,31 @@ class ComplianceKycControllerTest {
     }
 
     @Test
-    void post_kycValidoComDocumentoELivenessConcluidos_retorna200ComProcessId() throws Exception {
+    void post_kycValidoComDocumentoELivenessConcluidos_retorna200ComProcessIdEStatus() throws Exception {
         UUID kycId = UUID.randomUUID();
         KycSubmitResponse response = new KycSubmitResponse();
         response.setAveniaProcessId("kyc-process-123");
-        when(complianceKycService.finalizar(eq(kycId), any())).thenReturn(Optional.of(response));
+        response.setStatus(ComplianceStatus.UNDER_REVIEW);
+        when(complianceKycService.finalizar(eq(kycId), any(), any())).thenReturn(Optional.of(response));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validPayload()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.aveniaProcessId").value("kyc-process-123"));
+                .andExpect(jsonPath("$.aveniaProcessId").value("kyc-process-123"))
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+    }
+
+    @Test
+    void post_kycNaoPertenceAoUsuarioAutenticado_retorna403() throws Exception {
+        UUID kycId = UUID.randomUUID();
+        when(complianceKycService.finalizar(eq(kycId), any(), any()))
+                .thenThrow(new ForbiddenException("Esta verificação de KYC não pertence ao usuário autenticado"));
+
+        mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validPayload()))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -87,7 +103,7 @@ class ComplianceKycControllerTest {
     @Test
     void post_kycInexistente_retorna404() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceKycService.finalizar(eq(kycId), any())).thenReturn(Optional.empty());
+        when(complianceKycService.finalizar(eq(kycId), any(), any())).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -106,7 +122,7 @@ class ComplianceKycControllerTest {
     @Test
     void post_documentoOuLivenessAindaNaoConcluidos_retorna422() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceKycService.finalizar(eq(kycId), any()))
+        when(complianceKycService.finalizar(eq(kycId), any(), any()))
                 .thenThrow(new UnprocessableEntityException("Verificação de liveness ainda não foi concluída"));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)
@@ -119,7 +135,7 @@ class ComplianceKycControllerTest {
     @Test
     void post_falhaNaAvenia_retorna502() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceKycService.finalizar(eq(kycId), any()))
+        when(complianceKycService.finalizar(eq(kycId), any(), any()))
                 .thenThrow(new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)

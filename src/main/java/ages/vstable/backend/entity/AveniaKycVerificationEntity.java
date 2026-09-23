@@ -35,6 +35,13 @@ public class AveniaKycVerificationEntity {
     @Column(name = "liveness_id")
     private String livenessId;
 
+    // Subconta INDIVIDUAL na Avenia dedicada a esta verificação. Sem isso, todas as
+    // chamadas usam a conta principal da API key — e, assim que ela for aprovada uma
+    // vez, a Avenia rejeita qualquer submissão nova com "user already approved in
+    // level 1", mesmo para representantes diferentes. Ver AveniaSubAccountProvisioningService.
+    @Column(name = "avenia_sub_account_id")
+    private String aveniaSubAccountId;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", columnDefinition = "compliance_status_enum")

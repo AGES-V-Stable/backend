@@ -18,12 +18,14 @@ public class ComplianceDocumentoService {
 
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaClient aveniaClient;
+    private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
     public Optional<DocumentUploadStartResponse> iniciar(UUID kycVerificationId, DocumentUploadStartRequest request) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
-                    AveniaDocumentUploadResponse aveniaResponse =
-                            aveniaClient.iniciarDocumento(request.getDocumentType(), request.isDoubleSided());
+                    String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
+                    AveniaDocumentUploadResponse aveniaResponse = aveniaClient.iniciarDocumento(
+                            request.getDocumentType(), request.isDoubleSided(), subAccountId);
 
                     DocumentUploadStartResponse response = new DocumentUploadStartResponse();
                     response.setId(aveniaResponse.getId());
