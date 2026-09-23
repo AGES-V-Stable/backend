@@ -3,6 +3,7 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
+import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -86,6 +88,130 @@ class CompanyServiceTest {
                 .thenThrow(new DataIntegrityViolationException("unique constraint"));
         assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void findAll_returnsAllCompaniesMapped() {
+        CompanyEntity company = buildCompany(UUID.randomUUID(), ComplianceStatus.APPROVED, ComplianceStatus.PENDING);
+        when(companyRepository.findAll()).thenReturn(List.of(company));
+
+        List<CompanyResponse> result = companyService.findAll();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo(company.getId());
+        assertThat(result.get(0).getCnpj()).isEqualTo("11222333000181");
+        assertThat(result.get(0).getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(result.get(0).getStatusAml()).isEqualTo(ComplianceStatus.PENDING);
+    }
+
+    @Test
+    void findAll_noCompaniesRegistered_returnsEmptyList() {
+        when(companyRepository.findAll()).thenReturn(List.of());
+
+        assertThat(companyService.findAll()).isEmpty();
+    }
+
+    @Test
+    void findById_returnsCompany_whenExists() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
+
+        Optional<CompanyResponse> result = companyService.findById(id);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getId()).isEqualTo(id);
+    }
+
+    @Test
+    void findById_returnsEmpty_whenCompanyDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThat(companyService.findById(id)).isEmpty();
+    }
+
+    @Test
+    void update_appliesNewDataAndKeepsSameCnpj_withoutCheckingConflict() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        existing.setTradeName("Nome Antigo");
+        when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompanyUpdateRequest request = validUpdateRequest("11.222.333/0001-81");
+        request.setTradeName("Novo Nome");
+
+        CompanyResponse response = companyService.update(id, request);
+
+        assertThat(response.getTradeName()).isEqualTo("Novo Nome");
+        assertThat(response.getCnpj()).isEqualTo("11222333000181");
+        assertThat(response.getUpdatedAt()).isNotNull();
+        verify(companyRepository, never()).existsByCnpj(any());
+    }
+
+    @Test
+    void update_throwsNotFound_whenCompanyDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companyService.update(id, validUpdateRequest("11.222.333/0001-81")))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void update_throwsConflict_whenNewCnpjBelongsToAnotherCompany() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(companyRepository.existsByCnpj("12345678000195")).thenReturn(true);
+
+        CompanyUpdateRequest request = validUpdateRequest("12.345.678/0001-95");
+
+        assertThatThrownBy(() -> companyService.update(id, request))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void update_allowsCnpjChange_whenNewCnpjIsAvailable() {
+        UUID id = UUID.randomUUID();
+        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(companyRepository.existsByCnpj("12345678000195")).thenReturn(false);
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompanyResponse response = companyService.update(id, validUpdateRequest("12.345.678/0001-95"));
+
+        assertThat(response.getCnpj()).isEqualTo("12345678000195");
+    }
+
+    @Test
+    void deleteById_deletesCompany_whenExists() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.existsById(id)).thenReturn(true);
+
+        companyService.deleteById(id);
+
+        verify(companyRepository).deleteById(id);
+    }
+
+    @Test
+    void deleteById_throwsNotFound_whenCompanyDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.existsById(id)).thenReturn(false);
+
+        assertThatThrownBy(() -> companyService.deleteById(id))
+                .isInstanceOf(NotFoundException.class);
+
+        verify(companyRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void existsById_delegatesToRepository() {
+        UUID id = UUID.randomUUID();
+        when(companyRepository.existsById(id)).thenReturn(true);
+
+        assertThat(companyService.existsById(id)).isTrue();
     }
 
     @Test
@@ -188,6 +314,17 @@ class CompanyServiceTest {
         request.setZipCode("90000-000");
         request.setCity(" ");
         request.setState(" RS ");
+        return request;
+    }
+
+    private CompanyUpdateRequest validUpdateRequest(String cnpj) {
+        CompanyUpdateRequest request = new CompanyUpdateRequest();
+        request.setLegalName("Empresa Legada Ltda");
+        request.setCnpj(cnpj);
+        request.setCountry("Brasil");
+        request.setZipCode("90000-000");
+        request.setCity("Porto Alegre");
+        request.setState("RS");
         return request;
     }
 }
