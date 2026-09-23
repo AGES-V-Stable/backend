@@ -3,6 +3,8 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.user.UserResponse;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.entity.AdministratorEntity;
+import ages.vstable.backend.repository.AdministratorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -10,12 +12,14 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class UserService implements UserDetailsService {
 
     private final UserRepository userRepository;
+    private final AdministratorRepository administratorRepository;
 
     public UserEntity getByEmail(String email) throws UsernameNotFoundException {
         return userRepository.findByEmail(email)
@@ -24,8 +28,17 @@ public class UserService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        return userRepository.findByEmail(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        Optional<UserEntity> user = userRepository.findByEmail(username);
+        if (user.isPresent()) {
+            return user.get();
+        }
+
+        Optional<AdministratorEntity> admin = administratorRepository.findByEmail(username);
+        if (admin.isPresent()) {
+            return admin.get();
+        }
+
+        throw new UsernameNotFoundException("User not found");
     }
 
     public List<UserResponse> findAll() {

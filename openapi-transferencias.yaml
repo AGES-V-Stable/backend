@@ -1,0 +1,110 @@
+openapi: 3.0.3
+info:
+  title: Transferências API (V-Stable)
+  version: 1.0.0
+  description: API para consulta de histórico e detalhes de transferências para Clientes e Administradores.
+paths:
+  /api/transferencias:
+    get:
+      summary: Lista histórico de transferências do cliente logado
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: minAmount
+          schema:
+            type: number
+        - in: query
+          name: maxAmount
+          schema:
+            type: number
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [IMPORT, EXPORT]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 0
+        - in: query
+          name: size
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Lista paginada
+  /api/transferencias/{id}:
+    get:
+      summary: Retorna detalhes da transferência do cliente logado
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detalhes da transferência
+        '404':
+          description: Transferência não encontrada ou não pertence ao cliente (IDOR prevenida)
+  /api/admin/transferencias:
+    get:
+      summary: Lista histórico de todas as transferências (Apenas Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: companyId
+          schema:
+            type: string
+            format: uuid
+        # (Outros filtros iguais aos do cliente)
+      responses:
+        '200':
+          description: Lista paginada
+        '403':
+          description: Acesso negado (Usuário não é ADMIN)
+  /api/admin/transferencias/{id}:
+    get:
+      summary: Retorna detalhes da transferência (Apenas Admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detalhes da transferência
+        '403':
+          description: Acesso negado (Usuário não é ADMIN)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+

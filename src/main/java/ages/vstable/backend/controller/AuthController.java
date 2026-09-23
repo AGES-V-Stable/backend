@@ -29,20 +29,19 @@ public class AuthController {
   @PostMapping(path = "login")
   public ResponseEntity<?> getPermissions(@RequestBody AuthRequestDTO request) {
     try {
-      UserEntity user = userRepository
-          .findByEmail(request.getEmail())
-          .orElseThrow(() -> new BadCredentialsException("User not found"));
       UsernamePasswordAuthenticationToken userPassAuth = new UsernamePasswordAuthenticationToken(
               request.getEmail(),
               request.getPassword());
-      Authentication authenticate = authenticationManager.authenticate(
-          userPassAuth);
+      Authentication authenticate = authenticationManager.authenticate(userPassAuth);
 
       SecurityContextHolder.getContext().setAuthentication(authenticate);
+      
+      org.springframework.security.core.userdetails.UserDetails userDetails = 
+          (org.springframework.security.core.userdetails.UserDetails) authenticate.getPrincipal();
 
       return ResponseEntity
           .ok()
-          .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(user))
+          .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(userDetails))
           .build();
     } catch (LockedException le) {
       log.error(le.getMessage());
