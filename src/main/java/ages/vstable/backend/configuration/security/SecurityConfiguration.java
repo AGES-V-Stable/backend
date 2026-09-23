@@ -67,7 +67,7 @@ public class SecurityConfiguration {
                 // Set permissions on endpoints
                 .authorizeHttpRequests(authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()

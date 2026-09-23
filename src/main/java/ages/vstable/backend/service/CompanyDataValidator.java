@@ -24,7 +24,7 @@ class CompanyDataValidator {
     ) {
         String normalizedLegalName = required(legalName, "legalName", 255);
         if (normalizedLegalName.length() < 3) {
-            throw new IllegalArgumentException("legalName: tamanho deve ser entre 3 e 255");
+            throw new IllegalArgumentException("legalName: length must be between 3 and 255");
         }
 
         String normalizedCountry = required(country, "country", 100);
@@ -44,14 +44,14 @@ class CompanyDataValidator {
     private String normalizeCnpj(String cnpj) {
         String value = cnpj == null ? "" : cnpj.trim();
         if (!CNPJ_DIGITS_ONLY.matcher(value).matches() && !CNPJ_MASKED.matcher(value).matches()) {
-            throw new UnprocessableEntityException("CNPJ em formato inválido");
+            throw new UnprocessableEntityException("CNPJ has an invalid format");
         }
 
         String digits = value.replaceAll("\\D", "");
         if (digits.chars().distinct().count() == 1
                 || calculateDigit(digits.substring(0, 12), new int[]{5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}) != digits.charAt(12) - '0'
                 || calculateDigit(digits.substring(0, 13), new int[]{6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}) != digits.charAt(13) - '0') {
-            throw new UnprocessableEntityException("CNPJ em formato inválido");
+            throw new UnprocessableEntityException("CNPJ has an invalid format");
         }
         return digits;
     }
@@ -71,7 +71,7 @@ class CompanyDataValidator {
             return value;
         }
         if (!CEP_DIGITS_ONLY.matcher(value).matches() && !CEP_MASKED.matcher(value).matches()) {
-            throw new UnprocessableEntityException("CEP em formato inválido");
+            throw new UnprocessableEntityException("Zip code has an invalid format");
         }
         return value.replace("-", "");
     }
@@ -79,10 +79,10 @@ class CompanyDataValidator {
     private String required(String value, String field, int maxLength) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(field + ": não deve estar em branco");
+            throw new IllegalArgumentException(field + ": must not be blank");
         }
         if (normalized.length() > maxLength) {
-            throw new IllegalArgumentException(field + ": tamanho máximo é " + maxLength);
+            throw new IllegalArgumentException(field + ": maximum length is " + maxLength);
         }
         return normalized;
     }
@@ -93,7 +93,7 @@ class CompanyDataValidator {
         }
         String normalized = value.trim();
         if (normalized.length() > maxLength) {
-            throw new IllegalArgumentException(field + ": tamanho máximo é " + maxLength);
+            throw new IllegalArgumentException(field + ": maximum length is " + maxLength);
         }
         return normalized;
     }

@@ -10,6 +10,7 @@ import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,15 +41,20 @@ class OnboardingServiceTest {
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
     @Mock
+    private ComplianceDocumentRepository complianceDocumentRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     private OnboardingService onboardingService;
 
     @BeforeEach
     void setUp() {
+        CompanyService companyService = new CompanyService(
+                companyRepository, complianceDocumentRepository, new CompanyDataValidator());
         onboardingService = new OnboardingService(
                 userRepository, companyRepository, aveniaKycVerificationRepository,
-                new CompanyDataValidator(), passwordEncoder);
+                new CompanyDataValidator(), passwordEncoder, companyService);
     }
 
     @Test

@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("Dados inválidos");
+                .orElse("Invalid data");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("message", message));
@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleMalformedPayload(HttpMessageNotReadableException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Payload malformado"));
+                .body(Map.of("message", "Malformed payload"));
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
@@ -50,7 +50,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Parâmetro '" + ex.getName() + "' em formato inválido"));
+                .body(Map.of("message", "Parameter '" + ex.getName() + "' has an invalid format"));
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -78,6 +78,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Erro interno"));
+                .body(Map.of("message", "Internal error"));
     }
 }
