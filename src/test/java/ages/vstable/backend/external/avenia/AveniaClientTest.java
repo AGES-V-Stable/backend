@@ -258,13 +258,12 @@ class AveniaClientTest {
 
         assertThat(response.getId()).isEqualTo("kyc-process-123");
         assertThat(requestBody.get()).contains("\"fullName\":\"Maria da Silva\"");
-        assertThat(requestBody.get()).contains("\"countryOfTaxId\":\"BR\"");
+        assertThat(requestBody.get()).contains("\"countryOfTaxId\":\"BRA\"");
         assertThat(requestBody.get()).contains("\"taxIdNumber\":\"52998224725\"");
         assertThat(requestBody.get()).contains("\"uploadedDocumentId\":\"doc-123\"");
         assertThat(requestBody.get()).contains("\"uploadedSelfieId\":\"liveness-123\"");
-        // Confirmado contra o sandbox real: a Avenia exige código ISO no "country" e
-        // rejeita "Brasil" por extenso com "InvalidFieldError: country is invalid".
-        assertThat(requestBody.get()).contains("\"country\":\"BR\"");
+        // O KYC Level 1 exige código ISO 3166-1 alpha-3 para países.
+        assertThat(requestBody.get()).contains("\"country\":\"BRA\"");
     }
 
     // Confirmado contra o sandbox real (400 "InvalidFieldError: country is invalid" ao
@@ -297,6 +296,31 @@ class AveniaClientTest {
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
         assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123"))
-                .isInstanceOf(AveniaIntegrationException.class);
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessageContaining("HTTP 500");
+    }
+
+    @Test
+    void finalizarKyc_aveniaRetornaMensagemDeValidacao_propagaSomenteStatusEMensagem() throws Exception {
+        KeyPair keyPair = gerarKeyPair();
+
+        server.createContext("/v2/kyc/new-level-1/api", exchange -> {
+            byte[] bytes = "{\"message\":\"country is invalid\",\"sensitiveData\":\"nao-propagar\"}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(400, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+
+        AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
+
+        assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123"))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessage("Falha ao finalizar KYC na Avenia: HTTP 400 - country is invalid")
+                .hasMessageNotContaining("sensitiveData")
+                .hasMessageNotContaining("nao-propagar");
     }
 }

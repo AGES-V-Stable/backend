@@ -9,12 +9,14 @@ import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.security.PrivateKey;
 import java.time.Instant;
@@ -26,13 +28,13 @@ public class AveniaClient {
     private static final String DOCUMENTS_URI = "/v2/documents/";
     private static final String LIVENESS_BODY = "{\"documentType\":\"SELFIE-FROM-LIVENESS\"}";
     private static final String KYC_LEVEL_1_URI = "/v2/kyc/new-level-1/api";
-    private static final String COUNTRY_OF_TAX_ID_BRAZIL = "BR";
+    private static final String COUNTRY_OF_TAX_ID_BRAZIL = "BRA";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    // A Avenia exige código ISO 3166-1 alpha-2 no campo "country" (confirmado contra o
-    // sandbox: "Brasil" é rejeitado com "InvalidFieldError: country is invalid"), mas o
-    // resto do sistema guarda/usa o nome do país por extenso (ver CompanyDataValidator).
-    private static final Map<String, String> COUNTRY_ISO_CODES = Map.of("brasil", "BR");
+    // O endpoint de KYC Level 1 exige ISO 3166-1 alpha-3 nos campos de país. O
+    // restante do sistema guarda o nome por extenso (ver CompanyDataValidator),
+    // então normalizamos "Brasil" para "BRA" somente ao montar o payload externo.
+    private static final Map<String, String> COUNTRY_ISO_CODES = Map.of("brasil", "BRA");
 
     private final RestClient restClient;
     private final AveniaRequestSigner requestSigner;
@@ -143,9 +145,38 @@ public class AveniaClient {
                     .body(body)
                     .retrieve()
                     .body(AveniaKycResponse.class);
+        } catch (RestClientResponseException e) {
+            throw new AveniaIntegrationException(
+                    "Falha ao finalizar KYC na Avenia: " + safeErrorDetail(e), e);
         } catch (RestClientException e) {
             throw new AveniaIntegrationException("Falha ao finalizar KYC na Avenia", e);
         }
+    }
+
+    /**
+     * Expõe somente o código HTTP e a mensagem de validação retornada pela Avenia.
+     * O corpo completo não é propagado porque pode conter dados de KYC.
+     */
+    private String safeErrorDetail(RestClientResponseException exception) {
+        String status = "HTTP " + exception.getStatusCode().value();
+        String body = exception.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return status;
+        }
+
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(body);
+            for (String field : new String[]{"message", "error", "detail", "errorMessage"}) {
+                JsonNode value = root.get(field);
+                if (value != null && value.isTextual() && !value.asText().isBlank()) {
+                    return status + " - " + value.asText();
+                }
+            }
+        } catch (JsonProcessingException ignored) {
+            // Respostas não JSON ficam reduzidas ao status HTTP para não vazar conteúdo.
+        }
+
+        return status;
     }
 
     private String toIsoCountryCode(String country) {
