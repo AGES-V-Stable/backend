@@ -11,9 +11,12 @@ import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import ages.vstable.backend.repository.specification.BeneficiarySpecification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 @Service
@@ -48,7 +51,6 @@ public class BeneficiaryService {
                 .accountHolderName(request.getLegalName())
                 .identificationDocument(request.getIdentificationDocument())
                 .country(request.getCountry())
-                .address(request.getAddress())
                 .nickname(request.getNickname())
                 .internalDescription(request.getInternalDescription())
                 .receivingMethod(request.getReceivingMethod())
@@ -66,29 +68,48 @@ public class BeneficiaryService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
+    public Page<BeneficiaryResponse> findBeneficiaries(UUID companyId, String search, String document, String country,
+            Pageable pageable) {
+        return beneficiaryRepository.findAll(
+                BeneficiarySpecification.filterBy(companyId, search, document, country),
+                pageable).map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public BeneficiaryResponse findById(UUID id) {
+        return beneficiaryRepository.findById(id)
+                .map(this::toResponse)
+                .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
+    }
+
     private BeneficiaryResponse toResponse(BeneficiaryEntity entity) {
         BeneficiaryResponse response = new BeneficiaryResponse();
 
         response.setId(entity.getId());
         response.setCompanyId(entity.getCompanyId());
-        response.setBeneficiaryType(entity.getBeneficiaryType());
-        response.setLegalName(entity.getAccountHolderName());
-        response.setIdentificationDocument(entity.getIdentificationDocument());
-        response.setCountry(entity.getCountry());
-        response.setAddress(entity.getAddress());
         response.setNickname(entity.getNickname());
         response.setInternalDescription(entity.getInternalDescription());
         response.setReceivingMethod(entity.getReceivingMethod());
-        response.setBankName(entity.getBankName());
-        response.setSwiftBic(entity.getSwiftBic());
+        response.setIdentificationDocument(entity.getIdentificationDocument());
         response.setBankCode(entity.getBankCode());
         response.setBranchNumber(entity.getBranchNumber());
         response.setAccountNumber(entity.getAccountNumber());
-        response.setCurrency(entity.getCurrency());
-        response.setWalletAddress(entity.getWalletAddress());
+        response.setCountry(entity.getCountry());
         response.setBlockchainNetwork(entity.getBlockchainNetwork());
+        response.setWalletAddress(entity.getWalletAddress());
         response.setWalletMemo(entity.getWalletMemo());
         response.setCreatedAt(entity.getCreatedAt());
+
+        response.setBeneficiaryType(entity.getBeneficiaryType());
+        response.setLegalName(entity.getAccountHolderName());
+        response.setBankName(entity.getBankName());
+        response.setSwiftBic(entity.getSwiftBic());
+        response.setCurrency(entity.getCurrency());
+
+        response.setPixKey(entity.getPixKey()); //* */
+        response.setAccountHolderName(entity.getAccountHolderName()); //* */
+        response.setUpdatedAt(entity.getUpdatedAt()); //* */
 
         return response;
     }
