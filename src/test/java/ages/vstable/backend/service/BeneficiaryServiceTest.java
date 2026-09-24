@@ -82,7 +82,7 @@ class BeneficiaryServiceTest {
 
         assertThatThrownBy(() -> beneficiaryService.findById(id))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessage("Beneficiário não encontrado.");
+                .hasMessage("Beneficiário não encontrado");
     }
 
     private BeneficiaryEntity buildBeneficiary(UUID id, UUID companyId) {

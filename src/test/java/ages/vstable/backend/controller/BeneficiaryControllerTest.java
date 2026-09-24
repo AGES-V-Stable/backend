@@ -104,11 +104,11 @@ class BeneficiaryControllerTest {
     void findById_returnsNotFound_whenMissing() throws Exception {
         UUID id = UUID.randomUUID();
 
-        when(beneficiaryService.findById(id)).thenThrow(new NotFoundException("Beneficiário não encontrado."));
+        when(beneficiaryService.findById(id)).thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(get("/v1/beneficiaries/{id}", id))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("Beneficiário não encontrado."));
+                .andExpect(jsonPath("$.message").value("Beneficiário não encontrado"));
     }
 
     @Test
