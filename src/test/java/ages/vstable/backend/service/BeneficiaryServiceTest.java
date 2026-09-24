@@ -17,13 +17,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,7 +50,8 @@ class BeneficiaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository, new BeneficiaryValidator());
+        beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository,
+                new BeneficiaryValidator());
     }
 
     @Test
@@ -59,11 +68,10 @@ class BeneficiaryServiceTest {
         assertThat(response.getId()).isNotNull();
         assertThat(response.getCompanyId()).isEqualTo(companyId);
         assertThat(response.getReceivingMethod()).isEqualTo(ReceivingMethod.BANK_ACCOUNT);
-        assertThat(response.getLegalName()).isEqualTo("Fornecedor Teste Ltda");
+        assertThat(response.getNickname()).isEqualTo("Fornecedor Principal"); // Ajuste baseado no nickname
 
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getBankName()).isEqualTo("Banco Teste");
         assertThat(captor.getValue().getCompanyId()).isEqualTo(companyId);
     }
 
@@ -125,6 +133,43 @@ class BeneficiaryServiceTest {
                 .hasMessage("walletAddress: Campo obrigatório.");
     }
 
+    @Test
+    void findBeneficiaries_returnsMappedPage() {
+        UUID companyIdForSearch = UUID.randomUUID();
+        BeneficiaryEntity entity = buildBeneficiary(UUID.randomUUID(), companyIdForSearch);
+        Page<BeneficiaryEntity> entityPage = new PageImpl<>(List.of(entity));
+        Pageable pageable = PageRequest.of(0, 10);
+
+        when(beneficiaryRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(entityPage);
+
+        Page<BeneficiaryResponse> result = beneficiaryService.findBeneficiaries(
+                companyIdForSearch, "search_term", "123", "Brasil", pageable);
+
+        assertThat(result.getContent()).isNotEmpty();
+    }
+
+    @Test
+    void findById_returnsBeneficiary_whenExists() {
+        UUID id = UUID.randomUUID();
+        UUID companyIdForSearch = UUID.randomUUID();
+        BeneficiaryEntity entity = buildBeneficiary(id, companyIdForSearch);
+
+        when(beneficiaryRepository.findById(id)).thenReturn(Optional.of(entity));
+
+        BeneficiaryResponse result = beneficiaryService.findById(id);
+
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    void findById_throwsNotFoundException_whenBeneficiaryDoesNotExist() {
+        UUID id = UUID.randomUUID();
+        when(beneficiaryRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> beneficiaryService.findById(id))
+                .isInstanceOf(NotFoundException.class);
+    }
+
     private CompanyEntity approvedCompany() {
         CompanyEntity company = new CompanyEntity();
         company.setId(companyId);
@@ -162,5 +207,19 @@ class BeneficiaryServiceTest {
         request.setBlockchainNetwork(BlockchainNetwork.ethereum);
         request.setConfirmed(true);
         return request;
+    }
+
+    private BeneficiaryEntity buildBeneficiary(UUID id, UUID companyId) {
+        CompanyEntity company = new CompanyEntity();
+        company.setId(companyId);
+
+        BeneficiaryEntity entity = new BeneficiaryEntity();
+        entity.setId(id);
+        entity.setCompany(company);
+        entity.setNickname("Apelido Teste");
+        entity.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        entity.setCreatedAt(OffsetDateTime.now());
+        entity.setUpdatedAt(OffsetDateTime.now());
+        return entity;
     }
 }

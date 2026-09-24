@@ -25,7 +25,7 @@ public class BeneficiaryEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "company_id", nullable = false)
+    @Column(name = "company_id", nullable = false, insertable = false, updatable = false)
     private UUID companyId;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "company_id", nullable = false)

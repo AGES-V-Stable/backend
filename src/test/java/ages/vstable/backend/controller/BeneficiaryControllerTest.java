@@ -15,14 +15,23 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,7 +54,10 @@ class BeneficiaryControllerTest {
 
     @BeforeEach
     void setUp() {
+        // Configuramos o PageableResolver para que o mockMvc entenda @RequestParam
+        // Pageable
         mockMvc = standaloneSetup(beneficiaryController)
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -58,8 +70,8 @@ class BeneficiaryControllerTest {
         when(beneficiaryService.create(eq(companyId), any())).thenReturn(response);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(response.getId().toString()));
     }
@@ -72,8 +84,8 @@ class BeneficiaryControllerTest {
         when(beneficiaryService.create(eq(companyId), any())).thenReturn(response);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(response.getId().toString()));
     }
@@ -84,8 +96,8 @@ class BeneficiaryControllerTest {
         request.setIdentificationDocument(null);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -95,8 +107,8 @@ class BeneficiaryControllerTest {
                 .thenThrow(new NotFoundException("Company not found"));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Company not found"));
     }
@@ -107,8 +119,8 @@ class BeneficiaryControllerTest {
                 .thenThrow(new ForbiddenException("Empresa não verificada"));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Empresa não verificada"));
     }
@@ -119,8 +131,8 @@ class BeneficiaryControllerTest {
                 .thenThrow(new IllegalArgumentException("bankName: Campo obrigatório."));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("bankName: Campo obrigatório."));
     }
@@ -131,8 +143,8 @@ class BeneficiaryControllerTest {
                 .thenThrow(new IllegalArgumentException("walletAddress: Campo obrigatório."));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validWalletRequest())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validWalletRequest())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("walletAddress: Campo obrigatório."));
     }
@@ -143,9 +155,58 @@ class BeneficiaryControllerTest {
         request.setConfirmed(false);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void findAll_returnsPaginatedList() throws Exception {
+        UUID beneficiaryId = UUID.randomUUID();
+        UUID searchCompanyId = UUID.randomUUID();
+        BeneficiaryResponse response = buildResponse(beneficiaryId, searchCompanyId);
+        Page<BeneficiaryResponse> pageResponse = new PageImpl<>(List.of(response), PageRequest.of(0, 10), 1);
+
+        when(beneficiaryService.findBeneficiaries(
+                eq(searchCompanyId), eq("test"), any(), eq("Brasil"), any(Pageable.class))).thenReturn(pageResponse);
+
+        mockMvc.perform(get("/v1/beneficiaries")
+                .param("companyId", searchCompanyId.toString())
+                .param("search", "test")
+                .param("country", "Brasil")
+                .param("page", "0")
+                .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].companyId").value(searchCompanyId.toString()))
+                .andExpect(jsonPath("$.content[0].nickname").value("João Silva"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void findById_returnsBeneficiary() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID searchCompanyId = UUID.randomUUID();
+        BeneficiaryResponse response = buildResponse(id, searchCompanyId);
+
+        when(beneficiaryService.findById(id)).thenReturn(response);
+
+        mockMvc.perform(get("/v1/beneficiaries/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.companyId").value(searchCompanyId.toString()))
+                .andExpect(jsonPath("$.nickname").value("João Silva"));
+    }
+
+    @Test
+    void findById_returnsNotFound_whenMissing() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        when(beneficiaryService.findById(id)).thenThrow(new NotFoundException("Beneficiário não encontrado."));
+
+        mockMvc.perform(get("/v1/beneficiaries/{id}", id))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Beneficiário não encontrado."));
     }
 
     private BeneficiaryCreateRequest validBankAccountRequest() {
@@ -187,6 +248,16 @@ class BeneficiaryControllerTest {
         response.setBeneficiaryType("LEGAL_ENTITY");
         response.setLegalName("Fornecedor Teste Ltda");
         response.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        return response;
+    }
+
+    private BeneficiaryResponse buildResponse(UUID id, UUID searchCompanyId) {
+        BeneficiaryResponse response = new BeneficiaryResponse();
+        response.setId(id);
+        response.setCompanyId(searchCompanyId);
+        response.setNickname("João Silva");
+        response.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        response.setCreatedAt(OffsetDateTime.now());
         return response;
     }
 }

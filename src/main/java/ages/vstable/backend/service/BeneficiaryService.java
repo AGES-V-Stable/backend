@@ -103,13 +103,12 @@ public class BeneficiaryService {
 
         response.setBeneficiaryType(entity.getBeneficiaryType());
         response.setLegalName(entity.getAccountHolderName());
-        response.setBankName(entity.getBankName());
         response.setSwiftBic(entity.getSwiftBic());
         response.setCurrency(entity.getCurrency());
 
-        response.setPixKey(entity.getPixKey()); //* */
-        response.setAccountHolderName(entity.getAccountHolderName()); //* */
-        response.setUpdatedAt(entity.getUpdatedAt()); //* */
+        response.setPixKey(entity.getPixKey()); // * */
+        response.setAccountHolderName(entity.getAccountHolderName()); // * */
+        response.setUpdatedAt(entity.getUpdatedAt()); // * */
 
         return response;
     }
