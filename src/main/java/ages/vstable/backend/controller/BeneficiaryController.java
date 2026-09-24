@@ -44,7 +44,7 @@ public class BeneficiaryController {
         return ResponseEntity.ok(beneficiaryService.findBeneficiaries(companyId, search, document, country, pageable));
     }
 
-    @GetMapping("/{id")
+    @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Consulta os detalhes de um beneficiário específico por ID (Apenas Administradores)")
     @ApiResponses({
