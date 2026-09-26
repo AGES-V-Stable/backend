@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 public class AveniaProperties {
 
     private String baseUrl;
+    private String apiKey;
+    private String privateKey;
     private String email;
     private String password;
     private String webhookUrl;

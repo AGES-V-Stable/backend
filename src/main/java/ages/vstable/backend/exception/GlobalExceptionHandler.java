@@ -74,6 +74,26 @@ public class GlobalExceptionHandler {
                 .body(Map.of("message", ex.getMessage()));
     }
 
+    @ExceptionHandler(AveniaIntegrationException.class)
+    public ResponseEntity<Map<String, String>> handleAveniaIntegration(AveniaIntegrationException ex) {
+        HttpStatus status;
+        if (ex.isRetryable()) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+        } else if (ex.getProviderStatus() != null
+                && (ex.getProviderStatus() == 400
+                || ex.getProviderStatus() == 404
+                || ex.getProviderStatus() == 409
+                || ex.getProviderStatus() == 422)) {
+            status = HttpStatus.UNPROCESSABLE_CONTENT;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+
+        return ResponseEntity
+                .status(status)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
         return ResponseEntity
