@@ -5,9 +5,9 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -183,7 +183,7 @@ public class AveniaClient implements AveniaGateway {
     private String serialize(Object body) {
         try {
             return objectMapper.writeValueAsString(body);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw AveniaIntegrationException.configuration("Could not serialize the Avenia request", ex);
         }
     }
@@ -219,7 +219,7 @@ public class AveniaClient implements AveniaGateway {
                     return status + " - " + value.asText();
                 }
             }
-        } catch (JsonProcessingException ignored) {
+        } catch (JacksonException ignored) {
             // Non-JSON provider bodies are reduced to the HTTP status.
         }
         return status;

@@ -5,13 +5,13 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.security.KeyPair;
@@ -52,7 +52,7 @@ class AveniaClientTest {
         client = new AveniaClient(
                 properties,
                 new AveniaRequestSigner(),
-                new ObjectMapper().findAndRegisterModules(),
+                new ObjectMapper(),
                 builder);
     }
 
