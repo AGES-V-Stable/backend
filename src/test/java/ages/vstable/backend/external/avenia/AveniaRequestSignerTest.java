@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
 import java.security.Signature;
 import java.util.Base64;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AveniaRequestSignerTest {
@@ -28,6 +30,29 @@ class AveniaRequestSignerTest {
         verifier.update((timestamp + method + uri + body).getBytes(StandardCharsets.UTF_8));
 
         assertTrue(verifier.verify(Base64.getDecoder().decode(encodedSignature)));
+    }
+
+    @Test
+    void rejectsPrivateKeyThatCannotSignWithRsa() {
+        PrivateKey invalidKey = new PrivateKey() {
+            @Override
+            public String getAlgorithm() {
+                return "INVALID";
+            }
+
+            @Override
+            public String getFormat() {
+                return "RAW";
+            }
+
+            @Override
+            public byte[] getEncoded() {
+                return new byte[]{1};
+            }
+        };
+
+        assertThrows(IllegalStateException.class,
+                () -> new AveniaRequestSigner().sign("1", "GET", "/resource", "", invalidKey));
     }
 
     static KeyPair rsaKeyPair() throws Exception {
