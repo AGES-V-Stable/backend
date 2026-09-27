@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,16 +17,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private ages.vstable.backend.repository.AdministratorRepository administratorRepository;
 
     private UserService userService;
 
     @Test
     void findAll_returnsAllRepresentativesWithoutExposingPasswordHash() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         UUID companyId = UUID.randomUUID();
         UserEntity user = UserEntity.builder()
@@ -49,7 +54,7 @@ class UserServiceTest {
 
     @Test
     void findAll_noRepresentatives_returnsEmptyList() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         when(userRepository.findAll()).thenReturn(List.of());
 

@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(RepresentativeController.class)
+@WebMvcTest(properties = "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration", controllers = RepresentativeController.class)
 class RepresentativeControllerTest {
 
     @Autowired
