@@ -14,7 +14,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class ComplianceDocumentoService {
+public class ComplianceDocumentService {
 
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaClient aveniaClient;

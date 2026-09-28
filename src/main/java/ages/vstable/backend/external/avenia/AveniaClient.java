@@ -157,7 +157,7 @@ public class AveniaClient {
                     .retrieve()
                     .body(responseType);
         } catch (RestClientResponseException e) {
-            throw new AveniaIntegrationException(errorMessage + ": " + safeErrorDetail(e), e);
+            throw new AveniaIntegrationException(errorMessage + ": " + safeErrorDetail(e), e, e.getStatusCode().value());
         } catch (RestClientException e) {
             throw new AveniaIntegrationException(errorMessage, e);
         }
@@ -176,7 +176,7 @@ public class AveniaClient {
                     .retrieve()
                     .body(responseType);
         } catch (RestClientResponseException e) {
-            throw new AveniaIntegrationException(errorMessage + ": " + safeErrorDetail(e), e);
+            throw new AveniaIntegrationException(errorMessage + ": " + safeErrorDetail(e), e, e.getStatusCode().value());
         } catch (RestClientException e) {
             throw new AveniaIntegrationException(errorMessage, e);
         }

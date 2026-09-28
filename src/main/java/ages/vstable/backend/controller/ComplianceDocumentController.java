@@ -3,7 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.compliance.DocumentSubmitRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartResponse;
-import ages.vstable.backend.service.ComplianceDocumentoService;
+import ages.vstable.backend.service.ComplianceDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -20,9 +20,9 @@ import java.util.UUID;
 @RequestMapping("/v1/onboarding")
 @RequiredArgsConstructor
 @Tag(name = "Onboarding - Compliance/Documento")
-public class ComplianceDocumentoController {
+public class ComplianceDocumentController {
 
-    private final ComplianceDocumentoService complianceDocumentoService;
+    private final ComplianceDocumentService complianceDocumentoService;
 
     @PostMapping("/{kycVerificationId}/compliance/documento")
     @Operation(summary = "Inicia o upload do documento de identidade na Avenia e retorna as URLs de upload")

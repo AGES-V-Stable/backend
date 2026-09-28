@@ -3,7 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartResponse;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.repository.UserRepository;
-import ages.vstable.backend.service.ComplianceDocumentoService;
+import ages.vstable.backend.service.ComplianceDocumentService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -25,8 +25,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(ComplianceDocumentoController.class)
-class ComplianceDocumentoControllerTest {
+@WebMvcTest(ComplianceDocumentController.class)
+class ComplianceDocumentControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -34,7 +34,7 @@ class ComplianceDocumentoControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoBean
-    private ComplianceDocumentoService complianceDocumentoService;
+    private ComplianceDocumentService complianceDocumentoService;
 
     @MockitoBean
     private SecurityContextRepository securityContextRepository;

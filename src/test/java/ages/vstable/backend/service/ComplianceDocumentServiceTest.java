@@ -23,7 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class ComplianceDocumentoServiceTest {
+class ComplianceDocumentServiceTest {
 
     private static final String SUB_ACCOUNT_ID = "sub-1";
 
@@ -36,8 +36,8 @@ class ComplianceDocumentoServiceTest {
     @Mock
     private AveniaSubAccountProvisioningService subAccountProvisioningService;
 
-    private ComplianceDocumentoService service() {
-        return new ComplianceDocumentoService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
+    private ComplianceDocumentService service() {
+        return new ComplianceDocumentService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
     }
 
     private DocumentUploadStartRequest requestPara(String documentType, boolean doubleSided) {
@@ -49,7 +49,7 @@ class ComplianceDocumentoServiceTest {
 
     @Test
     void iniciar_kycExistente_provisionaSubcontaEChamaAveniaComEla() {
-        ComplianceDocumentoService service = service();
+        ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
 
@@ -72,7 +72,7 @@ class ComplianceDocumentoServiceTest {
 
     @Test
     void iniciar_kycInexistente_retornaVazioSemChamarAvenia() {
-        ComplianceDocumentoService service = service();
+        ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
@@ -85,7 +85,7 @@ class ComplianceDocumentoServiceTest {
 
     @Test
     void iniciar_falhaNaAvenia_propagaAveniaIntegrationException() {
-        ComplianceDocumentoService service = service();
+        ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
 
@@ -100,7 +100,7 @@ class ComplianceDocumentoServiceTest {
 
     @Test
     void concluir_kycExistente_salvaDocumentoIdERetornaTrue() {
-        ComplianceDocumentoService service = service();
+        ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
 
@@ -120,7 +120,7 @@ class ComplianceDocumentoServiceTest {
 
     @Test
     void concluir_kycInexistente_retornaFalseSemSalvar() {
-        ComplianceDocumentoService service = service();
+        ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
         DocumentSubmitRequest request = new DocumentSubmitRequest();
         request.setDocumentoId("doc-123");

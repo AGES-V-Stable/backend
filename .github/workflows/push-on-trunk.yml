@@ -40,7 +40,7 @@ jobs:
           # Test-only values: the Spring context binds these at startup, so they must
           # resolve to *something*. No real credential is ever used here (tests run
           # against ephemeral testcontainers and never call Avenia/BlindPay).
-          JWT_SECRET: test-only-jwt-secret-do-not-use-in-production
+          JWT_SECRET: test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes
           AVENIA_EMAIL: test@example.com
           AVENIA_PASSWORD: test-only-not-a-real-credential
           AVENIA_WEBHOOK_URL: https://example.com/webhooks/avenia

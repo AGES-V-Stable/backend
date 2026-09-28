@@ -327,7 +327,12 @@ class AveniaClientTest {
         AveniaClient client = new AveniaClient(baseUrl, "minha-api-key", pemFor(keyPair), new AveniaRequestSigner());
 
         assertThatThrownBy(() -> client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", null))
-                .isInstanceOf(AveniaIntegrationException.class);
+                .isInstanceOf(AveniaIntegrationException.class)
+                .satisfies(e -> {
+                    AveniaIntegrationException integrationException = (AveniaIntegrationException) e;
+                    assertThat(integrationException.getUpstreamStatus()).isEqualTo(500);
+                    assertThat(integrationException.isUpstreamClientError()).isFalse();
+                });
     }
 
     @Test
@@ -376,7 +381,12 @@ class AveniaClientTest {
                 .isInstanceOf(AveniaIntegrationException.class)
                 .hasMessageContaining("HTTP 400 - country is invalid")
                 .hasMessageNotContaining("sensitiveData")
-                .hasMessageNotContaining("nao-propagar");
+                .hasMessageNotContaining("nao-propagar")
+                .satisfies(e -> {
+                    AveniaIntegrationException integrationException = (AveniaIntegrationException) e;
+                    assertThat(integrationException.getUpstreamStatus()).isEqualTo(400);
+                    assertThat(integrationException.isUpstreamClientError()).isTrue();
+                });
     }
 
     // Confirmado contra o sandbox real em 2026-09-23: POST /v2/account/sub-accounts

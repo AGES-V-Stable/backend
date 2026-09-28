@@ -62,4 +62,35 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("message", "Parameter 'id' has an invalid format");
     }
+
+    @Test
+    void handleAveniaIntegration_upstream4xx_returns422WithMessage() {
+        AveniaIntegrationException ex = new AveniaIntegrationException(
+                "Falha ao finalizar KYC na Avenia: HTTP 400 - cannot repeat taxId across multiple users",
+                new RuntimeException(), 400);
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(response.getBody()).containsEntry("message", ex.getMessage());
+    }
+
+    @Test
+    void handleAveniaIntegration_upstream5xx_returns502() {
+        AveniaIntegrationException ex = new AveniaIntegrationException("Falha ao finalizar KYC na Avenia", new RuntimeException(), 503);
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void handleAveniaIntegration_noUpstreamStatus_returns502() {
+        AveniaIntegrationException ex = new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException());
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).containsEntry("message", ex.getMessage());
+    }
 }

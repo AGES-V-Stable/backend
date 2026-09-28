@@ -83,8 +83,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AveniaIntegrationException.class)
     public ResponseEntity<Map<String, String>> handleAveniaIntegration(AveniaIntegrationException ex) {
+        // A Avenia respondeu com um 4xx: é uma rejeição de negócio da nossa submissão
+        // (ex.: "cannot repeat taxId across multiple users"), não uma falha de
+        // infraestrutura — devolvemos 422 para que o cliente possa mostrar a mensagem e o
+        // usuário corrigir o que está causando a rejeição. Sem status de origem (erro de
+        // rede) ou 5xx da Avenia, é uma falha real de comunicação: mantemos 502.
+        HttpStatus status = ex.isUpstreamClientError() ? HttpStatus.UNPROCESSABLE_CONTENT : HttpStatus.BAD_GATEWAY;
         return ResponseEntity
-                .status(HttpStatus.BAD_GATEWAY)
+                .status(status)
                 .body(Map.of("message", ex.getMessage()));
     }
 
