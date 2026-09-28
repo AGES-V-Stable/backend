@@ -5,11 +5,11 @@ import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.OffsetDateTime;
@@ -27,16 +27,16 @@ class RepresentativeControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @Mock
     private UserService userService;
 
-    @MockBean
+    @Mock
     private SecurityContextRepository securityContextRepository;
 
-    @MockBean
+    @Mock
     private JwtTokenUtils jwtTokenUtils;
 
-    @MockBean
+    @Mock
     private UserRepository userRepository;
 
     private UserResponse representative(UUID id, UUID companyId) {

@@ -13,7 +13,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.mockito.Mock;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.HashMap;
@@ -32,16 +32,16 @@ class OnboardingControllerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @MockBean
+    @Mock
     private OnboardingService onboardingService;
 
-    @MockBean
+    @Mock
     private SecurityContextRepository securityContextRepository;
 
-    @MockBean
+    @Mock
     private JwtTokenUtils jwtTokenUtils;
 
-    @MockBean
+    @Mock
     private UserRepository userRepository;
 
     private String validPayload() throws Exception {
