@@ -35,10 +35,10 @@ public class BeneficiaryController {
     })
 
     public ResponseEntity<Page<BeneficiaryResponse>> findAll(
-            @Parameter(description = "ID da empresa associada") @RequestParam(required = false) UUID companyId,
-            @Parameter(description = "Busca parcial pelo apelido (nickname)") @RequestParam(required = false) String search,
-            @Parameter(description = "Busca exata por documento (CNPJ/CPF)") @RequestParam(required = false) String document,
-            @Parameter(description = "Busca exata pelo país de destino") @RequestParam(required = false) String country,
+            @Parameter(description = "ID da empresa associada") @RequestParam(name = "companyId", required = false) UUID companyId,
+            @Parameter(description = "Busca parcial pelo apelido (nickname)") @RequestParam(name = "search", required = false) String search,
+            @Parameter(description = "Busca exata por documento (CNPJ/CPF)") @RequestParam(name = "document", required = false) String document,
+            @Parameter(description = "Busca exata pelo país de destino") @RequestParam(name = "country", required = false) String country,
             @Parameter(description = "Parâmetros de ordenação e paginação (size, page, sort)") Pageable pageable) {
 
         return ResponseEntity.ok(beneficiaryService.findBeneficiaries(companyId, search, document, country, pageable));
@@ -55,7 +55,7 @@ public class BeneficiaryController {
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado no sistema")
     })
     public ResponseEntity<BeneficiaryResponse> findById(
-            @Parameter(description = "UUID único do beneficiário") @PathVariable UUID id) {
+            @Parameter(description = "UUID único do beneficiário") @PathVariable("id") UUID id) {
 
         return ResponseEntity.ok(beneficiaryService.findById(id));
     }
