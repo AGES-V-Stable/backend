@@ -93,7 +93,7 @@ class OnboardingControllerTest {
     @Test
     void post_emailOrCnpjAlreadyRegistered_returns409() throws Exception {
         when(onboardingService.performOnboarding(any()))
-                .thenThrow(new ConflictException("E-mail já cadastrado"));
+                .thenThrow(new ConflictException("Email already registered"));
 
         mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -104,13 +104,13 @@ class OnboardingControllerTest {
     @Test
     void post_passwordAndConfirmationMismatch_returns422() throws Exception {
         when(onboardingService.performOnboarding(any()))
-                .thenThrow(new UnprocessableEntityException("Senha e confirmação não coincidem"));
+                .thenThrow(new UnprocessableEntityException("Password and confirmation do not match"));
 
         mockMvc.perform(post("/v1/onboarding")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validPayload()))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.message").value("Senha e confirmação não coincidem"));
+                .andExpect(jsonPath("$.message").value("Password and confirmation do not match"));
     }
 
     @Test

@@ -37,3 +37,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # Test-only values: the Spring context binds these at startup, so they must
+          # resolve to *something*. No real credential is ever used here (tests run
+          # against ephemeral testcontainers and never call Avenia/BlindPay).
+          JWT_SECRET: test-only-jwt-secret-do-not-use-in-production
+          AVENIA_EMAIL: test@example.com
+          AVENIA_PASSWORD: test-only-not-a-real-credential
+          AVENIA_WEBHOOK_URL: https://example.com/webhooks/avenia
+          BLINDPAY_BASE_URL: https://example.com
+          BLINDPAY_API_KEY: test-only-not-a-real-credential
+          BLINDPAY_INSTANCE_ID: in_000000000000
+          BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
