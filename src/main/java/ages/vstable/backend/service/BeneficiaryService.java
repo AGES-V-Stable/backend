@@ -51,6 +51,7 @@ public class BeneficiaryService {
                 .accountHolderName(request.getLegalName())
                 .identificationDocument(request.getIdentificationDocument())
                 .country(request.getCountry())
+                .address(request.getAddress())
                 .nickname(request.getNickname())
                 .internalDescription(request.getInternalDescription())
                 .receivingMethod(request.getReceivingMethod())
@@ -96,6 +97,7 @@ public class BeneficiaryService {
         response.setBranchNumber(entity.getBranchNumber());
         response.setAccountNumber(entity.getAccountNumber());
         response.setCountry(entity.getCountry());
+        response.setAddress(entity.getAddress());
         response.setBlockchainNetwork(entity.getBlockchainNetwork());
         response.setWalletAddress(entity.getWalletAddress());
         response.setWalletMemo(entity.getWalletMemo());

@@ -62,4 +62,57 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("message", "Parameter 'id' has an invalid format");
     }
+
+    @Test
+    void handleConflict_returns409() {
+        ages.vstable.backend.exception.ConflictException ex = new ages.vstable.backend.exception.ConflictException(
+                "Conflict");
+        ResponseEntity<Map<String, String>> response = handler.handleConflict(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).containsEntry("message", "Conflict");
+    }
+
+    @Test
+    void handleNotFound_returns404() {
+        ages.vstable.backend.exception.NotFoundException ex = new ages.vstable.backend.exception.NotFoundException(
+                "Not found");
+        ResponseEntity<Map<String, String>> response = handler.handleNotFound(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).containsEntry("message", "Not found");
+    }
+
+    @Test
+    void handleForbidden_returns403() {
+        ages.vstable.backend.exception.ForbiddenException ex = new ages.vstable.backend.exception.ForbiddenException(
+                "Forbidden");
+        ResponseEntity<Map<String, String>> response = handler.handleForbidden(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).containsEntry("message", "Forbidden");
+    }
+
+    @Test
+    void handleUnprocessableEntity_returns422() {
+        ages.vstable.backend.exception.UnprocessableEntityException ex = new ages.vstable.backend.exception.UnprocessableEntityException(
+                "Unprocessable");
+        ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(response.getBody()).containsEntry("message", "Unprocessable");
+    }
+
+    @Test
+    void handleAccessDenied_returns403() {
+        org.springframework.security.access.AccessDeniedException ex = new org.springframework.security.access.AccessDeniedException(
+                "Denied");
+        ResponseEntity<Map<String, String>> response = handler.handleAccessDenied(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).containsEntry("message", "Access denied");
+    }
+
+    @Test
+    void handleUnexpected_returns500() {
+        Exception ex = new Exception("Error");
+        ResponseEntity<Map<String, String>> response = handler.handleUnexpected(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).containsEntry("message", "Internal error");
+    }
 }

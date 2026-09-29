@@ -76,6 +76,57 @@ class BeneficiaryServiceTest {
     }
 
     @Test
+    void findById_mapsAllFieldsToResponse() {
+        UUID id = UUID.randomUUID();
+        UUID companyIdForSearch = UUID.randomUUID();
+        BeneficiaryEntity entity = new BeneficiaryEntity();
+        entity.setId(id);
+        entity.setCompanyId(companyIdForSearch);
+        entity.setNickname("Nick");
+        entity.setInternalDescription("Desc");
+        entity.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        entity.setIdentificationDocument("12345");
+        entity.setBankCode("341");
+        entity.setBranchNumber("0001");
+        entity.setAccountNumber("123-4");
+        entity.setCountry("BR");
+        entity.setAddress("Rua A");
+        entity.setBlockchainNetwork(BlockchainNetwork.ethereum);
+        entity.setWalletAddress("0x00");
+        entity.setWalletMemo("memo");
+        entity.setBeneficiaryType("LEGAL_ENTITY");
+        entity.setAccountHolderName("Holder");
+        entity.setSwiftBic("SWIFT");
+        entity.setCurrency("BRL");
+        entity.setPixKey("pix@key");
+        entity.setCreatedAt(OffsetDateTime.now());
+        entity.setUpdatedAt(OffsetDateTime.now());
+
+        when(beneficiaryRepository.findById(id)).thenReturn(Optional.of(entity));
+
+        BeneficiaryResponse response = beneficiaryService.findById(id);
+
+        assertThat(response.getNickname()).isEqualTo("Nick");
+        assertThat(response.getInternalDescription()).isEqualTo("Desc");
+        assertThat(response.getBankCode()).isEqualTo("341");
+        assertThat(response.getBranchNumber()).isEqualTo("0001");
+        assertThat(response.getAccountNumber()).isEqualTo("123-4");
+        assertThat(response.getCountry()).isEqualTo("BR");
+        assertThat(response.getAddress()).isEqualTo("Rua A");
+        assertThat(response.getBlockchainNetwork()).isEqualTo(BlockchainNetwork.ethereum);
+        assertThat(response.getWalletAddress()).isEqualTo("0x00");
+        assertThat(response.getWalletMemo()).isEqualTo("memo");
+        assertThat(response.getBeneficiaryType()).isEqualTo("LEGAL_ENTITY");
+        assertThat(response.getLegalName()).isEqualTo("Holder");
+        assertThat(response.getAccountHolderName()).isEqualTo("Holder");
+        assertThat(response.getSwiftBic()).isEqualTo("SWIFT");
+        assertThat(response.getCurrency()).isEqualTo("BRL");
+        assertThat(response.getPixKey()).isEqualTo("pix@key");
+        assertThat(response.getCreatedAt()).isNotNull();
+        assertThat(response.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
     void create_validWalletRequest_savesAndReturnsBeneficiary() {
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
         when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> {
@@ -221,5 +272,74 @@ class BeneficiaryServiceTest {
         entity.setCreatedAt(OffsetDateTime.now());
         entity.setUpdatedAt(OffsetDateTime.now());
         return entity;
+    }
+
+    @Test
+    void findBeneficiaries_executesSpecificationWithoutErrors() {
+        UUID companyIdForSearch = UUID.randomUUID();
+        String search = "Teste";
+        String document = "123456";
+        String country = "Brasil";
+        Pageable pageable = PageRequest.of(0, 10);
+
+        BeneficiaryEntity entity = buildBeneficiary(UUID.randomUUID(), companyIdForSearch);
+        Page<BeneficiaryEntity> entityPage = new PageImpl<>(List.of(entity));
+
+        ArgumentCaptor<Specification<BeneficiaryEntity>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+
+        when(beneficiaryRepository.findAll(specCaptor.capture(), eq(pageable))).thenReturn(entityPage);
+
+        Page<BeneficiaryResponse> result = beneficiaryService.findBeneficiaries(
+                companyIdForSearch, search, document, country, pageable);
+
+        assertThat(result.getContent()).isNotEmpty();
+
+        Specification<BeneficiaryEntity> capturedSpec = specCaptor.getValue();
+        assertThat(capturedSpec).isNotNull();
+
+        jakarta.persistence.criteria.Root root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class);
+        jakarta.persistence.criteria.CriteriaQuery query = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.CriteriaQuery.class);
+        jakarta.persistence.criteria.CriteriaBuilder cb = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+
+        jakarta.persistence.criteria.Path companyPath = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.Path.class);
+        org.mockito.Mockito.when(root.get("company")).thenReturn(companyPath);
+
+        jakarta.persistence.criteria.Path genericPath = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.Path.class);
+        org.mockito.Mockito.when(companyPath.get("id")).thenReturn(genericPath);
+        org.mockito.Mockito.when(root.get("nickname")).thenReturn(genericPath);
+        org.mockito.Mockito.when(root.get("identificationDocument")).thenReturn(genericPath);
+        org.mockito.Mockito.when(root.get("country")).thenReturn(genericPath);
+
+        org.mockito.Mockito.when(cb.lower(org.mockito.ArgumentMatchers.any())).thenReturn(genericPath);
+
+        capturedSpec.toPredicate(root, query, cb);
+    }
+
+    @Test
+    void findBeneficiaries_executesSpecificationWithNullFilters() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<BeneficiaryEntity> entityPage = new PageImpl<>(List.of());
+
+        ArgumentCaptor<Specification<BeneficiaryEntity>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+
+        when(beneficiaryRepository.findAll(specCaptor.capture(), eq(pageable))).thenReturn(entityPage);
+
+        beneficiaryService.findBeneficiaries(null, null, null, null, pageable);
+
+        Specification<BeneficiaryEntity> capturedSpec = specCaptor.getValue();
+
+        jakarta.persistence.criteria.Root root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class);
+        jakarta.persistence.criteria.CriteriaQuery query = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.CriteriaQuery.class);
+        jakarta.persistence.criteria.CriteriaBuilder cb = org.mockito.Mockito
+                .mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+
+        capturedSpec.toPredicate(root, query, cb);
+
+        assertThat(capturedSpec).isNotNull();
     }
 }

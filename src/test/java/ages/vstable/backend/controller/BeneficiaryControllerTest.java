@@ -22,7 +22,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -55,8 +54,6 @@ class BeneficiaryControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Configuramos o PageableResolver para que o mockMvc entenda @RequestParam
-        // Pageable
         mockMvc = standaloneSetup(beneficiaryController)
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -174,6 +171,7 @@ class BeneficiaryControllerTest {
         mockMvc.perform(get("/v1/beneficiaries")
                 .param("companyId", searchCompanyId.toString())
                 .param("search", "test")
+                .param("document", "123")
                 .param("country", "Brasil")
                 .param("page", "0")
                 .param("size", "10"))

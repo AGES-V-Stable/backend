@@ -75,6 +75,9 @@ public class BeneficiaryEntity {
     @Column(name = "country", length = 100)
     private String country;
 
+    @Column(name = "address", length = 255)
+    private String address;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "blockchain_network", columnDefinition = "blockchain_network_enum")
