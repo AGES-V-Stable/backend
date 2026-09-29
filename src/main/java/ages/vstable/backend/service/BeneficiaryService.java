@@ -37,16 +37,16 @@ public class BeneficiaryService {
 
         beneficiaryValidator.validate(request);
 
-        BeneficiaryEntity beneficiary = buildBeneficiary(companyId, request);
+        BeneficiaryEntity beneficiary = buildBeneficiary(company, request);
 
         return toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
     }
 
-    private BeneficiaryEntity buildBeneficiary(UUID companyId, BeneficiaryCreateRequest request) {
+    private BeneficiaryEntity buildBeneficiary(CompanyEntity company, BeneficiaryCreateRequest request) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         return BeneficiaryEntity.builder()
-                .companyId(companyId)
+                .company(company)
                 .beneficiaryType(request.getBeneficiaryType())
                 .accountHolderName(request.getLegalName())
                 .identificationDocument(request.getIdentificationDocument())
@@ -88,7 +88,7 @@ public class BeneficiaryService {
         BeneficiaryResponse response = new BeneficiaryResponse();
 
         response.setId(entity.getId());
-        response.setCompanyId(entity.getCompanyId());
+        response.setCompanyId(entity.getCompany().getId());
         response.setNickname(entity.getNickname());
         response.setInternalDescription(entity.getInternalDescription());
         response.setReceivingMethod(entity.getReceivingMethod());
