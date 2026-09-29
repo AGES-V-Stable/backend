@@ -122,10 +122,10 @@ class ComplianceDocumentControllerTest {
     }
 
     @Test
-    void post_falhaNaAvenia_retorna502() throws Exception {
+    void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID progressoId = UUID.randomUUID();
         when(complianceDocumentoService.iniciar(eq(progressoId), any()))
-                .thenThrow(new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         String body = payload(new HashMap<>() {{
             put("documentType", "ID");
@@ -135,7 +135,7 @@ class ComplianceDocumentControllerTest {
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/documento", progressoId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadGateway())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.message").value("Falha ao comunicar com a Avenia"));
     }
 

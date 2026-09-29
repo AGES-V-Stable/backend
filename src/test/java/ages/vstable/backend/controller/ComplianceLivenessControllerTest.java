@@ -86,13 +86,13 @@ class ComplianceLivenessControllerTest {
     }
 
     @Test
-    void post_falhaNaAvenia_retorna502() throws Exception {
+    void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID kycId = UUID.randomUUID();
         when(complianceLivenessService.iniciar(kycId))
-                .thenThrow(new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/liveness", kycId))
-                .andExpect(status().isBadGateway())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.message").value("Falha ao comunicar com a Avenia"));
     }
 
@@ -133,14 +133,14 @@ class ComplianceLivenessControllerTest {
     }
 
     @Test
-    void get_falhaNaAvenia_retorna502() throws Exception {
+    void get_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID kycId = UUID.randomUUID();
         when(complianceLivenessService.consultarStatus(kycId, "liveness-123"))
-                .thenThrow(new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(get("/v1/onboarding/{id}/compliance/liveness/status", kycId)
                         .param("livenessId", "liveness-123"))
-                .andExpect(status().isBadGateway());
+                .andExpect(status().isServiceUnavailable());
     }
 
     // PUT - conclui liveness

@@ -6,28 +6,26 @@ import java.security.PrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 
-public final class PemPrivateKeyLoader {
+final class PemPrivateKeyLoader {
 
     private PemPrivateKeyLoader() {
     }
 
-    public static PrivateKey load(String pem) {
+    static PrivateKey load(String pem) {
         if (pem == null || pem.isBlank()) {
-            throw new IllegalStateException("Chave privada da Avenia não configurada (app.avenia.private-key)");
+            throw new IllegalArgumentException("AVENIA_PRIVATE_KEY is not configured");
         }
 
-        String sanitized = pem
+        String normalized = pem.replace("\\n", "\n")
                 .replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
-                .replace("\\n", "")
                 .replaceAll("\\s", "");
 
         try {
-            byte[] decoded = Base64.getDecoder().decode(sanitized);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            return keyFactory.generatePrivate(new PKCS8EncodedKeySpec(decoded));
-        } catch (GeneralSecurityException | IllegalArgumentException e) {
-            throw new IllegalStateException("Chave privada da Avenia inválida", e);
+            byte[] encoded = Base64.getDecoder().decode(normalized);
+            return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(encoded));
+        } catch (IllegalArgumentException | GeneralSecurityException ex) {
+            throw new IllegalArgumentException("AVENIA_PRIVATE_KEY must be a valid PKCS#8 RSA private key", ex);
         }
     }
 }

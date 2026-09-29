@@ -9,17 +9,16 @@ import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import java.util.HashMap;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -44,18 +43,20 @@ class OnboardingControllerTest {
     private UserRepository userRepository;
 
     private String validPayload() throws Exception {
-        return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("fullName", "Joao da Silva");
-            put("email", "joao@example.com");
-            put("password", "Senha@123");
-            put("confirmPassword", "Senha@123");
-            put("legalName", "Empresa Exemplo Ltda");
-            put("cnpj", "11.222.333/0001-81");
-            put("country", "Brasil");
-            put("zipCode", "90000-000");
-            put("city", "Porto Alegre");
-            put("state", "RS");
-        }});
+        return objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("fullName", "Joao da Silva");
+                put("email", "joao@example.com");
+                put("password", "Senha@123");
+                put("confirmPassword", "Senha@123");
+                put("legalName", "Empresa Exemplo Ltda");
+                put("cnpj", "11.222.333/0001-81");
+                put("country", "Brasil");
+                put("zipCode", "90000-000");
+                put("city", "Porto Alegre");
+                put("state", "RS");
+            }
+        });
     }
 
     @Test
@@ -68,8 +69,8 @@ class OnboardingControllerTest {
         when(onboardingService.performOnboarding(any())).thenReturn(response);
 
         mockMvc.perform(post("/v1/onboarding")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(response.getUserId().toString()))
                 .andExpect(jsonPath("$.companyId").value(response.getCompanyId().toString()))
@@ -80,13 +81,15 @@ class OnboardingControllerTest {
 
     @Test
     void post_missingRequiredFields_returns400() throws Exception {
-        String payloadWithoutFields = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("email", "joao@example.com");
-        }});
+        String payloadWithoutFields = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("email", "joao@example.com");
+            }
+        });
 
         mockMvc.perform(post("/v1/onboarding")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payloadWithoutFields))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payloadWithoutFields))
                 .andExpect(status().isBadRequest());
     }
 
@@ -96,8 +99,8 @@ class OnboardingControllerTest {
                 .thenThrow(new ConflictException("Email already registered"));
 
         mockMvc.perform(post("/v1/onboarding")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isConflict());
     }
 
@@ -107,8 +110,8 @@ class OnboardingControllerTest {
                 .thenThrow(new UnprocessableEntityException("Password and confirmation do not match"));
 
         mockMvc.perform(post("/v1/onboarding")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.message").value("Password and confirmation do not match"));
     }
@@ -119,8 +122,8 @@ class OnboardingControllerTest {
                 .thenThrow(new RuntimeException("timeout simulado"));
 
         mockMvc.perform(post("/v1/onboarding")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isInternalServerError());
     }
 }

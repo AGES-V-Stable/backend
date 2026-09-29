@@ -92,7 +92,7 @@ class ComplianceDocumentServiceTest {
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarDocumento("PASSPORT", false, SUB_ACCOUNT_ID))
-                .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.iniciar(kycId, requestPara("PASSPORT", false)))
                 .isInstanceOf(AveniaIntegrationException.class);

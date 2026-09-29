@@ -90,7 +90,7 @@ class ComplianceLivenessServiceTest {
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID))
-                .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.iniciar(kycId))
                 .isInstanceOf(AveniaIntegrationException.class);
@@ -144,7 +144,7 @@ class ComplianceLivenessServiceTest {
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(aveniaClient.consultarStatusDocumento("liveness-123", SUB_ACCOUNT_ID))
-                .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.consultarStatus(kycId, "liveness-123"))
                 .isInstanceOf(AveniaIntegrationException.class);

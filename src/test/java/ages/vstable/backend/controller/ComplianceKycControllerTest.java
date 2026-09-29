@@ -133,15 +133,15 @@ class ComplianceKycControllerTest {
     }
 
     @Test
-    void post_falhaNaAvenia_retorna502() throws Exception {
+    void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID kycId = UUID.randomUUID();
         when(complianceKycService.finalizar(eq(kycId), any(), any()))
-                .thenThrow(new AveniaIntegrationException("Falha ao comunicar com a Avenia", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/kyc", kycId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validPayload()))
-                .andExpect(status().isBadGateway())
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.message").value("Falha ao comunicar com a Avenia"));
     }
 }

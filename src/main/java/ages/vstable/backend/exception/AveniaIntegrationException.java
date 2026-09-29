@@ -1,30 +1,29 @@
 package ages.vstable.backend.exception;
 
+import lombok.Getter;
+
+@Getter
 public class AveniaIntegrationException extends RuntimeException {
 
-    private final Integer upstreamStatus;
+    private final Integer providerStatus;
+    private final boolean retryable;
 
-    public AveniaIntegrationException(String message, Throwable cause) {
-        this(message, cause, null);
-    }
-
-    /**
-     * @param upstreamStatus código HTTP devolvido pela Avenia, quando a falha veio de uma
-     *                       resposta de erro dela (não de um problema de rede/infraestrutura).
-     *                       Usado por {@link GlobalExceptionHandler} para diferenciar uma
-     *                       rejeição de negócio (ex.: CPF já usado) de uma falha real de
-     *                       comunicação com a Avenia.
-     */
-    public AveniaIntegrationException(String message, Throwable cause, Integer upstreamStatus) {
+    public AveniaIntegrationException(String message, Integer providerStatus, boolean retryable, Throwable cause) {
         super(message, cause);
-        this.upstreamStatus = upstreamStatus;
+        this.providerStatus = providerStatus;
+        this.retryable = retryable;
     }
 
-    public Integer getUpstreamStatus() {
-        return upstreamStatus;
+    public static AveniaIntegrationException configuration(String message, Throwable cause) {
+        return new AveniaIntegrationException(message, null, false, cause);
     }
 
-    public boolean isUpstreamClientError() {
-        return upstreamStatus != null && upstreamStatus >= 400 && upstreamStatus < 500;
+    public static AveniaIntegrationException response(String message, int providerStatus, Throwable cause) {
+        return new AveniaIntegrationException(message, providerStatus,
+                providerStatus == 429 || providerStatus >= 500, cause);
+    }
+
+    public static AveniaIntegrationException communication(String message, Throwable cause) {
+        return new AveniaIntegrationException(message, null, true, cause);
     }
 }

@@ -200,7 +200,7 @@ class ComplianceKycServiceTest {
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         stubSemTentativaAnterior(userId);
         when(aveniaClient.finalizarKyc(any(), eq("doc-123"), eq("liveness-123"), eq(SUB_ACCOUNT_ID)))
-                .thenThrow(new AveniaIntegrationException("falha", new RuntimeException()));
+                .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
         assertThatThrownBy(() -> service.finalizar(kycId, userId, kycRequest()))
                 .isInstanceOf(AveniaIntegrationException.class);

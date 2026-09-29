@@ -3,6 +3,8 @@ package ages.vstable.backend.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -83,15 +85,29 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AveniaIntegrationException.class)
     public ResponseEntity<Map<String, String>> handleAveniaIntegration(AveniaIntegrationException ex) {
-        // A Avenia respondeu com um 4xx: é uma rejeição de negócio da nossa submissão
-        // (ex.: "cannot repeat taxId across multiple users"), não uma falha de
-        // infraestrutura — devolvemos 422 para que o cliente possa mostrar a mensagem e o
-        // usuário corrigir o que está causando a rejeição. Sem status de origem (erro de
-        // rede) ou 5xx da Avenia, é uma falha real de comunicação: mantemos 502.
-        HttpStatus status = ex.isUpstreamClientError() ? HttpStatus.UNPROCESSABLE_CONTENT : HttpStatus.BAD_GATEWAY;
+        HttpStatus status;
+        if (ex.isRetryable()) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+        } else if (ex.getProviderStatus() != null
+                && (ex.getProviderStatus() == 400
+                        || ex.getProviderStatus() == 404
+                        || ex.getProviderStatus() == 409
+                        || ex.getProviderStatus() == 422)) {
+            status = HttpStatus.UNPROCESSABLE_CONTENT;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+
         return ResponseEntity
                 .status(status)
                 .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler({ AccessDeniedException.class, AuthorizationDeniedException.class })
+    public ResponseEntity<Map<String, String>> handleAccessDenied(Exception ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(Map.of("message", "Access denied"));
     }
 
     @ExceptionHandler(Exception.class)

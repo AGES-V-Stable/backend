@@ -44,21 +44,21 @@ class PemPrivateKeyLoaderTest {
     }
 
     @Test
-    void load_pemVazio_lancaIllegalStateException() {
+    void load_pemVazio_lancaIllegalArgumentException() {
         assertThatThrownBy(() -> PemPrivateKeyLoader.load(""))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void load_pemNulo_lancaIllegalStateException() {
+    void load_pemNulo_lancaIllegalArgumentException() {
         assertThatThrownBy(() -> PemPrivateKeyLoader.load(null))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void load_pemInvalido_lancaIllegalStateException() {
+    void load_pemInvalido_lancaIllegalArgumentException() {
         assertThatThrownBy(() -> PemPrivateKeyLoader.load(
                 "-----BEGIN PRIVATE KEY-----\nnao-e-base64-valido!!!\n-----END PRIVATE KEY-----"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

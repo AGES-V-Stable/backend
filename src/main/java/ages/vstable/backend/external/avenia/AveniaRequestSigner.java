@@ -12,15 +12,15 @@ import java.util.Base64;
 public class AveniaRequestSigner {
 
     public String sign(String timestamp, String method, String uri, String body, PrivateKey privateKey) {
-        String stringToSign = timestamp + method + uri + (body == null ? "" : body);
+        String payload = timestamp + method + uri + (body == null ? "" : body);
 
         try {
             Signature signature = Signature.getInstance("SHA256withRSA");
             signature.initSign(privateKey);
-            signature.update(stringToSign.getBytes(StandardCharsets.UTF_8));
+            signature.update(payload.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(signature.sign());
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("Falha ao assinar requisição para a Avenia", e);
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("Could not sign the Avenia request", ex);
         }
     }
 }
