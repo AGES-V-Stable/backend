@@ -6,6 +6,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -65,8 +66,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void handleConflict_returns409() {
-        ages.vstable.backend.exception.ConflictException ex = new ages.vstable.backend.exception.ConflictException(
-                "Conflict");
+        ConflictException ex = new ConflictException("Conflict");
         ResponseEntity<Map<String, String>> response = handler.handleConflict(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).containsEntry("message", "Conflict");
@@ -74,8 +74,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void handleNotFound_returns404() {
-        ages.vstable.backend.exception.NotFoundException ex = new ages.vstable.backend.exception.NotFoundException(
-                "Not found");
+        NotFoundException ex = new NotFoundException("Not found");
         ResponseEntity<Map<String, String>> response = handler.handleNotFound(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody()).containsEntry("message", "Not found");
@@ -83,8 +82,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void handleForbidden_returns403() {
-        ages.vstable.backend.exception.ForbiddenException ex = new ages.vstable.backend.exception.ForbiddenException(
-                "Forbidden");
+        ForbiddenException ex = new ForbiddenException("Forbidden");
         ResponseEntity<Map<String, String>> response = handler.handleForbidden(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).containsEntry("message", "Forbidden");
@@ -92,8 +90,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void handleUnprocessableEntity_returns422() {
-        ages.vstable.backend.exception.UnprocessableEntityException ex = new ages.vstable.backend.exception.UnprocessableEntityException(
-                "Unprocessable");
+        UnprocessableEntityException ex = new UnprocessableEntityException("Unprocessable");
         ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(response.getBody()).containsEntry("message", "Unprocessable");
@@ -101,11 +98,54 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void handleAccessDenied_returns403() {
-        org.springframework.security.access.AccessDeniedException ex = new org.springframework.security.access.AccessDeniedException(
-                "Denied");
+        AccessDeniedException ex = new AccessDeniedException("Denied");
         ResponseEntity<Map<String, String>> response = handler.handleAccessDenied(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).containsEntry("message", "Access denied");
+    }
+
+    @Test
+    void handleAveniaIntegration_providerRejectsAsBusinessRule_returns422WithMessage() {
+        AveniaIntegrationException ex = AveniaIntegrationException.response(
+                "Falha ao finalizar KYC na Avenia: HTTP 400 - cannot repeat taxId across multiple users",
+                400, new RuntimeException());
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(response.getBody()).containsEntry("message", ex.getMessage());
+    }
+
+    @Test
+    void handleAveniaIntegration_providerStatusNotWhitelistedAndNotRetryable_returns502() {
+        AveniaIntegrationException ex = AveniaIntegrationException.response(
+                "Falha ao finalizar KYC na Avenia", 403, new RuntimeException());
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+    }
+
+    @Test
+    void handleAveniaIntegration_retryableFailure_returns503() {
+        AveniaIntegrationException ex = AveniaIntegrationException.communication(
+                "Falha ao comunicar com a Avenia", new RuntimeException());
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).containsEntry("message", ex.getMessage());
+    }
+
+    @Test
+    void handleAveniaIntegration_configurationError_returns502() {
+        AveniaIntegrationException ex = AveniaIntegrationException.configuration(
+                "AVENIA_API_KEY is not configured", null);
+
+        ResponseEntity<Map<String, String>> response = handler.handleAveniaIntegration(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(response.getBody()).containsEntry("message", ex.getMessage());
     }
 
     @Test
