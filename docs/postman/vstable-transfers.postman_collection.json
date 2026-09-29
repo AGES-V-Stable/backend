@@ -1,0 +1,381 @@
+{
+  "info": {
+    "name": "V-Stable — Transfers (Avenia)",
+    "description": "Cotação e criação de transferências (POST /v1/transfers/quote, POST /v1/transfers), mais as requisições de setup necessárias (onboarding/login, cadastro de beneficiário) para gerar o token e o beneficiaryId usados pelos requests de transferência. Ver docs/transfers-quote-and-creation.md.\n\nIMPORTANTE: desde a adoção da subconta por usuário, os dois endpoints de transferência resolvem sozinhos (a partir do usuário autenticado no token) a subconta Avenia a ser usada — não há campo de subaccount no corpo da requisição. Essa resolução exige que o usuário tenha uma verificação de KYC associada; o Onboarding (abaixo) já cria essa verificação como PENDING, então basta rodar Onboarding antes de qualquer request de transferência. Se a subconta ainda não tiver sido provisionada, a primeira chamada de quote/create provisiona ela na Avenia antes de seguir — pode demorar um pouco mais que as chamadas seguintes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "accessToken", "value": "" },
+    { "key": "companyId", "value": "" },
+    { "key": "beneficiaryId", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "Onboarding (cria empresa + usuário + token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "url": { "raw": "{{baseUrl}}/v1/onboarding", "host": ["{{baseUrl}}"], "path": ["v1", "onboarding"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Maria da Silva\",\n  \"email\": \"maria+{{$timestamp}}@empresa.com\",\n  \"password\": \"Senha@123\",\n  \"confirmPassword\": \"Senha@123\",\n  \"legalName\": \"Empresa Postman Ltda\",\n  \"cnpj\": \"11222333000181\",\n  \"country\": \"Brasil\",\n  \"zipCode\": \"90000000\",\n  \"city\": \"Porto Alegre\",\n  \"state\": \"RS\"\n}"
+            },
+            "description": "Cria empresa + representante numa chamada só e já devolve um accessToken pronto pra usar — mais rápido que Login pra começar do zero. Não precisa de CNPJ real; troque se der 409 (CNPJ/e-mail já cadastrado). Também cria a verificação de KYC (PENDING) desse usuário — é ela que os endpoints de transferência usam pra resolver a subconta Avenia; sem rodar isso (ou Login com um usuário que já passou por onboarding), quote/create respondem 422."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "    pm.collectionVariables.set('companyId', body.companyId);",
+                  "    console.log('accessToken e companyId salvos nas variáveis da collection');",
+                  "}",
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (usuário já existente)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "auth": { "type": "noauth" },
+            "url": { "raw": "{{baseUrl}}/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["v1", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"maria@empresa.com\",\n  \"password\": \"Senha@123\"\n}"
+            },
+            "description": "Alternativa ao Onboarding quando o usuário já existe. O token vem no header Authorization da resposta, não no corpo — o script abaixo extrai e salva."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const authHeader = pm.response.headers.get('Authorization') || '';",
+                  "    pm.collectionVariables.set('accessToken', authHeader.replace(/^Bearer\\s+/i, ''));",
+                  "    console.log('accessToken salvo a partir do header Authorization');",
+                  "}",
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar beneficiário PIX",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/v1/companies/{{companyId}}/beneficiaries",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "companies", "{{companyId}}", "beneficiaries"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Fornecedor Ltda\",\n  \"identificationDocument\": \"11222333000199\",\n  \"country\": \"Brasil\",\n  \"address\": \"Rua Teste, 100\",\n  \"receivingMethod\": \"PIX_KEY\",\n  \"nickname\": \"Fornecedor PIX\",\n  \"currency\": \"BRL\",\n  \"confirmed\": true\n}"
+            },
+            "description": "receivingMethod=PIX_KEY é o caminho mais simples pra testar POST /transfers, já que a resolução de moeda de destino cai direto pra BRL. IMPORTANTE (ver docs/debt-beneficiary-not-registered-on-avenia.md): esse cadastro NÃO registra o beneficiário na Avenia, então avenia_id fica nulo — uma chamada real a POST /transfers vai falhar na Avenia por falta desse id, a menos que ele seja preenchido manualmente no banco para teste."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('beneficiaryId', body.id);",
+                  "    console.log('beneficiaryId salvo: ' + body.id);",
+                  "}",
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar beneficiário conta bancária internacional",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/v1/companies/{{companyId}}/beneficiaries",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "companies", "{{companyId}}", "beneficiaries"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Supplier Inc\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"BANK_ACCOUNT\",\n  \"nickname\": \"Supplier USD\",\n  \"bankName\": \"Bank of Test\",\n  \"swiftBic\": \"TESTUS33\",\n  \"bankCode\": \"021000021\",\n  \"branchNumber\": \"001\",\n  \"accountNumber\": \"1234567890\",\n  \"currency\": \"USD\",\n  \"confirmed\": true\n}"
+            },
+            "description": "receivingMethod=BANK_ACCOUNT — TransferService.create hoje sempre monta o ticket como SWIFT (fallback genérico, não confirmado contra o sandbox real)."
+          }
+        },
+        {
+          "name": "Criar beneficiário carteira cripto",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/v1/companies/{{companyId}}/beneficiaries",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "companies", "{{companyId}}", "beneficiaries"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Crypto Supplier\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"CRYPTO_WALLET\",\n  \"nickname\": \"Wallet Polygon\",\n  \"walletAddress\": \"0x0000000000000000000000000000000000dEaD\",\n  \"blockchainNetwork\": \"polygon\",\n  \"currency\": \"USDC\",\n  \"confirmed\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Cotação (POST /transfers/quote)",
+      "item": [
+        {
+          "name": "Quote por valor de origem (SOURCE)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+            },
+            "description": "Espera 200 com { source, destination, exchangeRate, fee, total } — sem quoteToken/quoteId no corpo. A subconta Avenia usada na cotação é resolvida no servidor a partir do usuário do token (ver nota no nível da collection); requer ter rodado Onboarding (ou Login com um usuário já onboardado) antes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Não vaza identificador da Avenia', () => {",
+                  "    const raw = pm.response.text();",
+                  "    pm.expect(raw).to.not.include('quoteToken');",
+                  "    pm.expect(raw).to.not.include('quoteId');",
+                  "    pm.expect(raw).to.not.include('ticketId');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quote por valor de destino (DESTINATION)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000.00,\n  \"amountType\": \"DESTINATION\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Quote sem moedas informadas (usa BRL como origem)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"destinationCurrency\": \"USD\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Erro — moeda de destino não informada (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 422', () => pm.response.to.have.status(422));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro — amount ausente (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 400', () => pm.response.to.have.status(400));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro — usuário sem verificação KYC associada (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer token-de-um-usuario-sem-onboarding-completo" }
+            ],
+            "auth": { "type": "noauth" },
+            "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+            },
+            "description": "Reproduz o 422 novo (resolução de subconta): só acontece pra um usuário sem nenhuma verificação de KYC associada, o que hoje não deveria existir num usuário criado via Onboarding. Como não há como gerar esse estado direto pela collection, o header Authorization acima é só um placeholder — substitua por um token real de um usuário nessa condição (ex.: registro manual sem passar pelo Onboarding) para reproduzir."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 422', () => pm.response.to.have.status(422));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Criação (POST /transfers)",
+      "item": [
+        {
+          "name": "Criar transferência para beneficiário PIX",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers", "host": ["{{baseUrl}}"], "path": ["v1", "transfers"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"description\": \"Pagamento de importação\"\n}"
+            },
+            "description": "destinationCurrency omitido de propósito: como o beneficiário é PIX, o backend resolve BRL sozinho. A subconta Avenia usada na cotação/ticket também é resolvida sozinha a partir do usuário do token (ver nota no nível da collection). Contra o sandbox real isso só funciona se o beneficiário tiver avenia_id preenchido — ver docs/debt-beneficiary-not-registered-on-avenia.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Não vaza identificador da Avenia', () => {",
+                  "    const raw = pm.response.text();",
+                  "    pm.expect(raw).to.not.include('quoteToken');",
+                  "    pm.expect(raw).to.not.include('quoteId');",
+                  "    pm.expect(raw).to.not.include('ticketId');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro — beneficiário inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers", "host": ["{{baseUrl}}"], "path": ["v1", "transfers"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\",\n  \"beneficiaryId\": \"00000000-0000-0000-0000-000000000000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 404', () => pm.response.to.have.status(404));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro — beneficiaryId ausente (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/v1/transfers", "host": ["{{baseUrl}}"], "path": ["v1", "transfers"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 400', () => pm.response.to.have.status(400));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro — usuário sem verificação KYC associada (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer token-de-um-usuario-sem-onboarding-completo" }
+            ],
+            "auth": { "type": "noauth" },
+            "url": { "raw": "{{baseUrl}}/v1/transfers", "host": ["{{baseUrl}}"], "path": ["v1", "transfers"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\"\n}"
+            },
+            "description": "Mesmo caso da pasta de cotação: substitua o header Authorization por um token real de um usuário sem verificação de KYC associada para reproduzir."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status is 422', () => pm.response.to.have.status(422));"],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
