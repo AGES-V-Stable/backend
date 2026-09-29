@@ -1,5 +1,6 @@
 package ages.vstable.backend.entity;
 
+import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
 import jakarta.persistence.*;
@@ -24,8 +25,9 @@ public class BeneficiaryEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "company_id", nullable = false)
-    private UUID companyId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "company_id", nullable = false)
+    private CompanyEntity company;
 
     @Column(name = "avenia_id")
     private UUID aveniaId;
@@ -63,8 +65,16 @@ public class BeneficiaryEntity {
     @Column(name = "account_number", length = 50)
     private String accountNumber;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "account_type", columnDefinition = "bank_account_type_enum")
+    private BankAccountType accountType;
+
     @Column(name = "country", length = 100)
     private String country;
+
+    @Column(name = "address", length = 255)
+    private String address;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -89,9 +99,6 @@ public class BeneficiaryEntity {
 
     @Column(name = "currency", length = 3)
     private String currency;
-
-    @Column(name = "address", length = 255)
-    private String address;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
