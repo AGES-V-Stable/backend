@@ -72,16 +72,28 @@ class BeneficiaryServiceTest {
 
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getCompanyId()).isEqualTo(companyId);
+        assertThat(captor.getValue().getCompany().getId()).isEqualTo(companyId);
     }
 
     @Test
     void findById_mapsAllFieldsToResponse() {
         UUID id = UUID.randomUUID();
-        UUID companyIdForSearch = UUID.randomUUID();
+
+
+        CompanyEntity company = new CompanyEntity();
+        company.setId(companyId);
+        company.setLegalName("Company Legal Name");
+        company.setTradeName("Company Trade Name");
+        company.setCnpj("12.345.678/0001-90");
+        company.setCountry("BR");
+        company.setZipCode("90000-000");
+        company.setCity("Porto Alegre");
+        company.setState("RS");
+
+
         BeneficiaryEntity entity = new BeneficiaryEntity();
         entity.setId(id);
-        entity.setCompanyId(companyIdForSearch);
+        entity.setCompany(company);
         entity.setNickname("Nick");
         entity.setInternalDescription("Desc");
         entity.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
