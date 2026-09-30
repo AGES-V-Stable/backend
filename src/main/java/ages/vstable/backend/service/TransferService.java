@@ -8,7 +8,9 @@ import ages.vstable.backend.dto.transfer.MoneyAmount;
 import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
+import ages.vstable.backend.entity.BaseTransactionEntity;
 import ages.vstable.backend.entity.BeneficiaryEntity;
+import ages.vstable.backend.entity.ImportTransactionEntity;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferAmountType;
@@ -21,12 +23,16 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
+import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
+import ages.vstable.backend.repository.ImportTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -55,6 +61,8 @@ public class TransferService {
     private final BeneficiaryRepository beneficiaryRepository;
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
+    private final BaseTransactionRepository baseTransactionRepository;
+    private final ImportTransactionRepository importTransactionRepository;
 
     public TransferQuoteResponse quote(TransferQuoteRequest request, UUID currentUserId) {
         String sourceCurrency = resolveSourceCurrency(request.getSourceCurrency());
@@ -72,13 +80,23 @@ public class TransferService {
      * Cria a transferência: gera uma cotação nova na Avenia (nunca reaproveita a de
      * exibição — é {@link AveniaTransferService#createTransfer} que garante isso) e, com o
      * quoteToken dela, cria o ticket. Se a cotação falhar, a exceção sobe antes de chegar
-     * a criar qualquer ticket.
+     * a criar qualquer ticket — e, portanto, antes de persistir qualquer coisa.
+     *
+     * {@code sourceCurrency} é restrito a BRL aqui (diferente de {@link #quote}): é a única
+     * moeda em que a empresa tem saldo registrado ({@code CompanyEntity.availableBalanceBrl}),
+     * e é dela que depende {@code settlement_amount_brl} ao persistir a transação. Ver
+     * docs/transfers-persist-transaction.md seção 5.
      */
+    @Transactional
     public CreateTransferResponse create(CreateTransferRequest request, UUID currentUserId) {
         BeneficiaryEntity beneficiary = beneficiaryRepository.findById(request.getBeneficiaryId())
                 .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
 
         String sourceCurrency = resolveSourceCurrency(request.getSourceCurrency());
+        if (!DEFAULT_SOURCE_CURRENCY.equals(sourceCurrency)) {
+            throw new UnprocessableEntityException(
+                    "sourceCurrency deve ser BRL: o saldo da empresa só é mantido nessa moeda");
+        }
         String destinationCurrency = resolveDestinationCurrency(
                 request.getDestinationCurrency(), beneficiary);
         String subAccountId = resolveSubAccountId(currentUserId);
@@ -88,8 +106,48 @@ public class TransferService {
         AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(beneficiary, request.getDescription());
 
         AveniaTransferResult result = aveniaTransferService.createTransfer(quoteRequest, ticketRequest);
+        TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
-        return new CreateTransferResponse(mapAveniaTicketStatus(result.ticket().status()));
+        persistTransaction(beneficiary, request, result, status, currentUserId);
+
+        return new CreateTransferResponse(status);
+    }
+
+    /**
+     * Grava o snapshot da transferência recém-criada na Avenia. Não acompanha mudanças de
+     * status posteriores ao ticket (ex.: UNPAID -> PAID) nem o hash da liquidação on-chain —
+     * nenhum dos dois tem mecanismo de atualização implementado ainda (ver
+     * docs/transfers-persist-transaction.md seção 6).
+     */
+    private void persistTransaction(
+            BeneficiaryEntity beneficiary, CreateTransferRequest request, AveniaTransferResult result,
+            TransactionStatus status, UUID currentUserId) {
+        AveniaQuoteResponse quote = result.quote();
+        BigDecimal feeAmount = totalFeeAmount(quote);
+        BigDecimal feePercentage = feePercentage(quote.inputAmount(), feeAmount);
+        OffsetDateTime now = OffsetDateTime.now();
+
+        BaseTransactionEntity baseTransaction = BaseTransactionEntity.builder()
+                .company(beneficiary.getCompany())
+                .creatorUserId(currentUserId)
+                .status(status)
+                .foreignCurrency(quote.outputCurrency())
+                .foreignAmount(quote.outputAmount())
+                .settlementAmountBrl(quote.inputAmount().add(feeAmount))
+                .serviceFeeBrl(feeAmount)
+                .effectiveSpreadPercentage(feePercentage.setScale(4, RoundingMode.HALF_UP))
+                .exchangeRate(quote.basePrice())
+                .aveniaTicketId(result.ticket().id())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        baseTransaction = baseTransactionRepository.save(baseTransaction);
+
+        ImportTransactionEntity importTransaction = new ImportTransactionEntity();
+        importTransaction.setTransactionId(baseTransaction.getId());
+        importTransaction.setBeneficiary(beneficiary);
+        importTransaction.setTransferMethod(request.getPaymentMethod());
+        importTransactionRepository.save(importTransaction);
     }
 
     /**
@@ -228,10 +286,7 @@ public class TransferService {
 
         BigDecimal feeAmount = totalFeeAmount(response);
         String feeCurrency = response.markupCurrency() != null ? response.markupCurrency() : source.currency();
-        BigDecimal feePercentage = feeAmount
-                .divide(source.amount(), 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal feePercentage = feePercentage(source.amount(), feeAmount);
 
         MoneyAmount total = new MoneyAmount(source.amount().add(feeAmount), source.currency());
 
@@ -244,6 +299,13 @@ public class TransferService {
                 exchangeRate,
                 new FeeInfo(feePercentage, feeAmount, feeCurrency),
                 total);
+    }
+
+    private BigDecimal feePercentage(BigDecimal sourceAmount, BigDecimal feeAmount) {
+        return feeAmount
+                .divide(sourceAmount, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal totalFeeAmount(AveniaQuoteResponse response) {
