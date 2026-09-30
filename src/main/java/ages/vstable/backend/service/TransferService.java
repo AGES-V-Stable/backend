@@ -34,7 +34,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -46,11 +48,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransferService {
 
-    // A cotação de exibição ainda não tem um beneficiário associado (esse dado só chega
-    // em POST /transfers), então não há como saber o método de recebimento real. INTERNAL
-    // representa a rota "saldo em conta" (ACCOUNT_BALANCE) só para fins de exibição do
-    // valor — não confirmado contra o sandbox real.
+    // INTERNAL representa a rota "saldo em conta" (ACCOUNT_BALANCE): a entrada sai sempre do
+    // saldo da subconta, e é também a saída usada para moedas fiduciárias enquanto o trilho
+    // bancário (SWIFT/ACH/SEPA) não está definido — não confirmado contra o sandbox real.
     private static final String DEFAULT_PAYMENT_METHOD = "INTERNAL";
+
+    // Stablecoins saem pela blockchain, e a Avenia exige a rede como outputPaymentMethod.
+    // Polygon é a rede padrão quando o beneficiário (ou a cotação de exibição, que ainda
+    // não conhece o beneficiário) não informa outra.
+    private static final String DEFAULT_BLOCKCHAIN_OUTPUT = "POLYGON";
+    private static final String DEFAULT_STABLECOIN = "USDC";
+    private static final Set<String> STABLECOINS = Set.of("USDC", "USDCE", "USDT", "BRLA", "EURC");
 
     // Nenhuma entidade hoje guarda a moeda de operação da empresa; BRL é a única moeda
     // que aparece explicitamente hoje (CompanyEntity.availableBalanceBrl). Ver
@@ -70,7 +78,8 @@ public class TransferService {
         String subAccountId = resolveSubAccountId(currentUserId);
 
         AveniaQuoteRequest aveniaRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency, subAccountId);
+                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency,
+                outputPaymentMethodFor(destinationCurrency, null), subAccountId);
         AveniaQuoteResponse aveniaResponse = aveniaTransferService.createQuote(aveniaRequest);
 
         return toTransferQuoteResponse(aveniaResponse);
@@ -99,10 +108,17 @@ public class TransferService {
         }
         String destinationCurrency = resolveDestinationCurrency(
                 request.getDestinationCurrency(), beneficiary);
+        if (beneficiary.getReceivingMethod() == ReceivingMethod.CRYPTO_WALLET
+                && !STABLECOINS.contains(destinationCurrency)) {
+            throw new UnprocessableEntityException(
+                    "Carteira cripto só recebe stablecoin (USDC, USDT, BRLA ou EURC); moeda informada: "
+                            + destinationCurrency);
+        }
         String subAccountId = resolveSubAccountId(currentUserId);
 
         AveniaQuoteRequest quoteRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency, subAccountId);
+                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency,
+                outputPaymentMethodFor(destinationCurrency, beneficiary), subAccountId);
         AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(beneficiary, request.getDescription());
 
         AveniaTransferResult result = aveniaTransferService.createTransfer(quoteRequest, ticketRequest);
@@ -164,15 +180,29 @@ public class TransferService {
         return subAccountProvisioningService.ensureSubAccountId(kyc);
     }
 
+    /**
+     * Stablecoin sai pela rede da carteira do beneficiário (Polygon quando não há
+     * beneficiário ou rede cadastrada); as demais moedas mantêm a saída INTERNAL.
+     */
+    private String outputPaymentMethodFor(String destinationCurrency, BeneficiaryEntity beneficiary) {
+        if (!STABLECOINS.contains(destinationCurrency)) {
+            return DEFAULT_PAYMENT_METHOD;
+        }
+        return beneficiary != null && beneficiary.getBlockchainNetwork() != null
+                ? beneficiary.getBlockchainNetwork().name().toUpperCase(Locale.ROOT)
+                : DEFAULT_BLOCKCHAIN_OUTPUT;
+    }
+
     private AveniaQuoteRequest buildAveniaQuoteRequest(
             BigDecimal amount, TransferAmountType amountType,
-            String sourceCurrency, String destinationCurrency, String subAccountId) {
+            String sourceCurrency, String destinationCurrency, String outputPaymentMethod,
+            String subAccountId) {
         boolean isSource = amountType == TransferAmountType.SOURCE;
         return new AveniaQuoteRequest(
                 sourceCurrency,
                 DEFAULT_PAYMENT_METHOD,
                 destinationCurrency,
-                DEFAULT_PAYMENT_METHOD,
+                outputPaymentMethod,
                 isSource ? amount : null,
                 isSource ? null : amount,
                 null,
@@ -212,7 +242,9 @@ public class TransferService {
                     null)).build();
             case CRYPTO_WALLET -> builder.ticketBlockchainOutput(new AveniaTicketRequest.BlockchainOutput(
                     beneficiary.getAveniaWalletId(),
-                    beneficiary.getBlockchainNetwork() != null ? beneficiary.getBlockchainNetwork().name() : null,
+                    beneficiary.getBlockchainNetwork() != null
+                            ? beneficiary.getBlockchainNetwork().name().toUpperCase(Locale.ROOT)
+                            : DEFAULT_BLOCKCHAIN_OUTPUT,
                     beneficiary.getWalletAddress(),
                     beneficiary.getWalletMemo())).build();
             case BANK_ACCOUNT -> builder.ticketSwiftOutput(new AveniaTicketRequest.SwiftOutput(
@@ -267,6 +299,9 @@ public class TransferService {
         }
         if (beneficiary.getReceivingMethod() == ReceivingMethod.PIX_KEY) {
             return DEFAULT_SOURCE_CURRENCY;
+        }
+        if (beneficiary.getReceivingMethod() == ReceivingMethod.CRYPTO_WALLET) {
+            return DEFAULT_STABLECOIN;
         }
         return resolveDestinationCurrency(destinationCurrency);
     }

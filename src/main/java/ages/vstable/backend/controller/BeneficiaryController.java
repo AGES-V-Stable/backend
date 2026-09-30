@@ -2,6 +2,7 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.BeneficiaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -42,6 +44,23 @@ public class BeneficiaryController {
                 return ResponseEntity
                                 .status(HttpStatus.CREATED)
                                 .body(beneficiaryService.create(companyId, request));
+        }
+
+        @GetMapping("/v1/companies/{companyId}/beneficiaries")
+        @Operation(summary = "Lista os beneficiários da empresa do usuário autenticado")
+        @ApiResponses({
+                        @ApiResponse(responseCode = "200", description = "Lista paginada de beneficiários da empresa"),
+                        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+                        @ApiResponse(responseCode = "403", description = "Empresa diferente da do usuário autenticado")
+        })
+        public ResponseEntity<Page<BeneficiaryResponse>> findCompanyBeneficiaries(
+                        @PathVariable UUID companyId,
+                        @AuthenticationPrincipal UserEntity currentUser,
+                        @Parameter(description = "Parâmetros de ordenação e paginação (size, page, sort)") Pageable pageable) {
+
+                UUID requesterCompanyId = currentUser == null ? null : currentUser.getCompanyId();
+                return ResponseEntity.ok(
+                                beneficiaryService.findCompanyBeneficiaries(companyId, requesterCompanyId, pageable));
         }
 
         @GetMapping("/v1/beneficiaries")

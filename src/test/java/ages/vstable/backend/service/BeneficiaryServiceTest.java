@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,7 +52,7 @@ class BeneficiaryServiceTest {
     @BeforeEach
     void setUp() {
         beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository,
-                new BeneficiaryValidator());
+                new BeneficiaryValidator(), false);
     }
 
     @Test
@@ -169,6 +170,50 @@ class BeneficiaryServiceTest {
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
 
         assertThatThrownBy(() -> beneficiaryService.create(companyId, bankAccountRequest()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void create_companyNotApproved_withDemoSkipKyb_savesBeneficiary() {
+        BeneficiaryService demoService = new BeneficiaryService(beneficiaryRepository, companyRepository,
+                new BeneficiaryValidator(), true);
+        CompanyEntity company = approvedCompany();
+        company.setKybStatus(ComplianceStatus.PENDING);
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BeneficiaryResponse response = demoService.create(companyId, bankAccountRequest());
+
+        assertThat(response.getCompanyId()).isEqualTo(companyId);
+        verify(beneficiaryRepository).saveAndFlush(any());
+    }
+
+    @Test
+    void findCompanyBeneficiaries_requesterFromSameCompany_returnsCompanyPage() {
+        BeneficiaryEntity entity = buildBeneficiary(UUID.randomUUID(), companyId);
+        Pageable pageable = PageRequest.of(0, 10);
+        when(beneficiaryRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(entity)));
+
+        Page<BeneficiaryResponse> result = beneficiaryService.findCompanyBeneficiaries(companyId, companyId, pageable);
+
+        assertThat(result.getContent()).extracting(BeneficiaryResponse::getCompanyId).containsExactly(companyId);
+    }
+
+    @Test
+    void findCompanyBeneficiaries_requesterFromOtherCompany_throwsForbidden() {
+        UUID otherCompanyId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> beneficiaryService.findCompanyBeneficiaries(
+                companyId, otherCompanyId, PageRequest.of(0, 10)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(beneficiaryRepository, never()).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
+    void findCompanyBeneficiaries_requesterWithoutCompany_throwsForbidden() {
+        assertThatThrownBy(() -> beneficiaryService.findCompanyBeneficiaries(
+                companyId, null, PageRequest.of(0, 10)))
                 .isInstanceOf(ForbiddenException.class);
     }
 

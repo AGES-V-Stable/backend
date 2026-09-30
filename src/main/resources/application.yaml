@@ -25,6 +25,9 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  demo:
+    # Somente demonstração: permite cadastrar beneficiário com KYB da empresa pendente.
+    skip-kyb: ${DEMO_SKIP_KYB:false}
 
 api:
   auth:

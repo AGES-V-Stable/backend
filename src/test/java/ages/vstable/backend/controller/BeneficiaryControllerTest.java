@@ -2,6 +2,7 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.exception.ForbiddenException;
@@ -9,6 +10,7 @@ import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.service.BeneficiaryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +23,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.OffsetDateTime;
@@ -55,7 +60,8 @@ class BeneficiaryControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = standaloneSetup(beneficiaryController)
-                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver(),
+                        new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -156,6 +162,42 @@ class BeneficiaryControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAsUserOf(UUID userCompanyId) {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(userCompanyId).build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(user, null, List.of()));
+    }
+
+    @Test
+    void findCompanyBeneficiaries_ownCompany_returnsPaginatedList() throws Exception {
+        authenticateAsUserOf(companyId);
+        Page<BeneficiaryResponse> page = new PageImpl<>(
+                List.of(buildResponse(UUID.randomUUID(), companyId)), PageRequest.of(0, 10), 1);
+        when(beneficiaryService.findCompanyBeneficiaries(eq(companyId), eq(companyId), any(Pageable.class)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries", companyId).param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].companyId").value(companyId.toString()));
+    }
+
+    @Test
+    void findCompanyBeneficiaries_otherCompany_returns403() throws Exception {
+        UUID userCompanyId = UUID.randomUUID();
+        authenticateAsUserOf(userCompanyId);
+        when(beneficiaryService.findCompanyBeneficiaries(eq(companyId), eq(userCompanyId), any(Pageable.class)))
+                .thenThrow(new ForbiddenException("Acesso negado aos beneficiários desta empresa"));
+
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries", companyId))
+                .andExpect(status().isForbidden());
     }
 
     @Test

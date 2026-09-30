@@ -45,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -337,8 +338,74 @@ class TransferServiceTest {
         // Sem moeda informada, usa a moeda cadastrada no beneficiário (não BRL).
         assertThat(quoteCaptor.getValue().outputCurrency()).isEqualTo("USDC");
         assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletAddress()).isEqualTo("0xabc123");
-        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletChain()).isEqualTo("polygon");
+        assertThat(quoteCaptor.getValue().inputPaymentMethod()).isEqualTo("INTERNAL");
+        assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("POLYGON");
+        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletChain()).isEqualTo("POLYGON");
         assertThat(ticketCaptor.getValue().getTicketBrlPixOutput()).isNull();
+    }
+
+    @Test
+    void create_beneficiarioCriptoSemMoedaCadastrada_usaUsdcPelaRedeDaCarteira() {
+        setUpService();
+        stubSubAccount();
+        stubTransactionPersistence();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        beneficiary.setCurrency(null);
+        beneficiary.setBlockchainNetwork(BlockchainNetwork.celo);
+        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(aveniaTransferService.createTransfer(any(), any())).thenReturn(new AveniaTransferResult(
+                aveniaResponse(), new AveniaTicketResponse(UUID.randomUUID(), null, null, "UNPAID", null, null)));
+
+        transferService.create(createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID);
+
+        ArgumentCaptor<AveniaQuoteRequest> quoteCaptor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        ArgumentCaptor<AveniaTicketRequest> ticketCaptor = ArgumentCaptor.forClass(AveniaTicketRequest.class);
+        verify(aveniaTransferService).createTransfer(quoteCaptor.capture(), ticketCaptor.capture());
+        assertThat(quoteCaptor.getValue().outputCurrency()).isEqualTo("USDC");
+        assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("CELO");
+        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletChain()).isEqualTo("CELO");
+    }
+
+    @Test
+    void create_beneficiarioCriptoComMoedaFiduciaria_lancaUnprocessableEntityExceptionSemChamarAvenia() {
+        setUpService();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "USD"), CURRENT_USER_ID))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verifyNoInteractions(aveniaTransferService);
+    }
+
+    @Test
+    void quote_moedaDeDestinoStablecoin_usaPolygonComoSaidaPadrao() {
+        setUpService();
+        stubSubAccount();
+        when(aveniaTransferService.createQuote(any())).thenReturn(aveniaResponse());
+
+        transferService.quote(requestWith(new BigDecimal("1000.00"), TransferAmountType.SOURCE, "BRL", "usdc"),
+                CURRENT_USER_ID);
+
+        ArgumentCaptor<AveniaQuoteRequest> captor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        verify(aveniaTransferService).createQuote(captor.capture());
+        assertThat(captor.getValue().outputCurrency()).isEqualTo("USDC");
+        assertThat(captor.getValue().outputPaymentMethod()).isEqualTo("POLYGON");
+        assertThat(captor.getValue().inputPaymentMethod()).isEqualTo("INTERNAL");
+    }
+
+    @Test
+    void quote_moedaDeDestinoFiduciaria_mantemSaidaInternal() {
+        setUpService();
+        stubSubAccount();
+        when(aveniaTransferService.createQuote(any())).thenReturn(aveniaResponse());
+
+        transferService.quote(requestWith(new BigDecimal("1000.00"), TransferAmountType.SOURCE, "BRL", "USD"),
+                CURRENT_USER_ID);
+
+        ArgumentCaptor<AveniaQuoteRequest> captor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        verify(aveniaTransferService).createQuote(captor.capture());
+        assertThat(captor.getValue().outputPaymentMethod()).isEqualTo("INTERNAL");
     }
 
     @Test

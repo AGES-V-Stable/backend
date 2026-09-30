@@ -9,7 +9,7 @@ import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -20,18 +20,33 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class BeneficiaryService {
 
     private final BeneficiaryRepository beneficiaryRepository;
     private final CompanyRepository companyRepository;
     private final BeneficiaryValidator beneficiaryValidator;
+    private final boolean skipKybCheck;
+
+    /**
+     * {@code app.demo.skip-kyb} existe só para demonstrações com a conta individual do
+     * representante enquanto o KYB da empresa não é integrado à Avenia. Desligado por padrão;
+     * nunca deve ser ligado em produção.
+     */
+    public BeneficiaryService(BeneficiaryRepository beneficiaryRepository,
+            CompanyRepository companyRepository,
+            BeneficiaryValidator beneficiaryValidator,
+            @Value("${app.demo.skip-kyb:false}") boolean skipKybCheck) {
+        this.beneficiaryRepository = beneficiaryRepository;
+        this.companyRepository = companyRepository;
+        this.beneficiaryValidator = beneficiaryValidator;
+        this.skipKybCheck = skipKybCheck;
+    }
 
     public BeneficiaryResponse create(UUID companyId, BeneficiaryCreateRequest request) {
         CompanyEntity company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new NotFoundException("Company not found"));
 
-        if (company.getKybStatus() != ComplianceStatus.APPROVED) {
+        if (!skipKybCheck && company.getKybStatus() != ComplianceStatus.APPROVED) {
             throw new ForbiddenException("Empresa não verificada");
         }
 
@@ -75,6 +90,16 @@ public class BeneficiaryService {
         return beneficiaryRepository.findAll(
                 BeneficiarySpecification.filterBy(companyId, search, document, country),
                 pageable).map(this::toResponse);
+    }
+
+    /** Lista os beneficiários da própria empresa do usuário; outra empresa resulta em 403. */
+    @Transactional(readOnly = true)
+    public Page<BeneficiaryResponse> findCompanyBeneficiaries(UUID companyId, UUID requesterCompanyId,
+            Pageable pageable) {
+        if (requesterCompanyId == null || !requesterCompanyId.equals(companyId)) {
+            throw new ForbiddenException("Acesso negado aos beneficiários desta empresa");
+        }
+        return findBeneficiaries(companyId, null, null, null, pageable);
     }
 
     @Transactional(readOnly = true)
