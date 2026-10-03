@@ -12,6 +12,7 @@ import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCrypt;
@@ -19,7 +20,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.regex.Pattern;
@@ -36,6 +36,8 @@ public class OnboardingService {
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final CompanyDataValidator companyDataValidator;
     private final PasswordEncoder passwordEncoder;
+    private final CompanyService companyService;
+    private final JwtTokenUtils jwtTokenUtils;
 
     @Transactional
     public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
@@ -45,22 +47,14 @@ public class OnboardingService {
                 request.getLegalName(), request.getCnpj(), request.getCountry(),
                 request.getZipCode(), request.getCity(), request.getState());
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new ConflictException("E-mail já cadastrado");
-        }
-        if (companyRepository.existsByCnpj(companyData.cnpj())) {
-            throw new ConflictException("CNPJ já cadastrado");
-        }
+        assertEmailAvailable(request.getEmail());
+        companyService.assertCnpjAvailable(companyData.cnpj());
 
         try {
             return createCompanyUserAndKyc(request, companyData);
         } catch (DataIntegrityViolationException e) {
-            if (userRepository.existsByEmail(request.getEmail())) {
-                throw new ConflictException("E-mail já cadastrado");
-            }
-            if (companyRepository.existsByCnpj(companyData.cnpj())) {
-                throw new ConflictException("CNPJ já cadastrado");
-            }
+            assertEmailAvailable(request.getEmail());
+            companyService.assertCnpjAvailable(companyData.cnpj());
             throw e;
         }
     }
@@ -68,19 +62,7 @@ public class OnboardingService {
     private OnboardingResponseDTO createCompanyUserAndKyc(OnboardingRequestDTO request, CompanyNormalizedData companyData) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        CompanyEntity company = new CompanyEntity();
-        company.setLegalName(companyData.legalName());
-        company.setTradeName(normalizeOptional(request.getTradeName()));
-        company.setCnpj(companyData.cnpj());
-        company.setCountry(companyData.country());
-        company.setZipCode(companyData.zipCode());
-        company.setCity(companyData.city());
-        company.setState(companyData.state());
-        company.setKybStatus(ComplianceStatus.PENDING);
-        company.setAmlStatus(ComplianceStatus.PENDING);
-        company.setAvailableBalanceBrl(BigDecimal.ZERO);
-        company.setCreatedAt(now);
-        company.setUpdatedAt(now);
+        CompanyEntity company = companyService.buildNewCompany(companyData, request.getTradeName(), now);
         company = companyRepository.saveAndFlush(company);
 
         UserEntity user = new UserEntity();
@@ -105,22 +87,25 @@ public class OnboardingService {
                 .userId(user.getId())
                 .companyId(company.getId())
                 .kycVerificationId(kyc.getId())
+                .accessToken(jwtTokenUtils.generateToken(user))
                 .build();
     }
 
     private void validatePayload(OnboardingRequestDTO request) {
         if (!EMAIL_PATTERN.matcher(request.getEmail()).matches()) {
-            throw new UnprocessableEntityException("E-mail em formato inválido");
+            throw new UnprocessableEntityException("Email has an invalid format");
         }
         if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
-            throw new UnprocessableEntityException("Senha e confirmação não coincidem");
+            throw new UnprocessableEntityException("Password and confirmation do not match");
         }
         if (!STRONG_PASSWORD_PATTERN.matcher(request.getPassword()).matches()) {
-            throw new UnprocessableEntityException("Senha deve ter ao menos 8 caracteres, incluindo número e caractere especial");
+            throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
         }
     }
 
-    private String normalizeOptional(String value) {
-        return value == null || value.trim().isEmpty() ? null : value.trim();
+    private void assertEmailAvailable(String email) {
+        if (userRepository.existsByEmail(email)) {
+            throw new ConflictException("Email already registered");
+        }
     }
 }

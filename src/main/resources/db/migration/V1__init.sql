@@ -91,6 +91,13 @@ CREATE TABLE IF NOT EXISTS public.avenia_kyc_verifications
     id uuid NOT NULL DEFAULT uuid_generate_v4(),
     user_id uuid NOT NULL,
     avenia_process_id character varying(255) COLLATE pg_catalog."default",
+    document_id character varying(255) COLLATE pg_catalog."default",
+    liveness_id character varying(255) COLLATE pg_catalog."default",
+    -- Subconta INDIVIDUAL na Avenia dedicada a esta verificação. Sem isso, todas as
+    -- chamadas usam a conta principal da API key — e, assim que ela for aprovada uma
+    -- vez, a Avenia rejeita qualquer submissão nova com "user already approved in
+    -- level 1", mesmo para representantes diferentes. Ver AveniaSubAccountProvisioningService.
+    avenia_sub_account_id character varying(255) COLLATE pg_catalog."default",
     status compliance_status_enum DEFAULT 'PENDING'::compliance_status_enum,
     response_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,

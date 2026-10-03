@@ -22,6 +22,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -104,6 +105,14 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
+        assertEquals(Map.of("message", "User is locked"), response.getBody());
+
+        verify(userRepository).findByEmail("user@email.com");
+
+        verify(authenticationManager).authenticate(any(
+                UsernamePasswordAuthenticationToken.class));
+
+        verifyNoInteractions(jwtTokenUtil);
     }
 
     @Test

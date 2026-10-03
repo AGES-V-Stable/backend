@@ -3,6 +3,8 @@ package ages.vstable.backend.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,7 +28,7 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("Dados inválidos");
+                .orElse("Invalid data");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("message", message));
@@ -36,7 +38,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleMalformedPayload(HttpMessageNotReadableException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Payload malformado"));
+                .body(Map.of("message", "Malformed payload"));
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
@@ -50,13 +52,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Parâmetro '" + ex.getName() + "' em formato inválido"));
+                .body(Map.of("message", "Parameter '" + ex.getName() + "' has an invalid format"));
     }
 
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<Map<String, String>> handleConflict(ConflictException ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
                 .body(Map.of("message", ex.getMessage()));
     }
 
@@ -74,10 +83,37 @@ public class GlobalExceptionHandler {
                 .body(Map.of("message", ex.getMessage()));
     }
 
+    @ExceptionHandler(AveniaIntegrationException.class)
+    public ResponseEntity<Map<String, String>> handleAveniaIntegration(AveniaIntegrationException ex) {
+        HttpStatus status;
+        if (ex.isRetryable()) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+        } else if (ex.getProviderStatus() != null
+                && (ex.getProviderStatus() == 400
+                        || ex.getProviderStatus() == 404
+                        || ex.getProviderStatus() == 409
+                        || ex.getProviderStatus() == 422)) {
+            status = HttpStatus.UNPROCESSABLE_CONTENT;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+
+        return ResponseEntity
+                .status(status)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler({ AccessDeniedException.class, AuthorizationDeniedException.class })
+    public ResponseEntity<Map<String, String>> handleAccessDenied(Exception ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(Map.of("message", "Access denied"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Erro interno"));
+                .body(Map.of("message", "Internal error"));
     }
 }

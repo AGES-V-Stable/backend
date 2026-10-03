@@ -9,11 +9,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,5 +65,68 @@ class UserServiceTest {
         List<UserResponse> result = userService.findAll();
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getByEmail_returnsUser_whenEmailExists() {
+        userService = new UserService(userRepository);
+
+        String email = "joao@example.com";
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Joao da Silva")
+                .email(email)
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        UserEntity result = userService.getByEmail(email);
+
+        assertThat(result).isSameAs(user);
+    }
+
+    @Test
+    void getByEmail_throwsUsernameNotFound_whenEmailDoesNotExist() {
+        userService = new UserService(userRepository);
+
+        String email = "inexistente@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.getByEmail(email))
+                .isInstanceOf(UsernameNotFoundException.class)
+                .hasMessage("User not found");
+    }
+
+    @Test
+    void loadUserByUsername_returnsUserDetails_whenEmailExists() {
+        userService = new UserService(userRepository);
+
+        String email = "joao@example.com";
+        String passwordHash = "hash-da-senha";
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Joao da Silva")
+                .email(email)
+                .passwordHash(passwordHash)
+                .build();
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        UserDetails result = userService.loadUserByUsername(email);
+
+        assertThat(result.getUsername()).isEqualTo(email);
+        assertThat(result.getPassword()).isEqualTo(passwordHash);
+    }
+
+    @Test
+    void loadUserByUsername_throwsUsernameNotFound_whenEmailDoesNotExist() {
+        userService = new UserService(userRepository);
+
+        String email = "inexistente@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.loadUserByUsername(email))
+                .isInstanceOf(UsernameNotFoundException.class)
+                .hasMessage("User not found");
     }
 }

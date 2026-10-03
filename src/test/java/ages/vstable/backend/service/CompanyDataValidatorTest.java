@@ -167,7 +167,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("legalName: não deve estar em branco");
+                .hasMessage("legalName: must not be blank");
     }
 
     @Test
@@ -181,7 +181,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("legalName: não deve estar em branco");
+                .hasMessage("legalName: must not be blank");
     }
 
     @Test
@@ -195,7 +195,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("legalName: tamanho deve ser entre 3 e 255");
+                .hasMessage("legalName: length must be between 3 and 255");
     }
 
     @Test
@@ -209,7 +209,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("country: não deve estar em branco");
+                .hasMessage("country: must not be blank");
     }
 
     @Test
@@ -223,7 +223,7 @@ class CompanyDataValidatorTest {
                 "   "
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("state: não deve estar em branco");
+                .hasMessage("state: must not be blank");
     }
 
     @Test
@@ -237,7 +237,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("zipCode: não deve estar em branco");
+                .hasMessage("zipCode: must not be blank");
     }
 
     // ---------------------------------------------------------
@@ -257,7 +257,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("legalName: tamanho máximo é 255");
+                .hasMessage("legalName: maximum length is 255");
     }
 
     @Test
@@ -273,7 +273,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("country: tamanho máximo é 100");
+                .hasMessage("country: maximum length is 100");
     }
 
     @Test
@@ -289,7 +289,7 @@ class CompanyDataValidatorTest {
                 state
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("state: tamanho máximo é 100");
+                .hasMessage("state: maximum length is 100");
     }
 
     @Test
@@ -305,7 +305,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("city: tamanho máximo é 255");
+                .hasMessage("city: maximum length is 255");
     }
 
     @Test
@@ -321,7 +321,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("zipCode: tamanho máximo é 20");
+                .hasMessage("zipCode: maximum length is 20");
     }
 
     // ---------------------------------------------------------
@@ -339,7 +339,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -353,7 +353,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -367,7 +367,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -381,7 +381,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -395,7 +395,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -409,7 +409,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -423,7 +423,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     @Test
@@ -437,7 +437,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CNPJ em formato inválido");
+                .hasMessage("CNPJ has an invalid format");
     }
 
     // ---------------------------------------------------------
@@ -455,7 +455,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CEP em formato inválido");
+                .hasMessage("Zip code has an invalid format");
     }
 
     @Test
@@ -469,7 +469,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CEP em formato inválido");
+                .hasMessage("Zip code has an invalid format");
     }
 
     @Test
@@ -483,7 +483,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessage("CEP em formato inválido");
+                .hasMessage("Zip code has an invalid format");
     }
 
     @Test
