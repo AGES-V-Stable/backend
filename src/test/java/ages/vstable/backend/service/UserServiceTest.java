@@ -2,6 +2,7 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.user.UserResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,7 +28,7 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private ages.vstable.backend.repository.AdministratorRepository administratorRepository;
+    private AdministratorRepository administratorRepository;
 
     private UserService userService;
 
@@ -69,7 +70,7 @@ class UserServiceTest {
 
     @Test
     void getByEmail_returnsUser_whenEmailExists() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "joao@example.com";
         UserEntity user = UserEntity.builder()
@@ -87,7 +88,7 @@ class UserServiceTest {
 
     @Test
     void getByEmail_throwsUsernameNotFound_whenEmailDoesNotExist() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "inexistente@example.com";
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
@@ -99,7 +100,7 @@ class UserServiceTest {
 
     @Test
     void loadUserByUsername_returnsUserDetails_whenEmailExists() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "joao@example.com";
         String passwordHash = "hash-da-senha";
@@ -120,7 +121,7 @@ class UserServiceTest {
 
     @Test
     void loadUserByUsername_throwsUsernameNotFound_whenEmailDoesNotExist() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "inexistente@example.com";
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
