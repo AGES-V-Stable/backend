@@ -22,11 +22,11 @@ public class AuthenticationConfigurer {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return userService::getByEmail;
+        return userService;
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration){
         return authenticationConfiguration.getAuthenticationManager();
     }
 
