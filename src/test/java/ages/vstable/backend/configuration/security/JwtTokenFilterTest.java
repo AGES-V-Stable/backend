@@ -1,8 +1,11 @@
 package ages.vstable.backend.configuration.security;
 
+import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.MalformedJwtException;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,15 +21,17 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.context.SecurityContextRepository;
-
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class JwtTokenFilterTest {
+
+    private static final String TOKEN = "token";
+    private static final String EMAIL = "user@example.com";
 
     @Mock
     private SecurityContextRepository securityContextRepository;
@@ -39,9 +44,6 @@ class JwtTokenFilterTest {
 
     @Mock
     private FilterChain filterChain;
-
-    @Mock
-    private UserEntity user;
 
     private JwtTokenFilter filter;
 
@@ -65,6 +67,14 @@ class JwtTokenFilterTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    private void withBearerToken() {
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN);
+    }
+
+    private UserEntity companyUser() {
+        return UserEntity.builder().email(EMAIL).build();
     }
 
     @Test
@@ -92,173 +102,120 @@ class JwtTokenFilterTest {
     }
 
     @Test
-    void shouldAuthenticateUserWithValidToken() throws Exception {
-        String token = "valid-token";
-        String email = "user@example.com";
+    void shouldAuthenticateCompanyUserWithAuthoritiesFromTheStoredAccount() throws Exception {
+        withBearerToken();
+        UserEntity user = companyUser();
 
-        request.addHeader(
-                HttpHeaders.AUTHORIZATION,
-                "Bearer " + token
-        );
-
-        when(jwtTokenUtils.getUsernameFromToken(token))
-                .thenReturn(email);
-
-        when(userService.getByEmail(email))
-                .thenReturn(user);
-
-        when(jwtTokenUtils.validateToken(token, user))
-                .thenReturn(true);
-
-        when(jwtTokenUtils.getClaimFromToken(
-                eq(token),
-                any()
-        )).thenReturn(List.of(
-                new SimpleGrantedAuthority("ROLE_USER")
-        ));
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER)).thenReturn(user);
+        when(jwtTokenUtils.validateToken(TOKEN, user)).thenReturn(true);
 
         filter.doFilter(request, response, filterChain);
 
-        verify(userService).getByEmail(email);
-        verify(jwtTokenUtils).validateToken(token, user);
         verify(filterChain).doFilter(request, response);
+        verify(securityContextRepository).saveContext(any(SecurityContext.class), eq(request), eq(response));
 
-        verify(securityContextRepository).saveContext(
-                any(SecurityContext.class),
-                eq(request),
-                eq(response)
-        );
-
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
-
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         assertNotNull(authentication);
-        assertInstanceOf(
-                UsernamePasswordAuthenticationToken.class,
-                authentication
-        );
-
+        assertInstanceOf(UsernamePasswordAuthenticationToken.class, authentication);
         assertSame(user, authentication.getPrincipal());
-
-        assertTrue(
-                authentication.getAuthorities()
-                        .contains(new SimpleGrantedAuthority("ROLE_USER"))
-        );
-
-        assertEquals(
-                email,
-                request.getAttribute("user_id")
-        );
+        assertEquals(1, authentication.getAuthorities().size());
+        assertTrue(authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_USER")));
+        assertEquals(EMAIL, request.getAttribute("user_id"));
     }
 
     @Test
-    void shouldContinueWhenTokenIsInvalid() throws Exception {
-        String token = "invalid-token";
-        String email = "user@example.com";
+    void shouldAuthenticateAdministratorWithAdminRole() throws Exception {
+        withBearerToken();
+        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
 
-        request.addHeader(
-                HttpHeaders.AUTHORIZATION,
-                "Bearer " + token
-        );
-
-        when(jwtTokenUtils.getUsernameFromToken(token))
-                .thenReturn(email);
-
-        when(userService.getByEmail(email))
-                .thenReturn(user);
-
-        when(jwtTokenUtils.validateToken(token, user))
-                .thenReturn(false);
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn("admin@vstable.com");
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+        when(userService.loadPrincipal("admin@vstable.com", JwtTokenUtils.ACCOUNT_TYPE_ADMIN)).thenReturn(admin);
+        when(jwtTokenUtils.validateToken(TOKEN, admin)).thenReturn(true);
 
         filter.doFilter(request, response, filterChain);
 
-        verify(userService).getByEmail(email);
-        verify(jwtTokenUtils).validateToken(token, user);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertNotNull(authentication);
+        assertSame(admin, authentication.getPrincipal());
+        assertTrue(authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_ADMIN")));
+    }
+
+    @Test
+    void shouldContinueUnauthenticatedWhenTokenIsInvalid() throws Exception {
+        withBearerToken();
+        UserEntity user = companyUser();
+
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER)).thenReturn(user);
+        when(jwtTokenUtils.validateToken(TOKEN, user)).thenReturn(false);
+
+        filter.doFilter(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-
-        verify(securityContextRepository, never())
-                .saveContext(any(), any(), any());
-
+        verify(securityContextRepository, never()).saveContext(any(), any(), any());
         assertNull(SecurityContextHolder.getContext().getAuthentication());
-
         assertNull(request.getAttribute("user_id"));
+        assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
     }
 
     @Test
-    void shouldCreateAuthenticationWithMultipleRoles() throws Exception {
-        String token = "valid-token";
-        String email = "user@example.com";
+    void shouldNotAuthenticateDisabledAccount() throws Exception {
+        withBearerToken();
+        UserEntity user = companyUser();
+        user.setActive(false);
 
-        request.addHeader(
-                HttpHeaders.AUTHORIZATION,
-                "Bearer " + token
-        );
-
-        when(jwtTokenUtils.getUsernameFromToken(token))
-                .thenReturn(email);
-
-        when(userService.getByEmail(email))
-                .thenReturn(user);
-
-        when(jwtTokenUtils.validateToken(token, user))
-                .thenReturn(true);
-
-        when(jwtTokenUtils.getClaimFromToken(
-                eq(token),
-                any()
-        )).thenReturn(List.of(
-                new SimpleGrantedAuthority("ROLE_USER"),
-                new SimpleGrantedAuthority("ROLE_ADMIN")
-        ));
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER)).thenReturn(user);
 
         filter.doFilter(request, response, filterChain);
 
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
-
-        assert authentication != null;
-        assertEquals(2, authentication.getAuthorities().size());
-
-        assertTrue(authentication.getAuthorities().contains(
-                new SimpleGrantedAuthority("ROLE_USER")
-        ));
-
-        assertTrue(authentication.getAuthorities().contains(
-                new SimpleGrantedAuthority("ROLE_ADMIN")
-        ));
+        verify(filterChain).doFilter(request, response);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
     @Test
-    void shouldAuthenticateWithoutAuthoritiesWhenTokenHasNoRoles() throws Exception {
-        String token = "valid-token";
-        String email = "user@example.com";
-
-        request.addHeader(
-                HttpHeaders.AUTHORIZATION,
-                "Bearer " + token
-        );
-
-        when(jwtTokenUtils.getUsernameFromToken(token))
-                .thenReturn(email);
-
-        when(userService.getByEmail(email))
-                .thenReturn(user);
-
-        when(jwtTokenUtils.validateToken(token, user))
-                .thenReturn(true);
-
-        when(jwtTokenUtils.getClaimFromToken(
-                eq(token),
-                any()
-        )).thenReturn(null);
+    void shouldMarkExpiredTokenAndContinueWithoutThrowing() throws Exception {
+        withBearerToken();
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN))
+                .thenThrow(new ExpiredJwtException(null, null, "expired"));
 
         filter.doFilter(request, response, filterChain);
 
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+        verify(filterChain).doFilter(request, response);
+        verifyNoInteractions(userService);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals(JwtTokenFilter.TOKEN_EXPIRED, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
+    }
 
-        assertNotNull(authentication);
-        assertTrue(authentication.getAuthorities().isEmpty());
+    @Test
+    void shouldMarkMalformedTokenAndContinueWithoutThrowing() throws Exception {
+        withBearerToken();
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenThrow(new MalformedJwtException("bad"));
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
+    }
+
+    @Test
+    void shouldMarkTokenOfDeletedAccountAsInvalid() throws Exception {
+        withBearerToken();
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER))
+                .thenThrow(new UsernameNotFoundException("User not found"));
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
     }
 }

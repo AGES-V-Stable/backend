@@ -21,6 +21,7 @@ public class BeneficiaryResponse {
     private String nickname;
     private String internalDescription;
     private ReceivingMethod receivingMethod;
+    private String bankName;
     private String swiftBic;
     private String bankCode;
     private String branchNumber;

@@ -2,12 +2,15 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
+import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
@@ -22,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +38,9 @@ class OnboardingServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private AdministratorRepository administratorRepository;
 
     @Mock
     private CompanyRepository companyRepository;
@@ -55,9 +62,9 @@ class OnboardingServiceTest {
     @BeforeEach
     void setUp() {
         CompanyService companyService = new CompanyService(
-                companyRepository, complianceDocumentRepository, new CompanyDataValidator());
+                companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
         onboardingService = new OnboardingService(
-                userRepository, companyRepository, aveniaKycVerificationRepository,
+                userRepository, administratorRepository, companyRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils);
     }
 
@@ -113,6 +120,43 @@ class OnboardingServiceTest {
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void performOnboarding_emailBelongsToAdministrator_throwsConflict() {
+        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void getCurrentOnboarding_returnsLatestVerificationProgress() {
+        UUID userId = UUID.randomUUID();
+        UUID companyId = UUID.randomUUID();
+        UUID kycId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(userId).companyId(companyId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId).userId(userId).documentId("doc-1").status(ComplianceStatus.PENDING).build();
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(userId)).thenReturn(Optional.of(kyc));
+
+        OnboardingStatusResponse result = onboardingService.getCurrentOnboarding(user);
+
+        assertThat(result.getKycVerificationId()).isEqualTo(kycId);
+        assertThat(result.getCompanyId()).isEqualTo(companyId);
+        assertThat(result.getStatus()).isEqualTo(ComplianceStatus.PENDING);
+        assertThat(result.isDocumentSubmitted()).isTrue();
+        assertThat(result.isLivenessSubmitted()).isFalse();
+    }
+
+    @Test
+    void getCurrentOnboarding_withoutVerification_throwsNotFound() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> onboardingService.getCurrentOnboarding(user))
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.compliance.LivenessStartResponse;
 import ages.vstable.backend.dto.compliance.LivenessStatusResponse;
 import ages.vstable.backend.dto.compliance.LivenessSubmitRequest;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -28,11 +30,13 @@ public class ComplianceLivenessController {
     @Operation(summary = "Inicia a verificação de liveness na Avenia e retorna o link de redirecionamento")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Verificação de liveness iniciada, retorna id e link"),
+            @ApiResponse(responseCode = "403", description = "kycVerificationId não pertence ao usuário autenticado"),
             @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
     })
-    public ResponseEntity<LivenessStartResponse> iniciar(@PathVariable UUID kycVerificationId) {
-        return complianceLivenessService.iniciar(kycVerificationId)
+    public ResponseEntity<LivenessStartResponse> iniciar(@PathVariable UUID kycVerificationId,
+                                                         Authentication authentication) {
+        return complianceLivenessService.iniciar(kycVerificationId, CompanyAccess.currentUserId(authentication))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -42,18 +46,21 @@ public class ComplianceLivenessController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Status consultado com sucesso"),
             @ApiResponse(responseCode = "400", description = "livenessId ausente ou vazio"),
+            @ApiResponse(responseCode = "403", description = "kycVerificationId não pertence ao usuário autenticado"),
             @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
     })
     public ResponseEntity<LivenessStatusResponse> consultarStatus(
             @PathVariable UUID kycVerificationId,
-            @RequestParam(required = false) String livenessId) {
+            @RequestParam(required = false) String livenessId,
+            Authentication authentication) {
 
         if (livenessId == null || livenessId.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
 
-        return complianceLivenessService.consultarStatus(kycVerificationId, livenessId)
+        return complianceLivenessService.consultarStatus(
+                        kycVerificationId, CompanyAccess.currentUserId(authentication), livenessId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -67,9 +74,11 @@ public class ComplianceLivenessController {
     })
     public ResponseEntity<Void> concluir(
             @PathVariable UUID kycVerificationId,
-            @Valid @RequestBody LivenessSubmitRequest request) {
+            @Valid @RequestBody LivenessSubmitRequest request,
+            Authentication authentication) {
 
-        boolean atualizado = complianceLivenessService.concluir(kycVerificationId, request);
+        boolean atualizado = complianceLivenessService.concluir(
+                kycVerificationId, CompanyAccess.currentUserId(authentication), request);
 
         return atualizado
                 ? ResponseEntity.noContent().build()

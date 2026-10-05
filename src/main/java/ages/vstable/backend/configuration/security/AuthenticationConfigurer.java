@@ -6,7 +6,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Service;
@@ -22,7 +21,8 @@ public class AuthenticationConfigurer {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return userService::getByEmail;
+        // Company users and administrators (see UserService.loadUserByUsername)
+        return userService::loadUserByUsername;
     }
 
     @Bean
@@ -30,9 +30,11 @@ public class AuthenticationConfigurer {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
+    // Bearer-token authentication is request scoped: the security context must never be
+    // stored in (or restored from) an HTTP session.
     @Bean
     public SecurityContextRepository securityContextRepository() {
-        return new HttpSessionSecurityContextRepository();
+        return new RequestAttributeSecurityContextRepository();
     }
 
     @Bean

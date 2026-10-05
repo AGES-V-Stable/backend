@@ -77,6 +77,15 @@ public class BeneficiaryService {
                 pageable).map(this::toResponse);
     }
 
+    /** Detail scoped to one company: a beneficiary of another company is reported as not found. */
+    @Transactional(readOnly = true)
+    public BeneficiaryResponse findByIdForCompany(UUID companyId, UUID id) {
+        return beneficiaryRepository.findById(id)
+                .filter(beneficiary -> beneficiary.getCompany().getId().equals(companyId))
+                .map(this::toResponse)
+                .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
+    }
+
     @Transactional(readOnly = true)
     public BeneficiaryResponse findById(UUID id) {
         return beneficiaryRepository.findById(id)
@@ -92,6 +101,8 @@ public class BeneficiaryService {
         response.setNickname(entity.getNickname());
         response.setInternalDescription(entity.getInternalDescription());
         response.setReceivingMethod(entity.getReceivingMethod());
+        response.setBankName(entity.getBankName());
+        response.setAccountType(entity.getAccountType());
         response.setIdentificationDocument(entity.getIdentificationDocument());
         response.setBankCode(entity.getBankCode());
         response.setBranchNumber(entity.getBranchNumber());

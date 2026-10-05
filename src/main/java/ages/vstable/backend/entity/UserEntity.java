@@ -40,6 +40,11 @@ public class UserEntity implements UserDetails {
     @Column(name = "password_salt", nullable = false, length = 255)
     private String passwordSalt;
 
+    // Somente leitura: a coluna tem DEFAULT true no banco e nenhum fluxo da
+    // aplicação altera esse campo ainda; inserir null explicitamente anularia o default.
+    @Column(name = "active", insertable = false, updatable = false)
+    private Boolean active;
+
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
@@ -59,5 +64,10 @@ public class UserEntity implements UserDetails {
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return active == null || active;
     }
 }

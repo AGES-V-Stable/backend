@@ -4,7 +4,6 @@ import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.dto.compliance.KycSubmitResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
-import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
@@ -40,7 +39,7 @@ public class ComplianceKycService {
     public Optional<KycSubmitResponse> finalizar(UUID kycVerificationId, UUID currentUserId, KycSubmitRequest request) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
-                    verificarPropriedade(kyc, currentUserId);
+                    KycOwnership.verify(kyc, currentUserId);
                     return processar(kyc, request);
                 });
     }
@@ -131,11 +130,6 @@ public class ComplianceKycService {
         }
     }
 
-    private void verificarPropriedade(AveniaKycVerificationEntity kyc, UUID currentUserId) {
-        if (currentUserId == null || !currentUserId.equals(kyc.getUserId())) {
-            throw new ForbiddenException("Esta verificação de KYC não pertence ao usuário autenticado");
-        }
-    }
 
     private KycSubmitResponse toResponse(AveniaKycVerificationEntity kyc, String resultMessage) {
         KycSubmitResponse response = new KycSubmitResponse();

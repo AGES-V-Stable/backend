@@ -1,12 +1,15 @@
 package ages.vstable.backend.configuration.security;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.EnableGlobalAuthentication;
@@ -17,17 +20,13 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.authentication.logout.HeaderWriterLogoutHandler;
-import org.springframework.security.web.authentication.preauth.RequestHeaderAuthenticationFilter;
-import org.springframework.security.web.context.DelegatingSecurityContextRepository;
-import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.header.writers.ClearSiteDataHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
-
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -39,15 +38,19 @@ public class SecurityConfiguration {
 
     private final JwtTokenFilter jwtTokenFilter;
 
-    private final RequestAttributeSecurityContextRepository requestAttributeSecurityContextRepository;
     private final SecurityContextRepository securityContextRepository;
     private final AuthenticationProvider authenticationProvider;
 
-    @Value("${api.auth.header.name}")
-    private String apiAuthHeaderName;
+    /**
+     * Comma-separated list of allowed frontend origins. Patterns such as
+     * "http://localhost:*" or "https://*.example.com" are accepted.
+     */
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
 
     private static final String[] SWAGGER_PERMIT_LIST = {
             "/swagger-ui/**",
+            "/swagger-ui.html",
             "/v3/api-docs/**",
             "/swagger-resource/**"
     };
@@ -56,72 +59,86 @@ public class SecurityConfiguration {
     public SecurityFilterChain filterChain(
             HttpSecurity http
     ) throws Exception {
-        HeaderWriterLogoutHandler clearSiteData = new HeaderWriterLogoutHandler(new ClearSiteDataHeaderWriter(ClearSiteDataHeaderWriter.Directive.COOKIES));
-        // Enable CORS and disable CSRF
+        // Enable CORS (using the corsConfigurationSource bean below) and disable CSRF
         http
                 .cors(Customizer.withDefaults()).csrf(AbstractHttpConfigurer::disable)
 
-                // Set session management to stateless
+                // Bearer tokens only: no HTTP session is created or read
                 .sessionManagement(httpSecuritySessionManagementConfigurer -> httpSecuritySessionManagementConfigurer.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .securityContext(securityContext -> securityContext.securityContextRepository(securityContextRepository))
 
-                // Set permissions on endpoints
+                // Set permissions on endpoints. Admin/owner rules are enforced per endpoint
+                // with @PreAuthorize and CompanyAccess.
                 .authorizeHttpRequests(authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
 
                 // Add JWT token filter
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
-//                .addFilterAfter(requestHeaderAuthenticationFilter, HeaderWriterFilter.class)
                 .authenticationProvider(authenticationProvider)
-                .securityContext((securityContext) -> securityContext
-                        .securityContextRepository(new DelegatingSecurityContextRepository(
-                                requestAttributeSecurityContextRepository,
-                                securityContextRepository
-                        ))
-                )
-                // Set unauthorized requests exception handler.
+
+                // Same JSON error shape ({message, code}) as GlobalExceptionHandler
                 .exceptionHandling(httpSecurityExceptionHandlingConfigurer -> httpSecurityExceptionHandlingConfigurer
                         .authenticationEntryPoint((request, response, authException) ->
-                                response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
-
-               .logout((logout) -> logout.addLogoutHandler(clearSiteData));
+                                writeUnauthorized(request, response))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeError(response, HttpServletResponse.SC_FORBIDDEN, "ACCESS_DENIED", "Access denied")));
 
         return http.build();
     }
 
+    /**
+     * JwtTokenFilter is a @Component so it can be injected above; without this, Spring Boot would
+     * also register it as a plain servlet filter outside the security chain.
+     */
     @Bean
-    public CorsFilter corsFilter() {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    public FilterRegistrationBean<JwtTokenFilter> jwtTokenFilterRegistration(JwtTokenFilter filter) {
+        FilterRegistrationBean<JwtTokenFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /** Single CORS policy for the whole API, configured through CORS_ALLOWED_ORIGINS. */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Origens permitidas (dev e prod)
-        config.setAllowedOriginPatterns(List.of(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://localhost:*",
-                "http://127.0.0.1:*"
-        ));
-        // Métodos e headers liberados
+        config.setAllowedOriginPatterns(Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));
-        config.setExposedHeaders(List.of("Authorization"));
+        config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
+                HttpHeaders.ACCEPT, "X-Requested-With"));
+        // The login token is returned in the Authorization response header
+        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION));
         config.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-        return new CorsFilter(source);
+        return source;
     }
 
-    @Bean
-    public RequestHeaderAuthenticationFilter requestHeaderAuthenticationFilter(AuthenticationManager authenticationManager) {
-        RequestHeaderAuthenticationFilter filter = new RequestHeaderAuthenticationFilter();
-        filter.setAuthenticationManager(authenticationManager);
-        filter.setPrincipalRequestHeader(apiAuthHeaderName);
-        filter.setExceptionIfHeaderMissing(false);
-        return filter;
+    private static void writeUnauthorized(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Object reason = request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE);
+        if (JwtTokenFilter.TOKEN_EXPIRED.equals(reason)) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, JwtTokenFilter.TOKEN_EXPIRED, "Session expired");
+        } else if (JwtTokenFilter.TOKEN_INVALID.equals(reason)) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, JwtTokenFilter.TOKEN_INVALID, "Invalid token");
+        } else {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHENTICATED", "Authentication required");
+        }
     }
 
-
+    private static void writeError(HttpServletResponse response, int status, String code, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        // Messages and codes are fixed constants, so plain formatting is safe here.
+        response.getWriter().write("{\"message\":\"" + message + "\",\"code\":\"" + code + "\"}");
+    }
 }

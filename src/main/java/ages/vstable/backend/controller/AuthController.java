@@ -1,8 +1,6 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
-import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -14,11 +12,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -32,10 +31,9 @@ public class AuthController {
 
   private final AuthenticationManager authenticationManager;
   private final JwtTokenUtils jwtTokenUtil;
-  private final UserRepository userRepository;
 
   @PostMapping(path = "login")
-  @Operation(summary = "Authenticates a user and returns a JWT token in the Authorization header")
+  @Operation(summary = "Authenticates a company user or an administrator and returns a JWT token in the Authorization header")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "Authentication successful"),
       @ApiResponse(responseCode = "401", description = "User not found or invalid credentials"),
@@ -43,28 +41,23 @@ public class AuthController {
   })
   public ResponseEntity<Map<String, String>> getPermissions(@RequestBody AuthRequestDTO request) {
     try {
-      UserEntity user = userRepository
-          .findByEmail(request.getEmail())
-          .orElseThrow(() -> new BadCredentialsException("User not found"));
-      UsernamePasswordAuthenticationToken userPassAuth = new UsernamePasswordAuthenticationToken(
-              request.getEmail(),
-              request.getPassword());
       Authentication authenticate = authenticationManager.authenticate(
-          userPassAuth);
+          new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
 
-      SecurityContextHolder.getContext().setAuthentication(authenticate);
+      // The token is generated for the principal that actually authenticated (user or admin)
+      UserDetails principal = (UserDetails) authenticate.getPrincipal();
 
       return ResponseEntity
           .ok()
-          .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(user))
+          .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(principal))
           .build();
-    } catch (LockedException le) {
+    } catch (LockedException | DisabledException le) {
       log.error(le.getMessage());
-      return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("message", le.getMessage()));
-    } catch (BadCredentialsException ex) {
+      return ResponseEntity.status(HttpStatus.LOCKED)
+          .body(Map.of("message", le.getMessage(), "code", "ACCOUNT_LOCKED"));
+    } catch (AuthenticationException ex) {
       log.error(ex.getMessage());
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
   }
 }
-

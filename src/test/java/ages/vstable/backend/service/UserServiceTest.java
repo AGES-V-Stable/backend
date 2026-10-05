@@ -1,8 +1,11 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.user.UserResponse;
+import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -24,11 +27,14 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private AdministratorRepository administratorRepository;
+
     private UserService userService;
 
     @Test
     void findAll_returnsAllRepresentativesWithoutExposingPasswordHash() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         UUID companyId = UUID.randomUUID();
         UserEntity user = UserEntity.builder()
@@ -53,7 +59,7 @@ class UserServiceTest {
 
     @Test
     void findAll_noRepresentatives_returnsEmptyList() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         when(userRepository.findAll()).thenReturn(List.of());
 
@@ -64,7 +70,7 @@ class UserServiceTest {
 
     @Test
     void getByEmail_returnsUser_whenEmailExists() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "joao@example.com";
         UserEntity user = UserEntity.builder()
@@ -82,7 +88,7 @@ class UserServiceTest {
 
     @Test
     void getByEmail_throwsUsernameNotFound_whenEmailDoesNotExist() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "inexistente@example.com";
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
@@ -94,7 +100,7 @@ class UserServiceTest {
 
     @Test
     void loadUserByUsername_returnsUserDetails_whenEmailExists() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "joao@example.com";
         String passwordHash = "hash-da-senha";
@@ -115,7 +121,7 @@ class UserServiceTest {
 
     @Test
     void loadUserByUsername_throwsUsernameNotFound_whenEmailDoesNotExist() {
-        userService = new UserService(userRepository);
+        userService = new UserService(userRepository, administratorRepository);
 
         String email = "inexistente@example.com";
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
@@ -123,5 +129,52 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.loadUserByUsername(email))
                 .isInstanceOf(UsernameNotFoundException.class)
                 .hasMessage("User not found");
+    }
+
+    @Test
+    void loadUserByUsername_returnsAdministrator_whenEmailBelongsToAdmin() {
+        userService = new UserService(userRepository, administratorRepository);
+
+        AdministratorEntity admin = AdministratorEntity.builder()
+                .id(UUID.randomUUID())
+                .email("admin@vstable.com")
+                .passwordHash("hash")
+                .build();
+        when(administratorRepository.findByEmail("admin@vstable.com")).thenReturn(Optional.of(admin));
+
+        UserDetails result = userService.loadUserByUsername("admin@vstable.com");
+
+        assertThat(result).isSameAs(admin);
+        assertThat(result.getAuthorities()).extracting("authority").containsExactly("ROLE_ADMIN");
+    }
+
+    @Test
+    void loadPrincipal_adminAccountType_looksUpAdministrators() {
+        userService = new UserService(userRepository, administratorRepository);
+
+        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
+        when(administratorRepository.findByEmail("admin@vstable.com")).thenReturn(Optional.of(admin));
+
+        assertThat(userService.loadPrincipal("admin@vstable.com", JwtTokenUtils.ACCOUNT_TYPE_ADMIN)).isSameAs(admin);
+    }
+
+    @Test
+    void loadPrincipal_userAccountType_looksUpCompanyUsers() {
+        userService = new UserService(userRepository, administratorRepository);
+
+        UserEntity user = UserEntity.builder().email("joao@example.com").build();
+        when(userRepository.findByEmail("joao@example.com")).thenReturn(Optional.of(user));
+
+        assertThat(userService.loadPrincipal("joao@example.com", JwtTokenUtils.ACCOUNT_TYPE_USER)).isSameAs(user);
+    }
+
+    @Test
+    void loadPrincipal_unknownAdmin_throwsUsernameNotFound() {
+        userService = new UserService(userRepository, administratorRepository);
+
+        when(administratorRepository.findByEmail("x@vstable.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.loadPrincipal("x@vstable.com", JwtTokenUtils.ACCOUNT_TYPE_ADMIN))
+                .isInstanceOf(UsernameNotFoundException.class);
     }
 }
