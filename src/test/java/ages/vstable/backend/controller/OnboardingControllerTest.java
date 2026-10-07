@@ -1,31 +1,44 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.AuthenticationConfigurer;
+import ages.vstable.backend.configuration.security.SecurityConfiguration;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.OnboardingService;
+import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+
 import java.util.HashMap;
 import java.util.UUID;
 
-import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(OnboardingController.class)
+@Import({SecurityConfiguration.class, AuthenticationConfigurer.class})
+@WithAnonymousUser
 class OnboardingControllerTest {
 
     @Autowired
+    private WebApplicationContext context;
+
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -34,13 +47,20 @@ class OnboardingControllerTest {
     private OnboardingService onboardingService;
 
     @MockitoBean
-    private SecurityContextRepository securityContextRepository;
+    private UserService userService;
 
     @MockitoBean
     private JwtTokenUtils jwtTokenUtils;
 
     @MockitoBean
-    private UserRepository userRepository;
+    private AuthenticationProvider authenticationProvider;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(context)
+                .apply(springSecurity())
+                .build();
+    }
 
     private String validPayload() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {
@@ -112,7 +132,7 @@ class OnboardingControllerTest {
         mockMvc.perform(post("/v1/onboarding")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.message").value("Password and confirmation do not match"));
     }
 
