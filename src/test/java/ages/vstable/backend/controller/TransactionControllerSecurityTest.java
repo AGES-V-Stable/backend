@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -66,7 +67,7 @@ class TransactionControllerSecurityTest {
     }
 
     @Test
-    @WithMockUser(username = "cliente@teste.com", roles = {"USUARIO"})
+    @WithMockUser(username = "cliente@teste.com")
     void testClienteAcessandoRotaCliente_Success() throws Exception {
         UserEntity mockUser = new UserEntity();
         mockUser.setCompanyId(UUID.randomUUID());
@@ -84,7 +85,7 @@ class TransactionControllerSecurityTest {
     }
 
     @Test
-    @WithMockUser(username = "cliente@teste.com", roles = {"USUARIO"})
+    @WithMockUser(username = "cliente@teste.com")
     void testClienteAcessandoRotaAdmin_Returns403() throws Exception {
         // Usuário normal tentando acessar rota de admin (falta ROLE_ADMIN)
         mockMvc.perform(get("/api/admin/transferencias"))
@@ -108,6 +109,7 @@ class TransactionControllerSecurityTest {
     }
 
     @ParameterizedTest
+    @WithAnonymousUser
     @ValueSource(strings = {"/api/transferencias", "/api/admin/transferencias"})
     void testAcessoSemAutenticacao_Returns401(String path) throws Exception {
         mockMvc.perform(get(path))

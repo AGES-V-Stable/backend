@@ -2,8 +2,8 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
 import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,12 +21,11 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -41,9 +40,6 @@ class AuthControllerTest {
     private JwtTokenUtils jwtTokenUtil;
 
     @Mock
-    private UserRepository userRepository;
-
-    @Mock
     private Authentication authentication;
 
     @InjectMocks
@@ -54,12 +50,18 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
+        SecurityContextHolder.clearContext();
         request = new AuthRequestDTO();
         request.setEmail("user@email.com");
         request.setPassword("password");
 
         user = new UserEntity();
         user.setEmail("user@email.com");
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -106,8 +108,6 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
         assertEquals(Map.of("message", "User is locked"), response.getBody());
-
-        verify(userRepository).findByEmail("user@email.com");
 
         verify(authenticationManager).authenticate(any(
                 UsernamePasswordAuthenticationToken.class));
