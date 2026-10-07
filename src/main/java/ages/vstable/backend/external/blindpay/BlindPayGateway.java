@@ -3,6 +3,7 @@ package ages.vstable.backend.external.blindpay;
 import ages.vstable.backend.external.blindpay.dto.BlindPayBankAccountResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateBankAccountRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateCustomerRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayCreateWalletRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerCreatedResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayEvmPayoutRequest;
@@ -12,6 +13,7 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayPayinResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
 
 /**
  * Operações da BlindPay usadas pelo backend. Services devem depender desta
@@ -33,6 +35,9 @@ public interface BlindPayGateway {
             String customerId, BlindPayCreateBankAccountRequest request, String idempotencyKey);
 
     BlindPayBankAccountResponse getBankAccount(String customerId, String bankAccountId);
+
+    BlindPayWalletResponse createWallet(
+            String customerId, BlindPayCreateWalletRequest request, String idempotencyKey);
 
     BlindPayQuoteResponse createQuote(BlindPayQuoteRequest request, String idempotencyKey);
 

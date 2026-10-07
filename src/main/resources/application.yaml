@@ -53,3 +53,6 @@ blindpay:
   api-key: ${BLINDPAY_API_KEY:}
   instance-id: ${BLINDPAY_INSTANCE_ID:}
   webhook-secret: ${BLINDPAY_WEBHOOK_SECRET:}
+
+quotes:
+  provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}

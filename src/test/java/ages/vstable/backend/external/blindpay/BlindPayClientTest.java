@@ -4,6 +4,7 @@ import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.dto.BlindPayBankAccountResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateBankAccountRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateCustomerRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayCreateWalletRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerCreatedResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayEvmPayoutRequest;
@@ -13,6 +14,7 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayPayinResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -245,6 +247,42 @@ class BlindPayClientTest {
 
         assertThat(response.type()).isEqualTo("pix");
         assertThat(response.status()).isEqualTo("approved");
+        server.verify();
+    }
+
+    @Test
+    void createsManagedWalletForCustomer() {
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001/wallets"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "company-wallet-polygon"))
+                .andExpect(content().json("""
+                        {
+                          "network": "polygon",
+                          "external_id": "company-id:polygon",
+                          "name": "V-Stable polygon"
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {
+                          "id": "bl_000000000001",
+                          "name": "V-Stable polygon",
+                          "external_id": "company-id:polygon",
+                          "address": "0x123",
+                          "network": "polygon",
+                          "created_at": "2026-01-01T00:00:00Z"
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        BlindPayWalletResponse wallet = client.createWallet(
+                "re_000000000001",
+                new BlindPayCreateWalletRequest(
+                        BlindPayApi.BlockchainWallet.Network.polygon,
+                        "company-id:polygon",
+                        "V-Stable polygon"),
+                "company-wallet-polygon");
+
+        assertThat(wallet.id()).isEqualTo("bl_000000000001");
+        assertThat(wallet.network()).isEqualTo(BlindPayApi.BlockchainWallet.Network.polygon);
         server.verify();
     }
 

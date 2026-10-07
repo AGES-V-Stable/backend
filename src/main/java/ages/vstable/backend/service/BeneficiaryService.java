@@ -5,6 +5,7 @@ import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BeneficiaryRepository;
@@ -61,12 +62,46 @@ public class BeneficiaryService {
                 .branchNumber(request.getBranchNumber())
                 .accountNumber(request.getAccountNumber())
                 .currency(request.getCurrency())
+                .paymentRail(defaultText(request.getPaymentRail(), "international_swift"))
+                .accountClass(defaultText(request.getAccountClass(),
+                        "INDIVIDUAL".equalsIgnoreCase(request.getBeneficiaryType()) ? "individual" : "business"))
+                .accountType(parseAccountType(request.getAccountType()))
+                .recipientRelationship(defaultText(request.getRecipientRelationship(), "vendor_or_supplier"))
+                .iban(request.getIban())
+                .routingNumber(request.getRoutingNumber())
+                .addressLine1(defaultText(request.getAddressLine1(), request.getAddress()))
+                .addressLine2(request.getAddressLine2())
+                .city(request.getCity())
+                .stateProvinceRegion(request.getStateProvinceRegion())
+                .postalCode(request.getPostalCode())
+                .countryCode(request.getCountryCode())
+                .bankAddressLine1(request.getBankAddressLine1())
+                .bankAddressLine2(request.getBankAddressLine2())
+                .bankCity(request.getBankCity())
+                .bankStateProvinceRegion(request.getBankStateProvinceRegion())
+                .bankPostalCode(request.getBankPostalCode())
+                .bankCountryCode(request.getBankCountryCode())
+                .swiftPaymentCode(request.getSwiftPaymentCode())
                 .walletAddress(request.getWalletAddress())
                 .blockchainNetwork(request.getBlockchainNetwork())
                 .walletMemo(request.getWalletMemo())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private BankAccountType parseAccountType(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        if ("saving".equalsIgnoreCase(value)) {
+            return BankAccountType.savings;
+        }
+        return BankAccountType.valueOf(value.toLowerCase());
     }
 
     @Transactional(readOnly = true)

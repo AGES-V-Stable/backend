@@ -4,6 +4,7 @@ import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.dto.BlindPayBankAccountResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateBankAccountRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateCustomerRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayCreateWalletRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerCreatedResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayErrorResponse;
@@ -14,6 +15,7 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayPayinResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -46,6 +48,7 @@ public class BlindPayClient implements BlindPayGateway {
     private static final String CUSTOMER_PATH = CUSTOMERS_PATH + "/{customerId}";
     private static final String BANK_ACCOUNTS_PATH = CUSTOMER_PATH + "/bank-accounts";
     private static final String BANK_ACCOUNT_PATH = BANK_ACCOUNTS_PATH + "/{bankAccountId}";
+    private static final String WALLETS_PATH = CUSTOMER_PATH + "/wallets";
     private static final String QUOTES_PATH = INSTANCE_PATH + "/quotes";
     private static final String EVM_PAYOUTS_PATH = INSTANCE_PATH + "/payouts/evm";
     private static final String PAYOUT_PATH = INSTANCE_PATH + "/payouts/{payoutId}";
@@ -99,6 +102,15 @@ public class BlindPayClient implements BlindPayGateway {
         requireId(bankAccountId, "bankAccountId");
         return get("Could not fetch the BlindPay bank account",
                 BlindPayBankAccountResponse.class, BANK_ACCOUNT_PATH, customerId, bankAccountId);
+    }
+
+    @Override
+    public BlindPayWalletResponse createWallet(
+            String customerId, BlindPayCreateWalletRequest request, String idempotencyKey) {
+        requireId(customerId, "customerId");
+        requireRequest(request, "wallet request");
+        return post("Could not create the BlindPay wallet", request, idempotencyKey,
+                BlindPayWalletResponse.class, WALLETS_PATH, customerId);
     }
 
     @Override
