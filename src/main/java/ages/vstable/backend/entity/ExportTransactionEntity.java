@@ -2,13 +2,14 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
 
 
 /** Detalhe de uma transação de recebimento (exportação) de um pagador externo. */
 @Entity
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter

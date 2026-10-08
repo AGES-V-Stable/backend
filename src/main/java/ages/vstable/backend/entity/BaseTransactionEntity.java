@@ -3,6 +3,7 @@ package ages.vstable.backend.entity;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -16,7 +17,7 @@ import java.util.UUID;
  * export_transactions (recebimento de pagador externo).
  */
 @Entity
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter

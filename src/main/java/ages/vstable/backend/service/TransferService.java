@@ -58,7 +58,7 @@ public class TransferService {
     public TransferResponse findById(UUID id) {
         BaseTransactionEntity transaction = baseTransactionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Transferência não encontrada"));
-        return toResponses(List.of(transaction)).get(0);
+        return toResponses(List.of(transaction)).getFirst();
     }
 
     private void validate(TransferFilter filter) {
@@ -83,9 +83,9 @@ public class TransferService {
 
         List<UUID> ids = transactions.stream().map(BaseTransactionEntity::getId).toList();
         Map<UUID, ImportTransactionEntity> imports = byId(importTransactionRepository.findAllById(ids),
-                ImportTransactionEntity::getTransactionId);
+                ImportTransactionEntity::getId);
         Map<UUID, ExportTransactionEntity> exports = byId(exportTransactionRepository.findAllById(ids),
-                ExportTransactionEntity::getTransactionId);
+                ExportTransactionEntity::getId);
         Map<UUID, BeneficiaryEntity> beneficiaries = byId(beneficiaryRepository.findAllById(
                 imports.values().stream().map(ImportTransactionEntity::getBeneficiaryId).collect(Collectors.toSet())),
                 BeneficiaryEntity::getId);

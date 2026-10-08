@@ -71,13 +71,13 @@ public class TransferSpecification {
     private static Subquery<Integer> importOf(Root<BaseTransactionEntity> root, CriteriaQuery<?> query, CriteriaBuilder cb) {
         Subquery<Integer> sub = query.subquery(Integer.class);
         Root<ImportTransactionEntity> imp = sub.from(ImportTransactionEntity.class);
-        return sub.select(cb.literal(1)).where(cb.equal(imp.get("transactionId"), root.get("id")));
+        return sub.select(cb.literal(1)).where(cb.equal(imp.get("id"), root.get("id")));
     }
 
     private static Subquery<Integer> exportOf(Root<BaseTransactionEntity> root, CriteriaQuery<?> query, CriteriaBuilder cb) {
         Subquery<Integer> sub = query.subquery(Integer.class);
         Root<ExportTransactionEntity> exp = sub.from(ExportTransactionEntity.class);
-        return sub.select(cb.literal(1)).where(cb.equal(exp.get("transactionId"), root.get("id")));
+        return sub.select(cb.literal(1)).where(cb.equal(exp.get("id"), root.get("id")));
     }
 
     private static Subquery<Integer> companyMatching(Root<BaseTransactionEntity> root, CriteriaQuery<?> query,
@@ -105,7 +105,7 @@ public class TransferSpecification {
         Root<ImportTransactionEntity> imp = sub.from(ImportTransactionEntity.class);
         Root<BeneficiaryEntity> beneficiary = sub.from(BeneficiaryEntity.class);
         return sub.select(cb.literal(1)).where(
-                cb.equal(imp.get("transactionId"), root.get("id")),
+                cb.equal(imp.get("id"), root.get("id")),
                 cb.equal(beneficiary.get("id"), imp.get("beneficiaryId")),
                 cb.or(
                         cb.like(cb.lower(beneficiary.get("nickname")), pattern),
@@ -117,7 +117,7 @@ public class TransferSpecification {
         Subquery<Integer> sub = query.subquery(Integer.class);
         Root<ExportTransactionEntity> exp = sub.from(ExportTransactionEntity.class);
         return sub.select(cb.literal(1)).where(
-                cb.equal(exp.get("transactionId"), root.get("id")),
+                cb.equal(exp.get("id"), root.get("id")),
                 cb.like(cb.lower(exp.get("externalPayerName")), likePattern(name)));
     }
 

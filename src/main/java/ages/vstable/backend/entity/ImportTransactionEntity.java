@@ -3,6 +3,7 @@ package ages.vstable.backend.entity;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -10,7 +11,7 @@ import java.util.UUID;
 
 /** Detalhe de uma transação de pagamento (importação) para um beneficiário. */
 @Entity
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter

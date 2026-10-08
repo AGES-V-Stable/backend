@@ -6,7 +6,9 @@ import ages.vstable.backend.exception.ForbiddenException;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +27,26 @@ class CompanyAccessTest {
     private Authentication admin() {
         AdministratorEntity admin = AdministratorEntity.builder().id(UUID.randomUUID()).build();
         return new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
+    }
+
+    @Test
+    void isAdmin_acceptsAdminAuthority() {
+        Authentication authentication = new UsernamePasswordAuthenticationToken("admin", null,
+                List.of(new SimpleGrantedAuthority("ROLE_USER"), new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        assertThat(CompanyAccess.isAdmin(authentication)).isTrue();
+    }
+
+    @Test
+    void isAdmin_rejectsAccountTypeAndNonAdminAuthorities() {
+        Authentication accountType = new UsernamePasswordAuthenticationToken("admin", null,
+                List.of(new SimpleGrantedAuthority("ADMIN")));
+
+        assertThat(CompanyAccess.isAdmin(accountType)).isFalse();
+        assertThat(CompanyAccess.isAdmin(userOf(companyId))).isFalse();
+        assertThat(CompanyAccess.isAdmin(new UsernamePasswordAuthenticationToken("user", null, List.of())))
+                .isFalse();
+        assertThat(CompanyAccess.isAdmin(null)).isFalse();
     }
 
     @Test

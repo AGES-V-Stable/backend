@@ -1,8 +1,8 @@
 package ages.vstable.backend.configuration.security;
 
-import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import org.springframework.security.core.Authentication;
 
 import java.util.Optional;
@@ -20,7 +20,7 @@ public final class CompanyAccess {
 
     public static boolean isAdmin(Authentication authentication) {
         return authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(authority -> AdministratorEntity.ROLE_ADMIN.equals(authority.getAuthority()));
+                .anyMatch(authority -> ("ROLE_" + JwtTokenUtils.ACCOUNT_TYPE_ADMIN).equals(authority.getAuthority()));
     }
 
     public static Optional<UserEntity> companyUser(Authentication authentication) {

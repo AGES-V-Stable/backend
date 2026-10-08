@@ -100,10 +100,10 @@ class TransferServiceTest {
         when(baseTransactionRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(transaction(paymentId), transaction(receiptId)), pageable, 2));
         when(importTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
-                ImportTransactionEntity.builder().transactionId(paymentId).beneficiaryId(beneficiaryId)
+                ImportTransactionEntity.builder().id(paymentId).beneficiaryId(beneficiaryId)
                         .transferMethod(TransferMethod.PIX).build()));
         when(exportTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
-                ExportTransactionEntity.builder().transactionId(receiptId).externalPayerName("Acme Inc").build()));
+                ExportTransactionEntity.builder().id(receiptId).externalPayerName("Acme Inc").build()));
         when(beneficiaryRepository.findAllById(anyIterable())).thenReturn(List.of(
                 BeneficiaryEntity.builder().id(beneficiaryId).nickname("atlas").accountHolderName("Atlas LLC").build()));
         when(companyRepository.findAllById(anyIterable())).thenReturn(List.of(company()));
@@ -111,7 +111,9 @@ class TransferServiceTest {
         Page<TransferResponse> page = service.findTransfers(noFilters(), pageable);
 
         assertThat(page.getTotalElements()).isEqualTo(2);
-        TransferResponse payment = page.getContent().get(0);
+        TransferResponse payment = page.getContent().getFirst();
+        assertThat(payment.getId()).isEqualTo(paymentId);
+        assertThat(payment.getBeneficiaryId()).isEqualTo(beneficiaryId);
         assertThat(payment.getDirection()).isEqualTo(TransferDirection.PAYMENT);
         assertThat(payment.getCounterpartyName()).isEqualTo("Atlas LLC");
         assertThat(payment.getTransferMethod()).isEqualTo(TransferMethod.PIX);
@@ -119,6 +121,7 @@ class TransferServiceTest {
         assertThat(payment.getForeignAmount()).isEqualByComparingTo("1500.25");
 
         TransferResponse receipt = page.getContent().get(1);
+        assertThat(receipt.getId()).isEqualTo(receiptId);
         assertThat(receipt.getDirection()).isEqualTo(TransferDirection.RECEIPT);
         assertThat(receipt.getCounterpartyName()).isEqualTo("Acme Inc");
         assertThat(receipt.getBeneficiaryId()).isNull();
