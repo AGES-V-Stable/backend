@@ -7,6 +7,7 @@ import ages.vstable.backend.service.quote.QuoteOrchestratorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +19,7 @@ public class QuoteController {
     private final QuoteOrchestratorService quoteOrchestratorService;
 
     @PostMapping
+    @PreAuthorize("hasRole('USER')")
     public ResponseEntity<QuoteResponse> quote(
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody QuoteRequest request) {
