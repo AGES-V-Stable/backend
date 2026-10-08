@@ -11,6 +11,7 @@ import ages.vstable.backend.repository.ProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderWalletRepository;
 import ages.vstable.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -50,13 +51,24 @@ public class BlindPayProvisioningService {
             BlindPayBankAccountResponse response = blindPayGateway.createBankAccount(
                     providerAccount.getExternalCustomerId(), bankAccountRequest(beneficiary),
                     "beneficiary:" + beneficiary.getId() + ":blindpay");
+            if (response == null || !hasText(response.id())) {
+                throw BlindPayIntegrationException.invalidResponse("BlindPay bank account response has no id");
+            }
             link.setExternalBankAccountId(response.id());
             link.setStatus(response.status() == null ? "CREATED" : response.status().toUpperCase());
             link.setLastErrorCode(null);
             link.setSynchronizedAt(now);
             link.setUpdatedAt(now);
-            beneficiaryProviderAccountRepository.save(link);
-            return response.id();
+            try {
+                beneficiaryProviderAccountRepository.save(link);
+                return response.id();
+            } catch (DataIntegrityViolationException ex) {
+                return beneficiaryProviderAccountRepository
+                        .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
+                        .map(BeneficiaryProviderAccountEntity::getExternalBankAccountId)
+                        .filter(this::hasText)
+                        .orElseThrow(() -> ex);
+            }
         } catch (BlindPayIntegrationException ex) {
             link.setStatus("FAILED");
             link.setLastErrorCode(ex.getProviderErrorCode());
@@ -109,8 +121,16 @@ public class BlindPayProvisioningService {
             wallet.setLastErrorCode(null);
             wallet.setSynchronizedAt(now);
             wallet.setUpdatedAt(now);
-            providerWalletRepository.save(wallet);
-            return response.id();
+            try {
+                providerWalletRepository.save(wallet);
+                return response.id();
+            } catch (DataIntegrityViolationException ex) {
+                return providerWalletRepository
+                        .findByProviderAccountIdAndNetwork(providerAccount.getId(), network.name())
+                        .map(ProviderWalletEntity::getExternalWalletId)
+                        .filter(this::hasText)
+                        .orElseThrow(() -> ex);
+            }
         } catch (BlindPayIntegrationException ex) {
             wallet.setStatus("FAILED");
             wallet.setLastErrorCode(ex.getProviderErrorCode());
@@ -156,6 +176,9 @@ public class BlindPayProvisioningService {
                             .externalId(company.getId().toString())
                             .build(),
                     "company:" + company.getId() + ":blindpay");
+            if (response == null) {
+                throw BlindPayIntegrationException.invalidResponse("BlindPay customer response has no id");
+            }
             String customerId = hasText(response.customerId()) ? response.customerId() : response.id();
             if (!hasText(customerId)) {
                 throw BlindPayIntegrationException.invalidResponse("BlindPay customer response has no id");
@@ -165,7 +188,14 @@ public class BlindPayProvisioningService {
             account.setLastErrorCode(null);
             account.setSynchronizedAt(now);
             account.setUpdatedAt(now);
-            return providerAccountRepository.save(account);
+            try {
+                return providerAccountRepository.save(account);
+            } catch (DataIntegrityViolationException ex) {
+                return providerAccountRepository
+                        .findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY)
+                        .filter(saved -> hasText(saved.getExternalCustomerId()))
+                        .orElseThrow(() -> ex);
+            }
         } catch (BlindPayIntegrationException ex) {
             account.setStatus("FAILED");
             account.setLastErrorCode(ex.getProviderErrorCode());
