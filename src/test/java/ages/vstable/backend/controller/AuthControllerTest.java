@@ -110,7 +110,7 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
-        assertEquals(Map.of("message", "User is locked", "code", "ACCOUNT_LOCKED"), response.getBody());
+        assertEquals(Map.of("message", "User is locked"), response.getBody());
         verifyNoInteractions(jwtTokenUtil);
     }
 

@@ -61,7 +61,7 @@ class SecurityChainIntegrationTest {
     @MockitoBean
     private CompanyService companyService;
 
-    @MockitoBean
+    @MockitoBean(name = "userService")
     private UserService userService;
 
     private final UUID companyId = UUID.randomUUID();
