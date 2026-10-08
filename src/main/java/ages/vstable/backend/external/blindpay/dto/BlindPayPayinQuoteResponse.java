@@ -6,7 +6,7 @@ import tools.jackson.databind.annotation.JsonNaming;
 
 import java.math.BigDecimal;
 
-/** Cotação de payin. Valores em centavos; {@code expiresAt} é epoch em segundos. */
+/** Cotação de payin. Valores em centavos; {@code expiresAt} é epoch em milissegundos. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record BlindPayPayinQuoteResponse(

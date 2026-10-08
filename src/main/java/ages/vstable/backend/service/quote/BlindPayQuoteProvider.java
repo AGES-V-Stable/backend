@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.Locale;
 
 @Component
 @RequiredArgsConstructor
@@ -48,7 +49,9 @@ public class BlindPayQuoteProvider implements QuoteProvider {
             return false;
         }
         if (!hasText(context.beneficiary().getCurrency())
-                || !context.beneficiary().getCurrency().equalsIgnoreCase(context.request().targetCurrency())) {
+                || !context.beneficiary().getCurrency().equalsIgnoreCase(context.request().targetCurrency())
+                || !matchesPaymentRail(context.request().targetPaymentMethod(),
+                    context.beneficiary().getPaymentRail())) {
             return false;
         }
         try {
@@ -81,13 +84,15 @@ public class BlindPayQuoteProvider implements QuoteProvider {
             QuoteContext context, String bankAccountId, String idempotencyKey) {
         BlindPayQuoteResponse response = createPayoutQuote(
                 context, bankAccountId, context.request().amount(), context.request().amountSide(), idempotencyKey);
+        BigDecimal sourceAmount = requirePositive(fromCents(response.senderAmount()), "BlindPay sender amount");
+        BigDecimal targetAmount = requirePositive(fromCents(response.receiverAmount()), "BlindPay receiver amount");
         BigDecimal fees = payoutFees(response);
         return new ProviderQuoteResult(
                 provider(),
                 response.id(),
-                fromCents(response.senderAmount()),
-                fromCents(response.receiverAmount()),
-                response.blindpayQuotation(),
+                sourceAmount,
+                targetAmount,
+                targetAmount.divide(sourceAmount, 10, RoundingMode.HALF_UP),
                 fromCents(fees),
                 fromCents(fees),
                 expiresAt(response),
@@ -206,12 +211,12 @@ public class BlindPayQuoteProvider implements QuoteProvider {
 
     private OffsetDateTime expiresAt(BlindPayQuoteResponse response) {
         return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
+                : OffsetDateTime.ofInstant(Instant.ofEpochMilli(response.expiresAt()), java.time.ZoneOffset.UTC);
     }
 
     private OffsetDateTime expiresAt(BlindPayPayinQuoteResponse response) {
         return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
+                : OffsetDateTime.ofInstant(Instant.ofEpochMilli(response.expiresAt()), java.time.ZoneOffset.UTC);
     }
 
     private BigDecimal payoutFees(BlindPayQuoteResponse response) {
@@ -255,6 +260,17 @@ public class BlindPayQuoteProvider implements QuoteProvider {
             }
         }
         return total;
+    }
+
+    private boolean matchesPaymentRail(String requested, String configured) {
+        if (!hasText(requested) || !hasText(configured)) {
+            return false;
+        }
+        String normalizedRequested = requested.trim().toLowerCase(Locale.ROOT);
+        if ("swift".equals(normalizedRequested)) {
+            normalizedRequested = "international_swift";
+        }
+        return normalizedRequested.equals(configured.trim().toLowerCase(Locale.ROOT));
     }
 
     private boolean hasText(String value) {

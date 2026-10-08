@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -107,7 +108,7 @@ public class QuoteOrchestratorService {
         }
 
         QuoteOfferResponse bestOffer = offers.stream()
-                .filter(this::isUsable)
+                .filter(offer -> isUsable(offer, request))
                 .min(bestOfferComparator(request.amountSide()))
                 .orElse(null);
         quoteRequest.setStatus(bestOffer == null ? "FAILED" : failures == 0 ? "COMPLETED" : "PARTIAL");
@@ -127,18 +128,24 @@ public class QuoteOrchestratorService {
         } else {
             byEffectivePrice = Comparator.comparing(QuoteOfferResponse::sourceAmount);
         }
-        return byEffectivePrice.thenComparing(
-                QuoteOfferResponse::totalFee,
-                Comparator.nullsLast(Comparator.naturalOrder()));
+        return byEffectivePrice;
     }
 
-    private boolean isUsable(QuoteOfferResponse offer) {
+    private boolean isUsable(QuoteOfferResponse offer, QuoteRequest request) {
         return offer.sourceAmount() != null
                 && offer.sourceAmount().signum() > 0
                 && offer.targetAmount() != null
                 && offer.targetAmount().signum() > 0
+                && matchesRequestedAmount(offer, request)
                 && (offer.expiresAt() == null
                     || offer.expiresAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC)));
+    }
+
+    private boolean matchesRequestedAmount(QuoteOfferResponse offer, QuoteRequest request) {
+        BigDecimal fixedAmount = request.amountSide() == QuoteAmountSide.SOURCE
+                ? offer.sourceAmount()
+                : offer.targetAmount();
+        return fixedAmount.compareTo(request.amount()) == 0;
     }
 
     private ProviderCall call(QuoteProvider provider, QuoteContext context) {

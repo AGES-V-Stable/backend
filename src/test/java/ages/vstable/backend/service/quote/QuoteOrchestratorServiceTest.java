@@ -88,6 +88,23 @@ class QuoteOrchestratorServiceTest {
     }
 
     @Test
+    void quote_aveniaFails_returnsBlindPayOfferAndPersistsBothResults() {
+        when(avenia.provider()).thenReturn(IntegrationProvider.AVENIA);
+        when(blindPay.provider()).thenReturn(IntegrationProvider.BLINDPAY);
+        when(avenia.supports(any())).thenReturn(true);
+        when(blindPay.supports(any())).thenReturn(true);
+        when(avenia.quote(any(), any())).thenThrow(new RuntimeException("provider unavailable"));
+        when(blindPay.quote(any(), any())).thenReturn(result(
+                IntegrationProvider.BLINDPAY, "100.00", "19.00", "1.00"));
+
+        QuoteResponse response = service.quote(user, request());
+
+        assertThat(response.offer().targetAmount()).isEqualByComparingTo("19.00");
+        verify(providerQuoteRepository, times(2)).save(any());
+        verify(quoteRequestRepository, times(2)).save(any());
+    }
+
+    @Test
     void quote_providerDoesNotSupportRequest_returnsUnprocessableEntity() {
         when(avenia.supports(any())).thenReturn(false);
         when(blindPay.supports(any())).thenReturn(false);
@@ -113,8 +130,8 @@ class QuoteOrchestratorServiceTest {
     @Test
     void quote_targetAmountFixed_returnsOfferWithLowestSourceAmount() {
         configureSuccessfulProviders(
-                result(IntegrationProvider.AVENIA, "102.00", "20.00", "1.00"),
-                result(IntegrationProvider.BLINDPAY, "100.00", "20.00", "2.00"));
+                result(IntegrationProvider.AVENIA, "102.00", "100.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "100.00", "2.00"));
 
         QuoteResponse response = service.quote(user, request(QuoteAmountSide.TARGET));
 
@@ -122,14 +139,38 @@ class QuoteOrchestratorServiceTest {
     }
 
     @Test
-    void quote_sameEffectivePrice_returnsOfferWithLowestFee() {
+    void quote_sameAmounts_doesNotUseFeesWithoutComparableCurrency() {
         configureSuccessfulProviders(
                 result(IntegrationProvider.AVENIA, "100.00", "20.00", "2.00"),
                 result(IntegrationProvider.BLINDPAY, "100.00", "20.00", "1.00"));
 
         QuoteResponse response = service.quote(user, request());
 
-        assertThat(response.offer().totalFee()).isEqualByComparingTo("1.00");
+        assertThat(response.offer().totalFee()).isEqualByComparingTo("2.00");
+    }
+
+    @Test
+    void quote_offerThatChangesFixedSourceAmount_isNotSelected() {
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "101.00", "25.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "20.00", "1.00"));
+
+        QuoteResponse response = service.quote(user, request());
+
+        assertThat(response.offer().sourceAmount()).isEqualByComparingTo("100.00");
+        assertThat(response.offer().targetAmount()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void quote_offerThatChangesFixedTargetAmount_isNotSelected() {
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "90.00", "19.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "100.00", "1.00"));
+
+        QuoteResponse response = service.quote(user, request(QuoteAmountSide.TARGET));
+
+        assertThat(response.offer().sourceAmount()).isEqualByComparingTo("100.00");
+        assertThat(response.offer().targetAmount()).isEqualByComparingTo("100.00");
     }
 
     @Test
