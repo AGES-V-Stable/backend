@@ -1,9 +1,9 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
+import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.utils.JwtTokenUtils;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,8 +11,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,17 +18,16 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class AuthControllerTest {
 
     @Mock
@@ -38,9 +35,6 @@ class AuthControllerTest {
 
     @Mock
     private JwtTokenUtils jwtTokenUtil;
-
-    @Mock
-    private Authentication authentication;
 
     @InjectMocks
     private AuthController authController;
@@ -50,7 +44,6 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        SecurityContextHolder.clearContext();
         request = new AuthRequestDTO();
         request.setEmail("user@email.com");
         request.setPassword("password");
@@ -59,34 +52,42 @@ class AuthControllerTest {
         user.setEmail("user@email.com");
     }
 
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
-    }
-
     @Test
     void shouldLoginSuccessfully() {
-        String token = "jwt-token";
-
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(user);
-        when(jwtTokenUtil.generateToken(user)).thenReturn(token);
+                .thenReturn(new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
+        when(jwtTokenUtil.generateToken(user)).thenReturn("jwt-token");
 
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("Bearer " + token, response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
+        assertEquals("Bearer jwt-token", response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
+        verify(jwtTokenUtil).generateToken(user);
+    }
+
+    @Test
+    void shouldIssueTokenForAdministrator() {
+        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities()));
+        when(jwtTokenUtil.generateToken(admin)).thenReturn("admin-token");
+
+        ResponseEntity<?> response = authController.getPermissions(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Bearer admin-token", response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
     }
 
     @Test
     void shouldReturnUnauthorizedWhenUserDoesNotExist() {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new BadCredentialsException("Invalid credentials"));
+                .thenThrow(new UsernameNotFoundException("User not found"));
 
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNull(response.getBody());
+        verifyNoInteractions(jwtTokenUtil);
     }
 
     @Test
@@ -97,6 +98,8 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNull(response.getBody());
+        verifyNoInteractions(jwtTokenUtil);
     }
 
     @Test
@@ -108,27 +111,22 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
         assertEquals(Map.of("message", "User is locked"), response.getBody());
-
-        verify(authenticationManager).authenticate(any(
-                UsernamePasswordAuthenticationToken.class));
-
         verifyNoInteractions(jwtTokenUtil);
     }
 
     @Test
     void shouldAuthenticateWithProvidedCredentials() {
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(authentication);
-        when(authentication.getPrincipal()).thenReturn(user);
+        when(authenticationManager.authenticate(any()))
+                .thenReturn(new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
         when(jwtTokenUtil.generateToken(user)).thenReturn("jwt-token");
 
         authController.getPermissions(request);
 
-        ArgumentCaptor<UsernamePasswordAuthenticationToken> captor = ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
+        ArgumentCaptor<UsernamePasswordAuthenticationToken> captor =
+                ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
         verify(authenticationManager).authenticate(captor.capture());
 
-        UsernamePasswordAuthenticationToken authToken = captor.getValue();
-        assertEquals("user@email.com", authToken.getPrincipal());
-        assertEquals("password", authToken.getCredentials());
+        assertEquals("user@email.com", captor.getValue().getPrincipal());
+        assertEquals("password", captor.getValue().getCredentials());
     }
 }

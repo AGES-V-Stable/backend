@@ -2,6 +2,8 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
+import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.OnboardingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -11,6 +13,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,5 +40,20 @@ public class OnboardingController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(onboardingService.performOnboarding(request));
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "Returns the latest KYC verification of the authenticated representative, so an interrupted registration can be resumed")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Current onboarding state returned"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "403", description = "Authenticated account is not a company user"),
+            @ApiResponse(responseCode = "404", description = "No KYC verification for this user"),
+    })
+    public ResponseEntity<OnboardingStatusResponse> current(@AuthenticationPrincipal UserEntity currentUser) {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(onboardingService.getCurrentOnboarding(currentUser));
     }
 }

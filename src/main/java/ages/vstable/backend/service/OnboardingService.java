@@ -3,12 +3,15 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
+import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.UserRepository;
@@ -22,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Service
@@ -32,6 +36,7 @@ public class OnboardingService {
     private static final Pattern STRONG_PASSWORD_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
 
     private final UserRepository userRepository;
+    private final AdministratorRepository administratorRepository;
     private final CompanyRepository companyRepository;
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final CompanyDataValidator companyDataValidator;
@@ -103,8 +108,28 @@ public class OnboardingService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public OnboardingStatusResponse getCurrentOnboarding(UserEntity user) {
+        AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository
+                .findFirstByUserIdOrderByCreatedAtDesc(user.getId())
+                .orElseThrow(() -> new NotFoundException("No KYC verification found for the current user"));
+
+        return OnboardingStatusResponse.builder()
+                .kycVerificationId(kyc.getId())
+                .companyId(user.getCompanyId())
+                .status(kyc.getStatus())
+                .documentSubmitted(isPresent(kyc.getDocumentId()))
+                .livenessSubmitted(isPresent(kyc.getLivenessId()))
+                .build();
+    }
+
+    private static boolean isPresent(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private void assertEmailAvailable(String email) {
-        if (userRepository.existsByEmail(email)) {
+        // Admin e-mails are also reserved so that a login e-mail always maps to a single account.
+        if (userRepository.existsByEmail(email) || administratorRepository.existsByEmail(email)) {
             throw new ConflictException("Email already registered");
         }
     }

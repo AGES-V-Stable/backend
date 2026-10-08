@@ -1,5 +1,6 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.dto.compliance.DocumentSubmitRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartResponse;
@@ -24,6 +25,8 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ComplianceDocumentServiceTest {
+
+    private static final UUID USER_ID = UUID.randomUUID();
 
     private static final String SUB_ACCOUNT_ID = "sub-1";
 
@@ -51,7 +54,7 @@ class ComplianceDocumentServiceTest {
     void iniciar_kycExistente_provisionaSubcontaEChamaAveniaComEla() {
         ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         AveniaDocumentUploadResponse aveniaResponse = new AveniaDocumentUploadResponse();
         aveniaResponse.setId("doc-123");
@@ -62,7 +65,7 @@ class ComplianceDocumentServiceTest {
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarDocumento("ID", true, SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
-        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, requestPara("ID", true));
+        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
 
         assertThat(resultado).isPresent();
         assertThat(resultado.get().getId()).isEqualTo("doc-123");
@@ -76,7 +79,7 @@ class ComplianceDocumentServiceTest {
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, requestPara("ID", true));
+        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
 
         assertThat(resultado).isEmpty();
         verifyNoInteractions(aveniaClient);
@@ -87,14 +90,14 @@ class ComplianceDocumentServiceTest {
     void iniciar_falhaNaAvenia_propagaAveniaIntegrationException() {
         ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarDocumento("PASSPORT", false, SUB_ACCOUNT_ID))
                 .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
-        assertThatThrownBy(() -> service.iniciar(kycId, requestPara("PASSPORT", false)))
+        assertThatThrownBy(() -> service.iniciar(kycId, USER_ID, requestPara("PASSPORT", false)))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -102,14 +105,14 @@ class ComplianceDocumentServiceTest {
     void concluir_kycExistente_salvaDocumentoIdERetornaTrue() {
         ComplianceDocumentService service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         DocumentSubmitRequest request = new DocumentSubmitRequest();
         request.setDocumentoId("doc-123");
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
 
-        boolean resultado = service.concluir(kycId, request);
+        boolean resultado = service.concluir(kycId, USER_ID, request);
 
         assertThat(resultado).isTrue();
 
@@ -127,9 +130,49 @@ class ComplianceDocumentServiceTest {
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        boolean resultado = service.concluir(kycId, request);
+        boolean resultado = service.concluir(kycId, USER_ID, request);
 
         assertThat(resultado).isFalse();
         verify(aveniaKycVerificationRepository, never()).save(any());
+    }
+
+    @Test
+    void iniciar_kycDeOutroUsuario_lancaForbiddenSemChamarAvenia() {
+        ComplianceDocumentService service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(UUID.randomUUID()).build();
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.iniciar(kycId, USER_ID, requestPara("ID", true)))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(aveniaClient);
+        verifyNoInteractions(subAccountProvisioningService);
+    }
+
+    @Test
+    void concluir_kycDeOutroUsuario_lancaForbiddenSemSalvar() {
+        ComplianceDocumentService service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(UUID.randomUUID()).build();
+        DocumentSubmitRequest request = new DocumentSubmitRequest();
+        request.setDocumentoId("doc-123");
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.concluir(kycId, USER_ID, request))
+                .isInstanceOf(ForbiddenException.class);
+        verify(aveniaKycVerificationRepository, never()).save(any());
+    }
+
+    @Test
+    void concluir_semUsuarioAutenticado_lancaForbidden() {
+        ComplianceDocumentService service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
+        DocumentSubmitRequest request = new DocumentSubmitRequest();
+        request.setDocumentoId("doc-123");
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.concluir(kycId, null, request))
+                .isInstanceOf(ForbiddenException.class);
     }
 }

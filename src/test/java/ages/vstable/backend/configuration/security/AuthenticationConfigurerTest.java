@@ -11,7 +11,6 @@ import org.mockito.quality.Strictness;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 
@@ -61,13 +60,13 @@ class AuthenticationConfigurerTest {
     }
 
     @Test
-    void shouldCreateSecurityContextRepository() {
+    void shouldCreateRequestScopedSecurityContextRepository() {
         SecurityContextRepository repository =
                 configurer.securityContextRepository();
 
         assertNotNull(repository);
         assertInstanceOf(
-                HttpSessionSecurityContextRepository.class,
+                RequestAttributeSecurityContextRepository.class,
                 repository
         );
     }

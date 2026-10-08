@@ -1,6 +1,10 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
+import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
+import ages.vstable.backend.dto.company.CompanySummaryResponse;
+import ages.vstable.backend.entity.AdministratorEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
@@ -18,6 +22,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -26,9 +32,11 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -47,6 +55,16 @@ class CompanyControllerTest {
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private Authentication admin() {
+        AdministratorEntity admin = AdministratorEntity.builder().id(UUID.randomUUID()).build();
+        return new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
+    }
+
+    private Authentication userOf(UUID companyId) {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+        return new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+    }
 
     @BeforeEach
     void setUp() {
@@ -117,7 +135,7 @@ class CompanyControllerTest {
         CompanyResponse response = sampleResponse(id);
         when(companyService.findById(id)).thenReturn(Optional.of(response));
 
-        mockMvc.perform(get("/v1/companies/{id}", id))
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()));
     }
@@ -127,7 +145,7 @@ class CompanyControllerTest {
         UUID id = UUID.randomUUID();
         when(companyService.findById(id)).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/v1/companies/{id}", id))
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(admin()))
                 .andExpect(status().isNotFound());
     }
 
@@ -210,7 +228,7 @@ class CompanyControllerTest {
 
         when(companyService.getComplianceStatus(id)).thenReturn(response);
 
-        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id))
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.statusKyb").value("APPROVED"))
@@ -224,7 +242,7 @@ class CompanyControllerTest {
         UUID id = UUID.randomUUID();
         when(companyService.getComplianceStatus(id)).thenThrow(new NotFoundException("Company not found"));
 
-        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id))
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(admin()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Company not found"));
     }
@@ -235,9 +253,77 @@ class CompanyControllerTest {
         when(companyService.getComplianceStatus(id))
                 .thenThrow(new UnprocessableEntityException("Company has an invalid compliance status"));
 
-        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id))
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(admin()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.message").value("Company has an invalid compliance status"));
+    }
+
+    @Test
+    void findById_memberOfTheCompany_isAllowed() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(companyService.findById(id)).thenReturn(Optional.of(sampleResponse(id)));
+
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(userOf(id)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void findById_userOfAnotherCompany_returns403() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(userOf(UUID.randomUUID())))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(companyService);
+    }
+
+    @Test
+    void getComplianceStatus_userOfAnotherCompany_returns403() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(userOf(UUID.randomUUID())))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(companyService);
+    }
+
+    @Test
+    void findSummaries_returnsSummaries() throws Exception {
+        CompanySummaryResponse summary = new CompanySummaryResponse();
+        summary.setId(UUID.randomUUID());
+        summary.setLegalName("Empresa Teste");
+        summary.setOverallStatus(ComplianceStatus.UNDER_REVIEW);
+        summary.setRepresentativeName("Maria");
+        when(companyService.findSummaries()).thenReturn(List.of(summary));
+
+        mockMvc.perform(get("/v1/companies/summaries"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].legalName").value("Empresa Teste"))
+                .andExpect(jsonPath("$[0].overallStatus").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$[0].representativeName").value("Maria"));
+    }
+
+    @Test
+    void updateComplianceStatus_returnsUpdatedCompany() throws Exception {
+        UUID id = UUID.randomUUID();
+        CompanyResponse response = sampleResponse(id);
+        response.setStatusKyb(ComplianceStatus.APPROVED);
+        when(companyService.updateComplianceStatus(eq(id), any(CompanyComplianceUpdateRequest.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(patch("/v1/companies/{id}/compliance-status", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"statusKyb\":\"APPROVED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statusKyb").value("APPROVED"));
+    }
+
+    @Test
+    void updateComplianceStatus_unknownStatus_returns400() throws Exception {
+        mockMvc.perform(patch("/v1/companies/{id}/compliance-status", UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"statusKyb\":\"WHATEVER\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     private CompanyCreateRequest validCreateRequest() {

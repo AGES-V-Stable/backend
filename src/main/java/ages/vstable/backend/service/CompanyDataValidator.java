@@ -28,8 +28,8 @@ class CompanyDataValidator {
         }
 
         String normalizedCountry = required(country, "country", 100);
-        String normalizedState = required(state, "state", 100);
-        String normalizedCity = optional(city, "city", 255);
+        String normalizedState = required(state, "state", 50);
+        String normalizedCity = optional(city, "city", 100);
 
         return new CompanyNormalizedData(
                 normalizedLegalName,

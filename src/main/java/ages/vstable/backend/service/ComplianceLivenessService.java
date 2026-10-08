@@ -21,9 +21,10 @@ public class ComplianceLivenessService {
     private final AveniaClient aveniaClient;
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
-    public Optional<LivenessStartResponse> iniciar(UUID kycVerificationId) {
+    public Optional<LivenessStartResponse> iniciar(UUID kycVerificationId, UUID currentUserId) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
+                    KycOwnership.verify(kyc, currentUserId);
                     String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
                     AveniaDocumentResponse aveniaResponse = aveniaClient.iniciarLiveness(subAccountId);
 
@@ -36,9 +37,10 @@ public class ComplianceLivenessService {
                 });
     }
 
-    public Optional<LivenessStatusResponse> consultarStatus(UUID kycVerificationId, String livenessId) {
+    public Optional<LivenessStatusResponse> consultarStatus(UUID kycVerificationId, UUID currentUserId, String livenessId) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
+                    KycOwnership.verify(kyc, currentUserId);
                     AveniaDocumentStatusResponse aveniaResponse =
                             aveniaClient.consultarStatusDocumento(livenessId, kyc.getAveniaSubAccountId());
                     AveniaDocumentStatusResponse.Document document = aveniaResponse.getDocument();
@@ -50,9 +52,10 @@ public class ComplianceLivenessService {
                 });
     }
 
-    public boolean concluir(UUID kycVerificationId, LivenessSubmitRequest request) {
+    public boolean concluir(UUID kycVerificationId, UUID currentUserId, LivenessSubmitRequest request) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
+                    KycOwnership.verify(kyc, currentUserId);
                     kyc.setLivenessId(request.getLivenessId());
                     aveniaKycVerificationRepository.save(kyc);
                     return true;

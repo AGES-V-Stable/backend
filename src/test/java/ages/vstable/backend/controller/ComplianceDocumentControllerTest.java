@@ -61,7 +61,7 @@ class ComplianceDocumentControllerTest {
     @Test
     void post_progressoValido_retorna200ComCampos() throws Exception {
         UUID progressoId = UUID.randomUUID();
-        when(complianceDocumentoService.iniciar(eq(progressoId), any())).thenReturn(Optional.of(startResponse()));
+        when(complianceDocumentoService.iniciar(eq(progressoId), any(), any())).thenReturn(Optional.of(startResponse()));
 
         String body = payload(new HashMap<>() {{
             put("documentType", "ID");
@@ -95,7 +95,7 @@ class ComplianceDocumentControllerTest {
     @Test
     void post_progressoInexistente_retorna404() throws Exception {
         UUID progressoId = UUID.randomUUID();
-        when(complianceDocumentoService.iniciar(eq(progressoId), any())).thenReturn(Optional.empty());
+        when(complianceDocumentoService.iniciar(eq(progressoId), any(), any())).thenReturn(Optional.empty());
 
         String body = payload(new HashMap<>() {{
             put("documentType", "PASSPORT");
@@ -124,7 +124,7 @@ class ComplianceDocumentControllerTest {
     @Test
     void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID progressoId = UUID.randomUUID();
-        when(complianceDocumentoService.iniciar(eq(progressoId), any()))
+        when(complianceDocumentoService.iniciar(eq(progressoId), any(), any()))
                 .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         String body = payload(new HashMap<>() {{
@@ -143,7 +143,7 @@ class ComplianceDocumentControllerTest {
     @Test
     void put_progressoValido_retorna204() throws Exception {
         UUID progressoId = UUID.randomUUID();
-        when(complianceDocumentoService.concluir(eq(progressoId), any())).thenReturn(true);
+        when(complianceDocumentoService.concluir(eq(progressoId), any(), any())).thenReturn(true);
 
         String body = payload(new HashMap<>() {{
             put("documentoId", "doc-123");
@@ -158,7 +158,7 @@ class ComplianceDocumentControllerTest {
     @Test
     void put_progressoInexistente_retorna404() throws Exception {
         UUID progressoId = UUID.randomUUID();
-        when(complianceDocumentoService.concluir(eq(progressoId), any())).thenReturn(false);
+        when(complianceDocumentoService.concluir(eq(progressoId), any(), any())).thenReturn(false);
 
         String body = payload(new HashMap<>() {{
             put("documentoId", "doc-123");

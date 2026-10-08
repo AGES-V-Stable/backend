@@ -60,7 +60,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void post_kycValido_retorna200ComCampos() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.iniciar(kycId)).thenReturn(Optional.of(startResponse()));
+        when(complianceLivenessService.iniciar(eq(kycId), any())).thenReturn(Optional.of(startResponse()));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/liveness", kycId))
                 .andExpect(status().isOk())
@@ -73,7 +73,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void post_kycInexistente_retorna404() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.iniciar(kycId)).thenReturn(Optional.empty());
+        when(complianceLivenessService.iniciar(eq(kycId), any())).thenReturn(Optional.empty());
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/liveness", kycId))
                 .andExpect(status().isNotFound());
@@ -88,7 +88,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.iniciar(kycId))
+        when(complianceLivenessService.iniciar(eq(kycId), any()))
                 .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(post("/v1/onboarding/{id}/compliance/liveness", kycId))
@@ -103,7 +103,7 @@ class ComplianceLivenessControllerTest {
         LivenessStatusResponse status = new LivenessStatusResponse();
         status.setReady(true);
         status.setStatus("UPLOADED");
-        when(complianceLivenessService.consultarStatus(kycId, "liveness-123"))
+        when(complianceLivenessService.consultarStatus(eq(kycId), any(), eq("liveness-123")))
                 .thenReturn(Optional.of(status));
 
         mockMvc.perform(get("/v1/onboarding/{id}/compliance/liveness/status", kycId)
@@ -124,7 +124,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void get_kycInexistente_retorna404() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.consultarStatus(kycId, "liveness-123"))
+        when(complianceLivenessService.consultarStatus(eq(kycId), any(), eq("liveness-123")))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(get("/v1/onboarding/{id}/compliance/liveness/status", kycId)
@@ -135,7 +135,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void get_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.consultarStatus(kycId, "liveness-123"))
+        when(complianceLivenessService.consultarStatus(eq(kycId), any(), eq("liveness-123")))
                 .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", new RuntimeException()));
 
         mockMvc.perform(get("/v1/onboarding/{id}/compliance/liveness/status", kycId)
@@ -147,7 +147,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void put_kycValido_retorna204() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.concluir(eq(kycId), any())).thenReturn(true);
+        when(complianceLivenessService.concluir(eq(kycId), any(), any())).thenReturn(true);
 
         String payload = objectMapper.writeValueAsString(new HashMap<>() {{
             put("livenessId", "liveness-123");
@@ -162,7 +162,7 @@ class ComplianceLivenessControllerTest {
     @Test
     void put_kycInexistente_retorna404() throws Exception {
         UUID kycId = UUID.randomUUID();
-        when(complianceLivenessService.concluir(eq(kycId), any())).thenReturn(false);
+        when(complianceLivenessService.concluir(eq(kycId), any(), any())).thenReturn(false);
 
         String payload = objectMapper.writeValueAsString(new HashMap<>() {{
             put("livenessId", "liveness-123");

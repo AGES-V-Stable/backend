@@ -1,17 +1,21 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
+import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
+import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
+import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,11 +52,14 @@ class CompanyServiceTest {
     @Mock
     private ComplianceDocumentRepository complianceDocumentRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     private CompanyService companyService;
 
     @BeforeEach
     void setUp() {
-        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator());
+        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
     }
 
     @Test
@@ -88,9 +96,98 @@ class CompanyServiceTest {
 
         when(companyRepository.existsByCnpj("11222333000181")).thenReturn(false);
         when(companyRepository.saveAndFlush(any()))
-                .thenThrow(new DataIntegrityViolationException("unique constraint"));
+                .thenThrow(new DataIntegrityViolationException(
+                        "duplicate key value violates unique constraint \"companies_cnpj_key\""));
         assertThatThrownBy(() -> companyService.create(request))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void create_otherConstraintViolation_isNotReportedAsCnpjConflict() {
+        CompanyCreateRequest request = validRequest();
+        when(companyRepository.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("value too long for type character varying(50)"));
+
+        assertThatThrownBy(() -> companyService.create(request))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void findSummaries_usesEarliestUserAsRepresentativeAndComputesOverallStatus() {
+        UUID companyId = UUID.randomUUID();
+        CompanyEntity company = buildCompany(companyId, ComplianceStatus.APPROVED, ComplianceStatus.UNDER_REVIEW);
+        company.setCity("Porto Alegre");
+        company.setState("RS");
+
+        OffsetDateTime now = OffsetDateTime.now();
+        UserEntity later = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
+                .fullName("Segunda Pessoa").email("b@x.com").createdAt(now).build();
+        UserEntity first = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
+                .fullName("Primeira Pessoa").email("a@x.com").createdAt(now.minusDays(1)).build();
+
+        when(companyRepository.findAll()).thenReturn(List.of(company));
+        when(userRepository.findAll()).thenReturn(List.of(later, first));
+
+        List<CompanySummaryResponse> result = companyService.findSummaries();
+
+        assertThat(result).hasSize(1);
+        CompanySummaryResponse summary = result.get(0);
+        assertThat(summary.getId()).isEqualTo(companyId);
+        assertThat(summary.getOverallStatus()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
+        assertThat(summary.getRepresentativeName()).isEqualTo("Primeira Pessoa");
+        assertThat(summary.getRepresentativeEmail()).isEqualTo("a@x.com");
+        assertThat(summary.getCity()).isEqualTo("Porto Alegre");
+    }
+
+    @Test
+    void findSummaries_companyWithoutUsers_hasNoRepresentative() {
+        CompanyEntity company = buildCompany(UUID.randomUUID(), ComplianceStatus.PENDING, ComplianceStatus.PENDING);
+        when(companyRepository.findAll()).thenReturn(List.of(company));
+        when(userRepository.findAll()).thenReturn(List.of());
+
+        CompanySummaryResponse summary = companyService.findSummaries().get(0);
+
+        assertThat(summary.getRepresentativeName()).isNull();
+        assertThat(summary.getOverallStatus()).isEqualTo(ComplianceStatus.PENDING);
+    }
+
+    @Test
+    void updateComplianceStatus_updatesOnlyInformedStatuses() {
+        UUID companyId = UUID.randomUUID();
+        CompanyEntity company = buildCompany(companyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING);
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CompanyComplianceUpdateRequest request = new CompanyComplianceUpdateRequest();
+        request.setStatusKyb(ComplianceStatus.APPROVED);
+
+        CompanyResponse response = companyService.updateComplianceStatus(companyId, request);
+
+        assertThat(response.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(response.getStatusAml()).isEqualTo(ComplianceStatus.PENDING);
+    }
+
+    @Test
+    void updateComplianceStatus_withoutAnyStatus_isRejected() {
+        UUID companyId = UUID.randomUUID();
+        when(companyRepository.findById(companyId))
+                .thenReturn(Optional.of(buildCompany(companyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING)));
+
+        assertThatThrownBy(() -> companyService.updateComplianceStatus(companyId, new CompanyComplianceUpdateRequest()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(companyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateComplianceStatus_unknownCompany_throwsNotFound() {
+        UUID companyId = UUID.randomUUID();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.empty());
+
+        CompanyComplianceUpdateRequest request = new CompanyComplianceUpdateRequest();
+        request.setStatusAml(ComplianceStatus.APPROVED);
+
+        assertThatThrownBy(() -> companyService.updateComplianceStatus(companyId, request))
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test

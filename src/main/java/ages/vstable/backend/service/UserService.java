@@ -1,10 +1,11 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.user.UserResponse;
-import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.entity.AdministratorEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.repository.AdministratorRepository;
+import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.utils.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -26,6 +27,11 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
     }
 
+    /**
+     * Usado no login: procura primeiro um administrador e depois um usuário de
+     * empresa. O onboarding recusa e-mails de administradores, então o mesmo
+     * e-mail não existe nas duas tabelas.
+     */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         Optional<UserEntity> user = userRepository.findByEmail(username);
@@ -39,6 +45,18 @@ public class UserService implements UserDetailsService {
         }
 
         throw new UsernameNotFoundException("User not found");
+    }
+
+    /**
+     * Usado pelo filtro JWT: o tipo de conta vem do próprio token, então a
+     * busca vai direto na tabela certa.
+     */
+    public UserDetails loadPrincipal(String email, String accountType) throws UsernameNotFoundException {
+        if (JwtTokenUtils.ACCOUNT_TYPE_ADMIN.equals(accountType)) {
+            return administratorRepository.findByEmail(email)
+                    .orElseThrow(() -> new UsernameNotFoundException("Administrator not found"));
+        }
+        return getByEmail(email);
     }
 
     public List<UserResponse> findAll() {

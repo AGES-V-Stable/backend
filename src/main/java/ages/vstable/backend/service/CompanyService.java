@@ -1,6 +1,8 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
+import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
+import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
@@ -8,12 +10,14 @@ import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
+import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
+import ages.vstable.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -23,9 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,12 +42,48 @@ public class CompanyService {
     private final CompanyRepository companyRepository;
     private final ComplianceDocumentRepository complianceDocumentRepository;
     private final CompanyDataValidator companyDataValidator;
+    private final UserRepository userRepository;
 
     public List<CompanyResponse> findAll() {
         return companyRepository.findAll()
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CompanySummaryResponse> findSummaries() {
+        Map<UUID, UserEntity> primaryRepresentatives = userRepository.findAll().stream()
+                .filter(user -> user.getCompanyId() != null)
+                .collect(Collectors.toMap(
+                        UserEntity::getCompanyId,
+                        Function.identity(),
+                        (first, second) -> isCreatedBefore(second, first) ? second : first));
+
+        return companyRepository.findAll().stream()
+                .sorted(Comparator.comparing(CompanyEntity::getUpdatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(company -> toSummary(company, primaryRepresentatives.get(company.getId())))
+                .toList();
+    }
+
+    @Transactional
+    public CompanyResponse updateComplianceStatus(UUID id, CompanyComplianceUpdateRequest request) {
+        CompanyEntity company = companyRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Company not found"));
+
+        if (request.getStatusKyb() == null && request.getStatusAml() == null) {
+            throw new IllegalArgumentException("At least one of statusKyb or statusAml is required");
+        }
+        if (request.getStatusKyb() != null) {
+            company.setKybStatus(request.getStatusKyb());
+        }
+        if (request.getStatusAml() != null) {
+            company.setAmlStatus(request.getStatusAml());
+        }
+        company.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+
+        return toResponse(companyRepository.saveAndFlush(company));
     }
 
     public Optional<CompanyResponse> findById(UUID id) {
@@ -142,6 +186,34 @@ public class CompanyService {
         return ComplianceStatus.PENDING;
     }
 
+    private static boolean isCreatedBefore(UserEntity candidate, UserEntity current) {
+        if (candidate.getCreatedAt() == null) return false;
+        return current.getCreatedAt() == null || candidate.getCreatedAt().isBefore(current.getCreatedAt());
+    }
+
+    private CompanySummaryResponse toSummary(CompanyEntity company, UserEntity representative) {
+        CompanySummaryResponse summary = new CompanySummaryResponse();
+        summary.setId(company.getId());
+        summary.setLegalName(company.getLegalName());
+        summary.setTradeName(company.getTradeName());
+        summary.setCnpj(company.getCnpj());
+        summary.setCity(company.getCity());
+        summary.setState(company.getState());
+        summary.setStatusKyb(company.getKybStatus());
+        summary.setStatusAml(company.getAmlStatus());
+        summary.setOverallStatus(company.getKybStatus() == null || company.getAmlStatus() == null
+                ? ComplianceStatus.PENDING
+                : computeOverallStatus(company.getKybStatus(), company.getAmlStatus()));
+        summary.setCreatedAt(company.getCreatedAt());
+        summary.setUpdatedAt(company.getUpdatedAt());
+        if (representative != null) {
+            summary.setRepresentativeId(representative.getId());
+            summary.setRepresentativeName(representative.getFullName());
+            summary.setRepresentativeEmail(representative.getEmail());
+        }
+        return summary;
+    }
+
     private ComplianceDocumentResponse toDocumentResponse(ComplianceDocumentEntity entity) {
         ComplianceDocumentResponse response = new ComplianceDocumentResponse();
         response.setId(entity.getId());
@@ -211,7 +283,11 @@ public class CompanyService {
         try {
             return companyRepository.saveAndFlush(company);
         } catch (DataIntegrityViolationException ex) {
-            throw new ConflictException("CNPJ already registered");
+            // Only the CNPJ unique constraint is a conflict; other constraint failures are real errors.
+            if (String.valueOf(ex.getMostSpecificCause().getMessage()).contains("companies_cnpj_key")) {
+                throw new ConflictException("CNPJ already registered");
+            }
+            throw ex;
         }
     }
 }
