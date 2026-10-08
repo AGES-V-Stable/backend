@@ -2,6 +2,7 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -17,16 +18,13 @@ import java.util.UUID;
 @AllArgsConstructor
 @Getter
 @Setter
-@Table(name = "users")
-public class UserEntity implements UserDetails {
+@Table(name = "administrators")
+public class AdministratorEntity implements UserDetails {
 
     @Id
     @GeneratedValue
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
-
-    @Column(name = "company_id")
-    private UUID companyId;
 
     @Column(name = "full_name", nullable = false, length = 255)
     private String fullName;
@@ -48,7 +46,7 @@ public class UserEntity implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        return List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
     @Override
