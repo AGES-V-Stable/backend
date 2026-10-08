@@ -32,9 +32,6 @@ class UserServiceTest {
     @Mock
     private AdministratorRepository administratorRepository;
 
-    @Mock
-    private AdministratorRepository administratorRepository;
-
     private UserService userService;
 
     @Test
