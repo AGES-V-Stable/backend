@@ -4,6 +4,7 @@ import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.QuoteAmountSide;
 import ages.vstable.backend.entity.enums.QuoteDirection;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
+import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinQuoteRequest;
@@ -113,10 +114,12 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                     context.request().amount(),
                     QuoteAmountSide.SOURCE,
                     idempotencyKey + ":payin");
+            BigDecimal stablecoinAmount = requirePositive(
+                    fromCents(fundingQuote.receiverAmount()), "BlindPay funding receiver amount");
             payoutQuote = createPayoutQuote(
                     context,
                     bankAccountId,
-                    fromCents(fundingQuote.receiverAmount()),
+                    stablecoinAmount,
                     QuoteAmountSide.SOURCE,
                     idempotencyKey + ":payout");
         } else {
@@ -126,10 +129,12 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                     context.request().amount(),
                     QuoteAmountSide.TARGET,
                     idempotencyKey + ":payout");
+            BigDecimal stablecoinAmount = requirePositive(
+                    fromCents(payoutQuote.senderAmount()), "BlindPay payout sender amount");
             fundingQuote = createPayinQuote(
                     context,
                     walletId,
-                    fromCents(payoutQuote.senderAmount()),
+                    stablecoinAmount,
                     QuoteAmountSide.TARGET,
                     idempotencyKey + ":payin");
         }
@@ -229,7 +234,7 @@ public class BlindPayQuoteProvider implements QuoteProvider {
 
     private BigDecimal requirePositive(BigDecimal value, String field) {
         if (value == null || value.signum() <= 0) {
-            throw new IllegalArgumentException(field + " must be greater than zero");
+            throw BlindPayIntegrationException.invalidResponse(field + " must be greater than zero");
         }
         return value;
     }

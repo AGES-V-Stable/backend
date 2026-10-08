@@ -4,6 +4,7 @@ import ages.vstable.backend.dto.quote.QuoteRequest;
 import ages.vstable.backend.dto.quote.QuoteResponse;
 import ages.vstable.backend.entity.*;
 import ages.vstable.backend.entity.enums.*;
+import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,7 +79,8 @@ class QuoteOrchestratorServiceTest {
                 IntegrationProvider.AVENIA, "external-1", new BigDecimal("100.00"),
                 new BigDecimal("19.00"), new BigDecimal("5.00"), BigDecimal.ONE,
                 BigDecimal.ONE, OffsetDateTime.now().plusSeconds(15), "{}"));
-        when(blindPay.quote(any(), any())).thenThrow(new RuntimeException("provider unavailable"));
+        when(blindPay.quote(any(), any())).thenThrow(
+                BlindPayIntegrationException.invalidResponse("BlindPay sender amount must be greater than zero"));
 
         QuoteResponse response = service.quote(user, request());
 
