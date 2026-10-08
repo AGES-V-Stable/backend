@@ -34,18 +34,21 @@ Windows:
 .\gradlew.bat bootRun
 ```
 
-## 3. Integração com o frontend
+## 3. Dados de teste (perfil dev)
 
-- **CORS:** a origem do frontend precisa estar em `CORS_ALLOWED_ORIGINS` (lista separada por vírgula; aceita padrões como `http://localhost:*` ou `https://*.vstable.com`). O padrão libera `http://localhost:*` e `http://127.0.0.1:*`. A API expõe o header `Authorization`, onde o login devolve o JWT.
-- **Erros de autenticação** seguem o mesmo formato JSON dos demais erros: `{"message": "...", "code": "UNAUTHENTICATED" | "TOKEN_INVALID" | "TOKEN_EXPIRED" | "ACCESS_DENIED"}`.
+Para popular o banco local, configure as variáveis de ambiente `SPRING_PROFILES_ACTIVE=dev`
+e `DEV_SEED_PASSWORD` antes de iniciar a aplicação. Escolha uma senha local; ela será
+armazenada com o mesmo encoder usado no cadastro. No IntelliJ, configure essas variáveis
+na configuração de execução. Sem o perfil `dev`, o seeder não é executado.
 
-### Criar um administrador
+O `DevelopmentDataSeeder`, ao lado de `BackendApplication`, cria uma empresa aprovada,
+um usuário (`dev.user@example.test`), um administrador (`dev.admin@example.test`), uma
+verificação KYC de exemplo, dois beneficiários (conta bancária e carteira) e três
+transações em estados diferentes. Os dois logins usam a senha de `DEV_SEED_PASSWORD`.
+Todos os dados são fictícios e a criação não chama Avenia ou BlindPay.
 
-Administradores ficam na tabela `administrators` e entram pelo mesmo `POST /v1/auth/login`. Não existe endpoint público para criá-los. Gere um hash BCrypt da senha e insira o registro diretamente:
-
-```sql
-INSERT INTO administrators (full_name, email, password_hash, password_salt, access_level)
-VALUES ('Admin V-Stable', 'admin@vstable.com', '<hash bcrypt>', '-', 'SUPER_ADMIN');
-```
-
-O hash pode ser gerado com `htpasswd -bnBC 10 "" 'SuaSenha@123' | tr -d ':\n'`. O onboarding recusa e-mails de administradores, então cada e-mail de login pertence a uma única conta.
+A presença de `dev.user@example.test` indica que a carga já foi realizada. Todos os
+registros são gravados na mesma transação: uma falha desfaz a carga inteira e permite
+uma nova tentativa. Reiniciar a aplicação preserva os dados e as senhas existentes,
+sem duplicar registros. A senha só é obrigatória na primeira carga; sua ausência
+nesse momento interrompe a inicialização com uma mensagem de configuração.

@@ -32,10 +32,17 @@ public class UserService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        return administratorRepository.findByEmail(username)
-                .<UserDetails>map(admin -> admin)
-                .or(() -> userRepository.findByEmail(username))
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        Optional<UserEntity> user = userRepository.findByEmail(username);
+        if (user.isPresent()) {
+            return user.get();
+        }
+
+        Optional<AdministratorEntity> admin = administratorRepository.findByEmail(username);
+        if (admin.isPresent()) {
+            return admin.get();
+        }
+
+        throw new UsernameNotFoundException("User not found");
     }
 
     /**

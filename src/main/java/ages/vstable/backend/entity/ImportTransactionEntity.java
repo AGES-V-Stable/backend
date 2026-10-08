@@ -16,14 +16,15 @@ import java.util.UUID;
 @Getter
 @Setter
 @Table(name = "import_transactions")
-public class ImportTransactionEntity {
-
-    @Id
-    @Column(name = "transaction_id", nullable = false, updatable = false)
-    private UUID transactionId;
+@PrimaryKeyJoinColumn(name = "transaction_id")
+public class ImportTransactionEntity extends BaseTransactionEntity {
 
     @Column(name = "beneficiary_id", nullable = false)
     private UUID beneficiaryId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "beneficiary_id", insertable = false, updatable = false)
+    private BeneficiaryEntity beneficiary;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)

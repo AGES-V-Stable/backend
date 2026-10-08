@@ -22,7 +22,7 @@ public class AuthenticationConfigurer {
     @Bean
     public UserDetailsService userDetailsService() {
         // Company users and administrators (see UserService.loadUserByUsername)
-        return userService::loadUserByUsername;
+        return userService;
     }
 
     @Bean

@@ -14,11 +14,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Conta de administrador da V-Stable (tabela "administrators"). Separada de
- * UserEntity porque users.company_id é obrigatório: administradores não
- * pertencem a nenhuma empresa cliente.
- */
 @Entity
 @Builder
 @NoArgsConstructor
@@ -27,8 +22,6 @@ import java.util.UUID;
 @Setter
 @Table(name = "administrators")
 public class AdministratorEntity implements UserDetails {
-
-    public static final String ROLE_ADMIN = "ROLE_ADMIN";
 
     @Id
     @GeneratedValue
@@ -63,7 +56,7 @@ public class AdministratorEntity implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority(ROLE_ADMIN));
+        return List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
     @Override
@@ -74,6 +67,21 @@ public class AdministratorEntity implements UserDetails {
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
     }
 
     @Override

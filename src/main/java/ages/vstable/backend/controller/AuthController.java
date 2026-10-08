@@ -53,8 +53,7 @@ public class AuthController {
           .build();
     } catch (LockedException | DisabledException le) {
       log.error(le.getMessage());
-      return ResponseEntity.status(HttpStatus.LOCKED)
-          .body(Map.of("message", le.getMessage(), "code", "ACCOUNT_LOCKED"));
+      return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("message", le.getMessage()));
     } catch (AuthenticationException ex) {
       log.error(ex.getMessage());
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();

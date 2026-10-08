@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDate;
-import java.util.UUID;
+
 
 /** Detalhe de uma transação de recebimento (exportação) de um pagador externo. */
 @Entity
@@ -14,13 +14,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @Table(name = "export_transactions")
-public class ExportTransactionEntity {
+@PrimaryKeyJoinColumn(name = "transaction_id")
+public class ExportTransactionEntity extends BaseTransactionEntity {
 
-    @Id
-    @Column(name = "transaction_id", nullable = false, updatable = false)
-    private UUID transactionId;
-
-    @Column(name = "external_billing_code", nullable = false, unique = true, length = 255)
+    @Column(name = "external_billing_code", nullable = false, length = 255)
     private String externalBillingCode;
 
     @Column(name = "external_payer_name", nullable = false, length = 255)
