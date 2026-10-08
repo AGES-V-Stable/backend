@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -30,8 +28,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
-@org.junit.jupiter.api.Disabled
 class JwtTokenFilterTest {
 
     private static final String TOKEN = "token";
@@ -221,5 +217,33 @@ class JwtTokenFilterTest {
         verify(filterChain).doFilter(request, response);
         assertNull(SecurityContextHolder.getContext().getAuthentication());
         assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
+    }
+
+    @Test
+    void shouldClearPreviousAuthenticationWhenTokenIsInvalid() throws Exception {
+        withBearerToken();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(companyUser(), null, companyUser().getAuthorities()));
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenThrow(new MalformedJwtException("bad"));
+
+        filter.doFilter(request, response, filterChain);
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
+        verifyNoInteractions(securityContextRepository, userService);
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void shouldRejectEmptyBearerToken() throws Exception {
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer   ");
+        when(jwtTokenUtils.getUsernameFromToken("")).thenThrow(new IllegalArgumentException("empty token"));
+
+        filter.doFilter(request, response, filterChain);
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
+        verifyNoInteractions(securityContextRepository, userService);
+        verify(filterChain).doFilter(request, response);
     }
 }

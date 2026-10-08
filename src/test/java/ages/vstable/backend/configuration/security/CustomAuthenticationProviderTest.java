@@ -54,6 +54,18 @@ class CustomAuthenticationProviderTest {
     }
 
     @Test
+    void authenticate_shouldThrowLockedException_whenAccountIsLocked() {
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken("user@example.com", "password");
+        when(userDetailsService.loadUserByUsername("user@example.com")).thenReturn(userDetails);
+        when(userDetails.getPassword()).thenReturn("encoded-password");
+        when(passwordEncoder.matches("password", "encoded-password")).thenReturn(true);
+        when(userDetails.isAccountNonLocked()).thenReturn(false);
+
+        assertThrows(LockedException.class, () -> authenticationProvider.authenticate(authentication));
+    }
+
+    @Test
     void authenticate_shouldReturnAuthenticatedToken_whenCredentialsAreValid() {
         String username = "user@example.com";
         String password = "password";

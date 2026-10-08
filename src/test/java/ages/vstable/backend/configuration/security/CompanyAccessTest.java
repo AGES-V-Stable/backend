@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,6 +76,68 @@ class CompanyAccessTest {
         assertThat(CompanyAccess.currentUserId(admin())).isNull();
         assertThat(CompanyAccess.currentUserId(null)).isNull();
         Authentication member = userOf(companyId);
-        assertThat(CompanyAccess.currentUserId(member)).isEqualTo(((UserEntity) member.getPrincipal()).getId());
+        assertThat(CompanyAccess.currentUserId(member)).isEqualTo(((UserEntity) Objects.requireNonNull(member.getPrincipal())).getId());
+    }
+
+    @Test
+    void companyUser_returnsTheCompanyPrincipal() {
+        Authentication member = userOf(companyId);
+
+        assertThat(CompanyAccess.companyUser(member)).contains((UserEntity) member.getPrincipal());
+    }
+
+    @Test
+    void companyUser_rejectsAdministratorsAndNonCompanyPrincipals() {
+        Authentication otherPrincipal = new UsernamePasswordAuthenticationToken("user", null, List.of());
+
+        assertThat(CompanyAccess.companyUser(admin())).isEmpty();
+        assertThat(CompanyAccess.companyUser(otherPrincipal)).isEmpty();
+        assertThat(CompanyAccess.companyUser(null)).isEmpty();
+        assertThat(CompanyAccess.currentUserId(otherPrincipal)).isNull();
+    }
+
+    @Test
+    void assertCanRead_rejectsNullCompanyIdForMembers() {
+        Authentication member = userOf(companyId);
+
+        assertThatThrownBy(() -> CompanyAccess.assertCanRead(member, null))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void assertCanRead_rejectsUsersWithoutACompany() {
+        Authentication member = userOf(null);
+
+        assertThatThrownBy(() -> CompanyAccess.assertCanRead(member, companyId))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void assertCanRead_rejectsNonCompanyPrincipalsWithoutAdminAuthority() {
+        Authentication otherPrincipal = new UsernamePasswordAuthenticationToken("user", null,
+                List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        assertThatThrownBy(() -> CompanyAccess.assertCanRead(otherPrincipal, companyId))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void assertMember_rejectsUsersOfAnotherCompany() {
+        Authentication member = userOf(UUID.randomUUID());
+
+        assertThatThrownBy(() -> CompanyAccess.assertMember(member, companyId))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void assertMember_rejectsMissingCompanyMembership() {
+        Authentication member = userOf(null);
+
+        assertThatThrownBy(() -> CompanyAccess.assertMember(member, companyId))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> CompanyAccess.assertMember(member, null))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> CompanyAccess.assertMember(null, companyId))
+                .isInstanceOf(ForbiddenException.class);
     }
 }
