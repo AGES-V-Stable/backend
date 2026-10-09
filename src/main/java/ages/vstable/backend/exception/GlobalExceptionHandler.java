@@ -103,6 +103,22 @@ public class GlobalExceptionHandler {
                 .body(Map.of("message", ex.getMessage()));
     }
 
+    @ExceptionHandler(BlindPayIntegrationException.class)
+    public ResponseEntity<Map<String, String>> handleBlindPayIntegration(BlindPayIntegrationException ex) {
+        HttpStatus status;
+        if (ex.isRetryable()) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+        } else if (ex.isRejectedByProvider()) {
+            status = HttpStatus.UNPROCESSABLE_CONTENT;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+
+        return ResponseEntity
+                .status(status)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
     @ExceptionHandler({ AccessDeniedException.class, AuthorizationDeniedException.class })
     public ResponseEntity<Map<String, String>> handleAccessDenied(Exception ex) {
         return ResponseEntity
