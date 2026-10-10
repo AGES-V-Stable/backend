@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -46,6 +48,24 @@ public class TransferDetailsService {
 
     /** PDF pronto para download. */
     public record Receipt(String filename, byte[] content) {
+
+        // Record com array: equals/hashCode/toString precisam considerar o conteúdo (Sonar S6218).
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Receipt receipt
+                    && Objects.equals(filename, receipt.filename)
+                    && Arrays.equals(content, receipt.content);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Objects.hashCode(filename) + Arrays.hashCode(content);
+        }
+
+        @Override
+        public String toString() {
+            return "Receipt[filename=" + filename + ", content=" + (content == null ? 0 : content.length) + " bytes]";
+        }
     }
 
     @Transactional(readOnly = true)
