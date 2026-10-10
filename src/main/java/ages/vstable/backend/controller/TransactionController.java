@@ -1,6 +1,5 @@
 package ages.vstable.backend.controller;
 
-import ages.vstable.backend.dto.transaction.TransactionDetailsResponseDTO;
 import ages.vstable.backend.dto.transaction.TransactionFilterDTO;
 import ages.vstable.backend.dto.transaction.TransactionHistoryResponseDTO;
 import ages.vstable.backend.entity.UserEntity;
@@ -33,18 +32,6 @@ public class TransactionController {
         UUID companyId = user.getCompanyId();
 
         Page<TransactionHistoryResponseDTO> result = transactionQueryService.getHistory(companyId, filter, pageable);
-        return ResponseEntity.ok(result);
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<TransactionDetailsResponseDTO> getDetails(
-            @PathVariable UUID id,
-            Authentication authentication) {
-        
-        UserEntity user = userService.getByEmail(authentication.getName());
-        UUID companyId = user.getCompanyId();
-
-        TransactionDetailsResponseDTO result = transactionQueryService.getDetails(id, companyId);
         return ResponseEntity.ok(result);
     }
 }
