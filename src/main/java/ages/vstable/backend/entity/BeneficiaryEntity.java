@@ -100,6 +100,61 @@ public class BeneficiaryEntity {
     @Column(name = "currency", length = 3)
     private String currency;
 
+    @Column(name = "payment_rail", nullable = false, length = 50)
+    @Builder.Default
+    private String paymentRail = "international_swift";
+
+    @Column(name = "account_class", length = 30)
+    private String accountClass;
+
+    @Column(name = "recipient_relationship", length = 50)
+    private String recipientRelationship;
+
+    @Column(name = "iban", length = 50)
+    private String iban;
+
+    @Column(name = "routing_number", length = 20)
+    private String routingNumber;
+
+    @Column(name = "address_line_1", length = 255)
+    private String addressLine1;
+
+    @Column(name = "address_line_2", length = 255)
+    private String addressLine2;
+
+    @Column(name = "city", length = 100)
+    private String city;
+
+    @Column(name = "state_province_region", length = 100)
+    private String stateProvinceRegion;
+
+    @Column(name = "postal_code", length = 20)
+    private String postalCode;
+
+    @Column(name = "country_code", length = 2)
+    private String countryCode;
+
+    @Column(name = "bank_address_line_1", length = 255)
+    private String bankAddressLine1;
+
+    @Column(name = "bank_address_line_2", length = 255)
+    private String bankAddressLine2;
+
+    @Column(name = "bank_city", length = 100)
+    private String bankCity;
+
+    @Column(name = "bank_state_province_region", length = 100)
+    private String bankStateProvinceRegion;
+
+    @Column(name = "bank_postal_code", length = 20)
+    private String bankPostalCode;
+
+    @Column(name = "bank_country_code", length = 2)
+    private String bankCountryCode;
+
+    @Column(name = "swift_payment_code", length = 100)
+    private String swiftPaymentCode;
+
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
