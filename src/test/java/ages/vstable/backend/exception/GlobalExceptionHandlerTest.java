@@ -26,6 +26,7 @@ class GlobalExceptionHandlerTest {
         IllegalArgumentException ex = new IllegalArgumentException("Invalid argument");
 
         ResponseEntity<Map<String, String>> response = handler.handleIllegalArgument(ex);
+        assertThat(response.getBody()).containsEntry("code", "INVALID_ARGUMENT");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("message", "Invalid argument");
@@ -36,6 +37,7 @@ class GlobalExceptionHandlerTest {
         HttpMessageNotReadableException ex = mock(HttpMessageNotReadableException.class);
 
         ResponseEntity<Map<String, String>> response = handler.handleMalformedPayload(ex);
+        assertThat(response.getBody()).containsEntry("code", "MALFORMED_PAYLOAD");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("message", "Malformed payload");
@@ -47,6 +49,7 @@ class GlobalExceptionHandlerTest {
         when(ex.getMessage()).thenReturn("Required request header 'Authorization' is not present");
 
         ResponseEntity<Map<String, String>> response = handler.handleMissingHeader(ex);
+        assertThat(response.getBody()).containsEntry("code", "MISSING_HEADER");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody())
@@ -59,6 +62,7 @@ class GlobalExceptionHandlerTest {
         when(ex.getName()).thenReturn("id");
 
         ResponseEntity<Map<String, String>> response = handler.handleTypeMismatch(ex);
+        assertThat(response.getBody()).containsEntry("code", "INVALID_PARAMETER");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("message", "Parameter 'id' has an invalid format");
@@ -68,6 +72,7 @@ class GlobalExceptionHandlerTest {
     void handleConflict_returns409() {
         ConflictException ex = new ConflictException("Conflict");
         ResponseEntity<Map<String, String>> response = handler.handleConflict(ex);
+        assertThat(response.getBody()).containsEntry("code", "CONFLICT");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).containsEntry("message", "Conflict");
     }
@@ -76,6 +81,7 @@ class GlobalExceptionHandlerTest {
     void handleNotFound_returns404() {
         NotFoundException ex = new NotFoundException("Not found");
         ResponseEntity<Map<String, String>> response = handler.handleNotFound(ex);
+        assertThat(response.getBody()).containsEntry("code", "NOT_FOUND");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody()).containsEntry("message", "Not found");
     }
@@ -84,6 +90,7 @@ class GlobalExceptionHandlerTest {
     void handleForbidden_returns403() {
         ForbiddenException ex = new ForbiddenException("Forbidden");
         ResponseEntity<Map<String, String>> response = handler.handleForbidden(ex);
+        assertThat(response.getBody()).containsEntry("code", "FORBIDDEN");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).containsEntry("message", "Forbidden");
     }
@@ -92,6 +99,7 @@ class GlobalExceptionHandlerTest {
     void handleUnprocessableEntity_returns422() {
         UnprocessableEntityException ex = new UnprocessableEntityException("Unprocessable");
         ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
+        assertThat(response.getBody()).containsEntry("code", "UNPROCESSABLE_ENTITY");
         assertThat(response.getStatusCode().value()).isEqualTo(422);
         assertThat(response.getBody()).containsEntry("message", "Unprocessable");
     }
@@ -100,6 +108,7 @@ class GlobalExceptionHandlerTest {
     void handleAccessDenied_returns403() {
         AccessDeniedException ex = new AccessDeniedException("Denied");
         ResponseEntity<Map<String, String>> response = handler.handleAccessDenied(ex);
+        assertThat(response.getBody()).containsEntry("code", "ACCESS_DENIED");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).containsEntry("message", "Access denied");
     }
@@ -152,6 +161,7 @@ class GlobalExceptionHandlerTest {
     void handleUnexpected_returns500() {
         Exception ex = new Exception("Error");
         ResponseEntity<Map<String, String>> response = handler.handleUnexpected(ex);
+        assertThat(response.getBody()).containsEntry("code", "INTERNAL_ERROR");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).containsEntry("message", "Internal error");
     }

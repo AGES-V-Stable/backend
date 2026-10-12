@@ -52,3 +52,7 @@ registros são gravados na mesma transação: uma falha desfaz a carga inteira e
 uma nova tentativa. Reiniciar a aplicação preserva os dados e as senhas existentes,
 sem duplicar registros. A senha só é obrigatória na primeira carga; sua ausência
 nesse momento interrompe a inicialização com uma mensagem de configuração.
+
+### Contrato de erros para o frontend
+
+Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, preservando os status HTTP existentes. Códigos: `INVALID_ARGUMENT`, `VALIDATION_ERROR`, `MALFORMED_PAYLOAD`, `MISSING_HEADER`, `INVALID_PARAMETER`, `CONFLICT`, `FORBIDDEN`, `NOT_FOUND`, `UNPROCESSABLE_ENTITY`, `PROVIDER_ERROR`, `ACCESS_DENIED` e `INTERNAL_ERROR`. Login inválido retorna 401 com `INVALID_CREDENTIALS`; conta bloqueada retorna 423 com `ACCOUNT_LOCKED`. Contratos especializados de detalhes/comprovantes e códigos da camada de segurança são preservados. Clientes antigos podem continuar consumindo somente `message`.
