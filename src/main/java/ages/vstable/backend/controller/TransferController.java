@@ -44,7 +44,8 @@ public class TransferController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cotação obtida com sucesso"),
             @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente ou inválido"),
-            @ApiResponse(responseCode = "422", description = "Moeda não informada e não determinável, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
+            @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Beneficiário ou método de pagamento não informado, combinação de moeda e métodos não suportada, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
             @ApiResponse(responseCode = "503", description = "Falha temporária ao comunicar com a Avenia; pode tentar novamente"),
     })
@@ -52,7 +53,8 @@ public class TransferController {
             @Valid @RequestBody TransferQuoteRequest request,
             @AuthenticationPrincipal UserEntity currentUser) {
         UUID currentUserId = currentUser == null ? null : currentUser.getId();
-        return ResponseEntity.ok(transferService.quote(request, currentUserId));
+        UUID currentCompanyId = currentUser == null ? null : currentUser.getCompanyId();
+        return ResponseEntity.ok(transferService.quote(request, currentUserId, currentCompanyId));
     }
 
     @PostMapping
@@ -69,7 +71,8 @@ public class TransferController {
             @Valid @RequestBody CreateTransferRequest request,
             @AuthenticationPrincipal UserEntity currentUser) {
         UUID currentUserId = currentUser == null ? null : currentUser.getId();
-        return ResponseEntity.ok(transferService.create(request, currentUserId));
+        UUID currentCompanyId = currentUser == null ? null : currentUser.getCompanyId();
+        return ResponseEntity.ok(transferService.create(request, currentUserId, currentCompanyId));
     }
 
     @GetMapping

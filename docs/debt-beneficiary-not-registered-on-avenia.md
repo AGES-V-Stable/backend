@@ -1,4 +1,7 @@
-# [Débito técnico] Beneficiário nunca é registrado na Avenia
+# [Resolvido] Registro de beneficiário na Avenia
+
+> Resolvido na correção da task #29. O cadastro local agora só é persistido depois
+> que a Avenia retorna um identificador válido para a mesma subconta do usuário.
 
 ## Contexto
 
@@ -16,18 +19,38 @@ Resultado: **todo beneficiário cadastrado hoje tem `aveniaId`/`aveniaWalletId` 
 
 Na prática, isso bloqueia o teste ponta a ponta de `POST /v1/transfers` contra o sandbox real com qualquer beneficiário cadastrado pelo fluxo atual.
 
-## Proposta de solução
+## Solução implementada
 
-Ao criar um beneficiário (`BeneficiaryService.create`), registrar o beneficiário correspondente na Avenia antes de persistir localmente, e gravar o id retornado em `aveniaId` (contas bancárias/PIX) ou `aveniaWalletId` (carteira cripto). Provavelmente via `POST /v2/account/beneficiaries/bank-accounts/{...}/` (ver `AveniaApi.Beneficiary`, que já documenta os campos desse contrato, mas ainda não tem um client/service implementado).
+Ao criar um beneficiário (`BeneficiaryService.create`), o backend resolve a
+subconta Avenia do usuário autenticado e registra o destino antes de persistir
+localmente. O identificador retornado é gravado em `aveniaId` (contas
+bancárias/PIX) ou `aveniaWalletId` (carteira cripto). A subconta usada no
+registro também é persistida internamente em `aveniaSubAccountId`; antes de
+criar uma transferência, o backend exige que ela seja igual à subconta da
+operação. Esse identificador não faz parte do contrato HTTP.
 
-Escopo sugerido:
-1. Endpoint(s) Avenia de registro de beneficiário (bancário e wallet) na camada `external/avenia` (`AveniaClient`/`AveniaGateway`), análogo ao que já existe para quote/ticket.
-2. `BeneficiaryService.create` chama esse registro e preenche `aveniaId`/`aveniaWalletId` antes de salvar.
-3. Decidir o que fazer com beneficiários já cadastrados sem esses ids (migração de dados vs. bloquear transferência para eles até re-cadastro).
+Contratos suportados:
+
+- PIX ou conta BRL: `/v2/account/beneficiaries/bank-accounts/brl/`;
+- USD ACH/WIRE: `/v2/account/beneficiaries/bank-accounts/usd/`;
+- EUR SEPA: `/v2/account/beneficiaries/bank-accounts/eur/`;
+- conta internacional SWIFT: `/v2/account/beneficiaries/bank-accounts/swift/`;
+- carteira cripto: `/v2/account/beneficiaries/wallets/`.
+
+Beneficiários legados sem identificador externo ou sem vínculo comprovável com
+uma subconta ficam bloqueados na criação de transferências com erro 422 e
+precisam ser recadastrados. Não há
+sincronização automática porque não é possível provar a qual subconta Avenia
+um cadastro antigo deveria pertencer.
+
+Transferências SWIFT continuam bloqueadas antes da cotação: a Avenia exige
+uma invoice enviada e processada, e o contrato atual de transferência não possui
+um fluxo para associar esse documento ao ticket.
 
 ## Critérios de aceite
 
 - Um beneficiário criado via `POST /v1/beneficiaries` tem `aveniaId` (ou `aveniaWalletId`, conforme o método de recebimento) preenchido após a criação.
+- O identificador externo só é usado quando a subconta de registro coincide com a subconta da operação.
 - `POST /v1/transfers` para um beneficiário criado por esse fluxo completa com sucesso contra o sandbox real (não só nos testes com mock).
 - Falha ao registrar na Avenia impede a criação local do beneficiário (evita ids nulos silenciosos de novo).
 
@@ -36,4 +59,4 @@ Escopo sugerido:
 - `entity/BeneficiaryEntity.java` (colunas `avenia_id`, `avenia_wallet_id`)
 - `service/TransferService.java` (`buildAveniaTicketRequest`, onde esses ids são consumidos)
 - `external/avenia/AveniaApi.Beneficiary` (constantes do contrato de registro de beneficiário na Avenia, ainda sem client)
-- `docs/transfers-quote-and-creation.md` (guideline da card de transferências)
+- `docs/task-29-avenia-final-review.md` (decisões de cotação, taxas e validação no sandbox)

@@ -46,7 +46,8 @@ public class BeneficiaryController {
 
                 return ResponseEntity
                                 .status(HttpStatus.CREATED)
-                                .body(beneficiaryService.create(companyId, request));
+                                .body(beneficiaryService.create(
+                                                companyId, CompanyAccess.currentUserId(authentication), request));
         }
 
         @GetMapping("/v1/companies/{companyId}/beneficiaries")

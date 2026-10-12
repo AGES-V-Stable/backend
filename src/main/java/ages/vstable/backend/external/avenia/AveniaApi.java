@@ -147,6 +147,7 @@ public final class AveniaApi {
         public static final String BASE_PRICE = "basePrice";
         public static final String PAIR_NAME = "pairName";
         public static final String APPLIED_FEES = "appliedFees";
+        public static final String FEE_SETTLEMENT = "feeSettlement";
 
         /** inputAmount XOR outputAmount; inputThirdParty/outputThirdParty are always false. */
         public static final int QUOTE_TTL_SECONDS = 15;
@@ -157,6 +158,10 @@ public final class AveniaApi {
 
         public enum BlockchainSendMethod {
             PERMIT, TRANSFER
+        }
+
+        public enum FeeSettlement {
+            IMMEDIATE, EOM, FEE_ACCOUNT
         }
     }
 
@@ -178,6 +183,7 @@ public final class AveniaApi {
         public static final int CUSTOM_DURATION_MIN_SECONDS = 300;
         public static final int CUSTOM_DURATION_MAX_SECONDS_WITH_CONVERSION = 600;
         public static final int CUSTOM_DURATION_MAX_SECONDS_NO_CONVERSION = 259200;
+        public static final int EXTERNAL_ID_MAX_LENGTH = 68;
 
         public enum Status {
             UNPAID, PROCESSING, ON_HOLD, PAID, FAILED, PARTIAL_FAILED, CANCELED

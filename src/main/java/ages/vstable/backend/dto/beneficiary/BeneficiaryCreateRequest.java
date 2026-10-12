@@ -31,6 +31,9 @@ public class BeneficiaryCreateRequest {
     private String nickname;
     private String internalDescription;
 
+    // Required when receivingMethod = PIX_KEY (checked manually by BeneficiaryValidator)
+    private String pixKey;
+
     // Required when receivingMethod = BANK_ACCOUNT (checked manually by BeneficiaryValidator)
     private String bankName;
     private String swiftBic;

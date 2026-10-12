@@ -8,7 +8,8 @@
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "accessToken", "value": "" },
     { "key": "companyId", "value": "" },
-    { "key": "beneficiaryId", "value": "" }
+    { "key": "beneficiaryId", "value": "" },
+    { "key": "pixBeneficiaryId", "value": "" }
   ],
   "auth": {
     "type": "bearer",
@@ -91,9 +92,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Fornecedor Ltda\",\n  \"identificationDocument\": \"11222333000199\",\n  \"country\": \"Brasil\",\n  \"address\": \"Rua Teste, 100\",\n  \"receivingMethod\": \"PIX_KEY\",\n  \"nickname\": \"Fornecedor PIX\",\n  \"currency\": \"BRL\",\n  \"confirmed\": true\n}"
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Fornecedor Ltda\",\n  \"identificationDocument\": \"11222333000199\",\n  \"country\": \"Brasil\",\n  \"address\": \"Rua Teste, 100\",\n  \"receivingMethod\": \"PIX_KEY\",\n  \"nickname\": \"Fornecedor PIX\",\n  \"pixKey\": \"financeiro@fornecedor.test\",\n  \"currency\": \"BRL\",\n  \"confirmed\": true\n}"
             },
-            "description": "receivingMethod=PIX_KEY é o caminho mais simples pra testar POST /transfers, já que a resolução de moeda de destino cai direto pra BRL. IMPORTANTE (ver docs/debt-beneficiary-not-registered-on-avenia.md): esse cadastro NÃO registra o beneficiário na Avenia, então avenia_id fica nulo — uma chamada real a POST /transfers vai falhar na Avenia por falta desse id, a menos que ele seja preenchido manualmente no banco para teste."
+            "description": "receivingMethod=PIX_KEY registra a chave na mesma subconta Avenia do usuário autenticado antes de persistir o beneficiário localmente. Salvo em pixBeneficiaryId: com origem BRL a Avenia não oferece BRL/PIX -> BRL/PIX, então cotação e transferência para ele retornam 422."
           },
           "event": [
             {
@@ -102,8 +103,8 @@
                 "exec": [
                   "if (pm.response.code === 201) {",
                   "    const body = pm.response.json();",
-                  "    pm.collectionVariables.set('beneficiaryId', body.id);",
-                  "    console.log('beneficiaryId salvo: ' + body.id);",
+                  "    pm.collectionVariables.set('pixBeneficiaryId', body.id);",
+                  "    console.log('pixBeneficiaryId salvo: ' + body.id);",
                   "}",
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));"
                 ],
@@ -124,9 +125,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Supplier Inc\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"BANK_ACCOUNT\",\n  \"nickname\": \"Supplier USD\",\n  \"bankName\": \"Bank of Test\",\n  \"swiftBic\": \"TESTUS33\",\n  \"bankCode\": \"021000021\",\n  \"branchNumber\": \"001\",\n  \"accountNumber\": \"1234567890\",\n  \"currency\": \"USD\",\n  \"confirmed\": true\n}"
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Supplier Inc\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"BANK_ACCOUNT\",\n  \"nickname\": \"Supplier USD\",\n  \"paymentRail\": \"wire\",\n  \"bankName\": \"Bank of Test\",\n  \"accountNumber\": \"1234567890\",\n  \"routingNumber\": \"021000021\",\n  \"currency\": \"USD\",\n  \"addressLine1\": \"123 Main St\",\n  \"city\": \"New York\",\n  \"stateProvinceRegion\": \"NY\",\n  \"postalCode\": \"10001\",\n  \"countryCode\": \"USA\",\n  \"confirmed\": true\n}"
             },
-            "description": "receivingMethod=BANK_ACCOUNT — TransferService.create hoje sempre monta o ticket como SWIFT (fallback genérico, não confirmado contra o sandbox real)."
+            "description": "receivingMethod=BANK_ACCOUNT com paymentRail=wire usa o contrato USD da Avenia. Cotação e transferência com origem BRL retornam 422: a Avenia só paga USD WIRE/ACH a partir de saldo em token (INTERNAL), ainda não suportado."
           }
         },
         {
@@ -142,8 +143,25 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Crypto Supplier\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"CRYPTO_WALLET\",\n  \"nickname\": \"Wallet Polygon\",\n  \"walletAddress\": \"0x0000000000000000000000000000000000dEaD\",\n  \"blockchainNetwork\": \"polygon\",\n  \"currency\": \"USDC\",\n  \"confirmed\": true\n}"
+            },
+            "description": "Única rota documentada pela Avenia hoje utilizável com origem BRL: BRL/PIX -> USDC/POLYGON. Salvo em beneficiaryId, usado pelos requests de cotação e criação."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('beneficiaryId', body.id);",
+                  "    console.log('beneficiaryId salvo: ' + body.id);",
+                  "}",
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
             }
-          }
+          ]
         }
       ]
     },
@@ -158,7 +176,7 @@
             "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+              "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USDC\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"paymentMethod\": \"PIX\"\n}"
             },
             "description": "Espera 200 com { source, destination, exchangeRate, fee, total } — sem quoteToken/quoteId no corpo. A subconta Avenia usada na cotação é resolvida no servidor a partir do usuário do token (ver nota no nível da collection); requer ter rodado Onboarding (ou Login com um usuário já onboardado) antes."
           },
@@ -188,31 +206,31 @@
             "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 1000.00,\n  \"amountType\": \"DESTINATION\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+              "raw": "{\n  \"amount\": 1000.00,\n  \"amountType\": \"DESTINATION\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USDC\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"paymentMethod\": \"PIX\"\n}"
             }
           }
         },
         {
-          "name": "Quote sem moedas informadas (usa BRL como origem)",
+          "name": "Quote sem moedas informadas (origem BRL, destino pela moeda do beneficiário)",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"destinationCurrency\": \"USD\"\n}"
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"paymentMethod\": \"PIX\"\n}"
             }
           }
         },
         {
-          "name": "Erro — moeda de destino não informada (422)",
+          "name": "Erro — beneficiário e método de pagamento não informados (422)",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\"\n}"
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USDC\"\n}"
             }
           },
           "event": [
@@ -258,7 +276,7 @@
             "url": { "raw": "{{baseUrl}}/v1/transfers/quote", "host": ["{{baseUrl}}"], "path": ["v1", "transfers", "quote"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USD\"\n}"
+              "raw": "{\n  \"amount\": 100.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"destinationCurrency\": \"USDC\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"paymentMethod\": \"PIX\"\n}"
             },
             "description": "Reproduz o 422 novo (resolução de subconta): só acontece pra um usuário sem nenhuma verificação de KYC associada, o que hoje não deveria existir num usuário criado via Onboarding. Como não há como gerar esse estado direto pela collection, o header Authorization acima é só um placeholder — substitua por um token real de um usuário nessa condição (ex.: registro manual sem passar pelo Onboarding) para reproduzir."
           },
@@ -287,7 +305,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"description\": \"Pagamento de importação\"\n}"
             },
-            "description": "destinationCurrency omitido de propósito: como o beneficiário é PIX, o backend resolve BRL sozinho. A subconta Avenia usada na cotação/ticket também é resolvida sozinha a partir do usuário do token (ver nota no nível da collection). Contra o sandbox real isso só funciona se o beneficiário tiver avenia_id preenchido — ver docs/debt-beneficiary-not-registered-on-avenia.md."
+            "description": "destinationCurrency omitido de propósito: como o beneficiário é PIX, o backend resolve BRL sozinho. A subconta Avenia usada na cotação/ticket é resolvida a partir do usuário do token."
           },
           "event": [
             {

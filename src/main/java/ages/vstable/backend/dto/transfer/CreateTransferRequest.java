@@ -4,6 +4,7 @@ import ages.vstable.backend.entity.enums.TransferAmountType;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -31,5 +32,6 @@ public class CreateTransferRequest {
     @NotNull
     private UUID beneficiaryId;
 
+    @Size(max = 68)
     private String description;
 }
