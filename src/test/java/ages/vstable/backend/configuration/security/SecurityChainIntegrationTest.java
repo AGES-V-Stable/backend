@@ -2,16 +2,20 @@ package ages.vstable.backend.configuration.security;
 
 import ages.vstable.backend.controller.AuthController;
 import ages.vstable.backend.controller.CompanyController;
+import ages.vstable.backend.controller.TransferDetailsController;
 import ages.vstable.backend.controller.UserController;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.CompanyService;
+import ages.vstable.backend.service.TransferDetailsService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -28,12 +32,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -41,7 +49,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Exercises the real security filter chain (JWT filter, route rules, @PreAuthorize, CORS and the
  * JSON 401/403 responses), which the standalone controller tests bypass.
  */
-@WebMvcTest(controllers = {CompanyController.class, UserController.class, AuthController.class})
+@WebMvcTest(controllers = {CompanyController.class, UserController.class, AuthController.class,
+        TransferDetailsController.class})
 @Import({SecurityConfiguration.class, AuthenticationConfigurer.class, CustomAuthenticationProvider.class,
         BeanManager.class, JwtTokenUtils.class})
 class SecurityChainIntegrationTest {
@@ -63,6 +72,9 @@ class SecurityChainIntegrationTest {
 
     @MockitoBean(name = "userService")
     private UserService userService;
+
+    @MockitoBean
+    private TransferDetailsService transferDetailsService;
 
     private final UUID companyId = UUID.randomUUID();
     private UserEntity user;
@@ -151,6 +163,65 @@ class SecurityChainIntegrationTest {
                         .content("{\"email\":\"maria@empresa.com\",\"password\":\"Senha@123\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.AUTHORIZATION, org.hamcrest.Matchers.startsWith("Bearer ")));
+    }
+
+    @Test
+    void transferDetails_withoutToken_returnsJson401() throws Exception {
+        mockMvc.perform(get("/api/transferencias/{id}", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test
+    void receiptDownload_withoutToken_returnsJson401() throws Exception {
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", UUID.randomUUID())
+                        .accept(MediaType.APPLICATION_PDF))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/comprovante"})
+    void transferEndpoints_invalidOrExpiredToken_returnUnauthenticated(String suffix) throws Exception {
+        String expired = Jwts.builder()
+                .subject(user.getEmail())
+                .issuedAt(new Date(System.currentTimeMillis() - 120_000))
+                .expiration(new Date(System.currentTimeMillis() - 60_000))
+                .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512)
+                .compact();
+        String wrongSignature = Jwts.builder()
+                .subject(user.getEmail())
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(Keys.hmacShaKeyFor(new byte[64]), Jwts.SIG.HS512)
+                .compact();
+
+        for (String token : List.of("not-a-jwt", expired, wrongSignature)) {
+            mockMvc.perform(get("/api/transferencias/" + UUID.randomUUID() + suffix)
+                            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                            .accept(suffix.isEmpty() ? MediaType.APPLICATION_JSON : MediaType.APPLICATION_PDF))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        }
+        verifyNoInteractions(transferDetailsService);
+    }
+
+    @Test
+    void receiptDownload_withUserToken_keepsPrivateNoStoreAndExposesTheFileName() throws Exception {
+        UUID transferId = UUID.randomUUID();
+        when(transferDetailsService.getReceipt(eq(transferId), any(UserEntity.class)))
+                .thenReturn(new TransferDetailsService.Receipt("comprovante-transferencia.pdf", new byte[] {'%', 'P', 'D', 'F'}));
+
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", transferId)
+                        .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .accept(MediaType.APPLICATION_PDF))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+                        org.hamcrest.Matchers.containsString("comprovante-transferencia.pdf")))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                        org.hamcrest.Matchers.containsString(HttpHeaders.CONTENT_DISPOSITION)));
     }
 
     @Test
