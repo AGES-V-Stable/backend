@@ -23,7 +23,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -86,7 +85,8 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertNull(response.getBody());
+        assertEquals("INVALID_CREDENTIALS", ((Map<?, ?>) response.getBody()).get("code"));
+        assertEquals("Invalid credentials", ((Map<?, ?>) response.getBody()).get("message"));
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -98,7 +98,8 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertNull(response.getBody());
+        assertEquals("INVALID_CREDENTIALS", ((Map<?, ?>) response.getBody()).get("code"));
+        assertEquals("Invalid credentials", ((Map<?, ?>) response.getBody()).get("message"));
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -110,7 +111,8 @@ class AuthControllerTest {
         ResponseEntity<?> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
-        assertEquals(Map.of("message", "User is locked"), response.getBody());
+        assertEquals("ACCOUNT_LOCKED", ((Map<?, ?>) response.getBody()).get("code"));
+        assertEquals(Map.of("code", "ACCOUNT_LOCKED", "message", "User is locked"), response.getBody());
         verifyNoInteractions(jwtTokenUtil);
     }
 
