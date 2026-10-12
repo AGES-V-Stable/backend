@@ -1,203 +1,107 @@
 package ages.vstable.backend.controller;
 
-import ages.vstable.backend.dto.transfer.CreateTransferResponse;
-import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
-import ages.vstable.backend.dto.transfer.FeeInfo;
-import ages.vstable.backend.dto.transfer.MoneyAmount;
-import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
+import ages.vstable.backend.dto.transfer.TransferFilter;
+import ages.vstable.backend.dto.transfer.TransferResponse;
 import ages.vstable.backend.entity.enums.TransactionStatus;
-import ages.vstable.backend.exception.AveniaIntegrationException;
+import ages.vstable.backend.entity.enums.TransferDirection;
+import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.NotFoundException;
-import ages.vstable.backend.exception.UnprocessableEntityException;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.TransferService;
-import ages.vstable.backend.utils.JwtTokenUtils;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.http.MediaType;
-import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
-@WebMvcTest(TransferController.class)
+@ExtendWith(MockitoExtension.class)
 class TransferControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @MockitoBean
+    @Mock
     private TransferService transferService;
 
-    @MockitoBean
-    private SecurityContextRepository securityContextRepository;
+    @InjectMocks
+    private TransferController transferController;
 
-    @MockitoBean
-    private JwtTokenUtils jwtTokenUtils;
+    private MockMvc mockMvc;
 
-    @MockitoBean
-    private UserRepository userRepository;
-
-    private String validPayload() throws Exception {
-        return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 125000.00);
-            put("amountType", "SOURCE");
-            put("sourceCurrency", "BRL");
-            put("destinationCurrency", "USD");
-        }});
-    }
-
-    private TransferQuoteResponse sampleResponse() {
-        return new TransferQuoteResponse(
-                new MoneyAmount(new BigDecimal("125000.00"), "BRL"),
-                new MoneyAmount(new BigDecimal("24235.14"), "USD"),
-                new ExchangeRateInfo("USD", "BRL", new BigDecimal("5.16")),
-                new FeeInfo(new BigDecimal("0.45"), new BigDecimal("562.50"), "BRL"),
-                new MoneyAmount(new BigDecimal("125562.50"), "BRL"));
+    @BeforeEach
+    void setUp() {
+        mockMvc = standaloneSetup(transferController)
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
-    void post_quoteValida_retorna200ComBreakdownSemIdentificadoresDaAvenia() throws Exception {
-        when(transferService.quote(any(), any())).thenReturn(sampleResponse());
+    void findAll_parsesFiltersAndReturnsSpringPage() throws Exception {
+        TransferResponse transfer = new TransferResponse();
+        transfer.setId(UUID.randomUUID());
+        transfer.setStatus(TransactionStatus.SETTLED);
+        transfer.setForeignAmount(new BigDecimal("10.50"));
+        when(transferService.findTransfers(any(TransferFilter.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(transfer), PageRequest.of(1, 12), 13));
 
-        mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+        mockMvc.perform(get("/v1/transfers")
+                        .param("page", "1")
+                        .param("size", "12")
+                        .param("status", "SETTLED")
+                        .param("direction", "PAYMENT")
+                        .param("startDate", "2026-09-01")
+                        .param("endDate", "2026-09-30")
+                        .param("minAmount", "10.5")
+                        .param("search", "acme"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.source.amount").value(125000.00))
-                .andExpect(jsonPath("$.source.currency").value("BRL"))
-                .andExpect(jsonPath("$.destination.amount").value(24235.14))
-                .andExpect(jsonPath("$.destination.currency").value("USD"))
-                .andExpect(jsonPath("$.exchangeRate.rate").value(5.16))
-                .andExpect(jsonPath("$.fee.percentage").value(0.45))
-                .andExpect(jsonPath("$.fee.amount").value(562.50))
-                .andExpect(jsonPath("$.total.amount").value(125562.50))
-                .andExpect(jsonPath("$.quoteToken").doesNotExist())
-                .andExpect(jsonPath("$.quoteId").doesNotExist())
-                .andExpect(jsonPath("$.ticketId").doesNotExist());
+                .andExpect(jsonPath("$.content[0].status").value("SETTLED"))
+                .andExpect(jsonPath("$.content[0].foreignAmount").value("10.50"))
+                .andExpect(jsonPath("$.totalElements").value(13))
+                .andExpect(jsonPath("$.number").value(1));
+
+        ArgumentCaptor<TransferFilter> captor = ArgumentCaptor.forClass(TransferFilter.class);
+        verify(transferService).findTransfers(captor.capture(), any(Pageable.class));
+        TransferFilter filter = captor.getValue();
+        assertThat(filter.status()).isEqualTo(TransactionStatus.SETTLED);
+        assertThat(filter.direction()).isEqualTo(TransferDirection.PAYMENT);
+        assertThat(filter.startDate()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(filter.minAmount()).isEqualByComparingTo("10.5");
+        assertThat(filter.search()).isEqualTo("acme");
     }
 
     @Test
-    void post_semAmount_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amountType", "SOURCE");
-        }});
-
-        mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+    void findAll_unknownStatus_returns400() throws Exception {
+        mockMvc.perform(get("/v1/transfers").param("status", "Concluída"))
                 .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(transferService);
     }
 
     @Test
-    void post_semAmountType_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-        }});
+    void findById_unknownTransfer_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(transferService.findById(id)).thenThrow(new NotFoundException("Transferência não encontrada"));
 
-        mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void post_moedaDeDestinoNaoDeterminavel_retorna422() throws Exception {
-        when(transferService.quote(any(), any())).thenThrow(
-                new UnprocessableEntityException("Não foi possível determinar a moeda de destino da transferência"));
-
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-        }});
-
-        mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isUnprocessableEntity());
-    }
-
-    @Test
-    void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
-        when(transferService.quote(any(), any())).thenThrow(
-                AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
-
-        mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
-                .andExpect(status().isServiceUnavailable());
-    }
-
-    private String createTransferPayload(UUID beneficiaryId) throws Exception {
-        return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 125000.00);
-            put("amountType", "SOURCE");
-            put("sourceCurrency", "BRL");
-            put("destinationCurrency", "USD");
-            put("paymentMethod", "PIX");
-            put("beneficiaryId", beneficiaryId.toString());
-            put("description", "Pagamento de importação");
-        }});
-    }
-
-    @Test
-    void post_transferenciaValida_retorna200ComStatusSemIdentificadoresDaAvenia() throws Exception {
-        when(transferService.create(any(), any())).thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
-
-        mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PROCESSING"))
-                .andExpect(jsonPath("$.quoteToken").doesNotExist())
-                .andExpect(jsonPath("$.quoteId").doesNotExist())
-                .andExpect(jsonPath("$.ticketId").doesNotExist());
-    }
-
-    @Test
-    void post_semBeneficiaryId_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-            put("paymentMethod", "PIX");
-        }});
-
-        mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void post_beneficiarioInexistente_retorna404() throws Exception {
-        when(transferService.create(any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
-
-        mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
+        mockMvc.perform(get("/v1/transfers/{id}", id))
                 .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void post_falhaNaAveniaAoCriarTransferencia_retorna503QuandoRetryable() throws Exception {
-        when(transferService.create(any(), any())).thenThrow(
-                AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
-
-        mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
-                .andExpect(status().isServiceUnavailable());
     }
 }

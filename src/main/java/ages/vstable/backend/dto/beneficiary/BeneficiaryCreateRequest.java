@@ -38,6 +38,25 @@ public class BeneficiaryCreateRequest {
     private String branchNumber;
     private String accountNumber;
     private String currency;
+    private String paymentRail;
+    private String accountClass;
+    private String accountType;
+    private String recipientRelationship;
+    private String iban;
+    private String routingNumber;
+    private String addressLine1;
+    private String addressLine2;
+    private String city;
+    private String stateProvinceRegion;
+    private String postalCode;
+    private String countryCode;
+    private String bankAddressLine1;
+    private String bankAddressLine2;
+    private String bankCity;
+    private String bankStateProvinceRegion;
+    private String bankPostalCode;
+    private String bankCountryCode;
+    private String swiftPaymentCode;
 
     // Required when receivingMethod = CRYPTO_WALLET (checked manually by BeneficiaryValidator)
     private String walletAddress;

@@ -1,5 +1,6 @@
 package ages.vstable.backend.utils;
 
+import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -54,7 +55,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldGenerateTokenWithCorrectUsername() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         String token = jwtTokenUtils.generateToken(user);
@@ -66,7 +67,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldGenerateTokenWithExpirationDateInFuture() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         String token = jwtTokenUtils.generateToken(user);
@@ -83,7 +84,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldReturnUsernameFromToken() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         String token = jwtTokenUtils.generateToken(user);
@@ -116,7 +117,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldValidateTokenForMatchingUser() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         when(userDetails.getUsername()).thenReturn(EMAIL);
@@ -129,7 +130,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldRejectTokenForDifferentUser() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         when(userDetails.getUsername())
@@ -149,7 +150,7 @@ class JwtTokenUtilsTest {
 
     @Test
     void shouldRejectTokenSignedWithDifferentSecret() {
-        when(user.getEmail()).thenReturn(EMAIL);
+        when(user.getUsername()).thenReturn(EMAIL);
         when(user.getAuthorities()).thenReturn(List.of());
 
         String token = jwtTokenUtils.generateToken(user);
@@ -203,5 +204,42 @@ class JwtTokenUtilsTest {
                 ))
                 .signWith(key, Jwts.SIG.HS512)
                 .compact();
+    }
+
+    // ---------------------------------------------------------
+    // Account type claim
+    // ---------------------------------------------------------
+
+    @Test
+    void shouldMarkCompanyUserTokensAsUserAccounts() {
+        UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+
+        String token = jwtTokenUtils.generateToken(companyUser);
+
+        assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
+    }
+
+    @Test
+    void shouldMarkAdministratorTokensAsAdminAccountsWithAdminRole() {
+        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
+
+        String token = jwtTokenUtils.generateToken(admin);
+
+        assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+        assertThat(jwtTokenUtils.getUsernameFromToken(token)).isEqualTo("admin@vstable.com");
+        assertThat(jwtTokenUtils.<Object>getClaimFromToken(token, claims -> claims.get("role")))
+                .isEqualTo(List.of("ROLE_ADMIN"));
+    }
+
+    @Test
+    void shouldTreatTokensWithoutAccountTypeAsUserAccounts() {
+        SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+        String legacyToken = Jwts.builder()
+                .subject(EMAIL)
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(key, Jwts.SIG.HS512)
+                .compact();
+
+        assertThat(jwtTokenUtils.getAccountTypeFromToken(legacyToken)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
     }
 }

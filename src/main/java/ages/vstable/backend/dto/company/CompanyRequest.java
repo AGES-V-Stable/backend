@@ -25,10 +25,10 @@ public class CompanyRequest {
     @Size(max = 20)
     private String zipCode;
 
-    @Size(max = 255)
+    @Size(max = 100)
     private String city;
 
     @NotBlank
-    @Size(max = 100)
+    @Size(max = 50)
     private String state;
 }

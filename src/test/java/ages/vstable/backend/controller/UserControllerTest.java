@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,33 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.id").value(user.getId().toString()))
                 .andExpect(jsonPath("$.name").value("Usuario Teste"))
                 .andExpect(jsonPath("$.email").value("usuario@teste.com"))
-                .andExpect(jsonPath("$.companyId").value(user.getCompanyId().toString()));
+                .andExpect(jsonPath("$.companyId").value(user.getCompanyId().toString()))
+                .andExpect(jsonPath("$.accountType").value("USER"))
+                .andExpect(jsonPath("$.roles[0]").value("ROLE_USER"));
+    }
+
+    @Test
+    void me_returnsAdministratorWithoutCompany() throws Exception {
+        AdministratorEntity admin = AdministratorEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Admin V-Stable")
+                .email("admin@vstable.com")
+                .build();
+
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
+
+        mockMvc.perform(get("/v1/users/me").principal(authentication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Admin V-Stable"))
+                .andExpect(jsonPath("$.companyId").doesNotExist())
+                .andExpect(jsonPath("$.accountType").value("ADMIN"))
+                .andExpect(jsonPath("$.roles[0]").value("ROLE_ADMIN"));
+    }
+
+    @Test
+    void me_withoutAuthentication_returns401() throws Exception {
+        mockMvc.perform(get("/v1/users/me"))
+                .andExpect(status().isUnauthorized());
     }
 }

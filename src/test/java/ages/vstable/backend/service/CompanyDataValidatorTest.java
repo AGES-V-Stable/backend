@@ -277,8 +277,8 @@ class CompanyDataValidatorTest {
     }
 
     @Test
-    void shouldRejectStateLongerThan100Characters() {
-        String state = "A".repeat(101);
+    void shouldRejectStateLongerThan50Characters() {
+        String state = "A".repeat(51);
 
         assertThatThrownBy(() -> validator.normalize(
                 "Empresa Teste",
@@ -289,12 +289,12 @@ class CompanyDataValidatorTest {
                 state
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("state: maximum length is 100");
+                .hasMessage("state: maximum length is 50");
     }
 
     @Test
-    void shouldRejectCityLongerThan255Characters() {
-        String city = "A".repeat(256);
+    void shouldRejectCityLongerThan100Characters() {
+        String city = "A".repeat(101);
 
         assertThatThrownBy(() -> validator.normalize(
                 "Empresa Teste",
@@ -305,7 +305,7 @@ class CompanyDataValidatorTest {
                 "RS"
         ))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("city: maximum length is 255");
+                .hasMessage("city: maximum length is 100");
     }
 
     @Test

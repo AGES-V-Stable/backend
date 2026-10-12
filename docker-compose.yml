@@ -37,6 +37,10 @@ services:
       AVENIA_BASE_URL: "${AVENIA_BASE_URL:-https://api.sandbox.avenia.io:10952}"
       AVENIA_API_KEY: "${AVENIA_API_KEY:-}"
       AVENIA_PRIVATE_KEY: "${AVENIA_PRIVATE_KEY:-}"
+      BLINDPAY_BASE_URL: "${BLINDPAY_BASE_URL:-https://api.blindpay.com}"
+      BLINDPAY_API_KEY: "${BLINDPAY_API_KEY:-}"
+      BLINDPAY_INSTANCE_ID: "${BLINDPAY_INSTANCE_ID:-}"
+      BLINDPAY_WEBHOOK_SECRET: "${BLINDPAY_WEBHOOK_SECRET:-}"
     ports:
       - "8080:8080"
     depends_on:

@@ -2,8 +2,8 @@ package ages.vstable.backend.external.blindpay;
 
 /**
  * Field names, enums and limits of the BlindPay API (base URL in
- * {@link BlindPayProperties}). Reference only, mirrors the provider's contract —
- * no behavior here yet; see {@link BlindPayClient}.
+ * {@link BlindPayProperties}). Reference only, mirrors the provider's contract;
+ * the HTTP calls live in {@link BlindPayClient}.
  */
 public final class BlindPayApi {
 

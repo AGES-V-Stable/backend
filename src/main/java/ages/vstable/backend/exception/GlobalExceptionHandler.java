@@ -79,7 +79,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UnprocessableEntityException.class)
     public ResponseEntity<Map<String, String>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity
-                .status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(Map.of("message", ex.getMessage()));
     }
 
@@ -93,6 +93,22 @@ public class GlobalExceptionHandler {
                         || ex.getProviderStatus() == 404
                         || ex.getProviderStatus() == 409
                         || ex.getProviderStatus() == 422)) {
+            status = HttpStatus.UNPROCESSABLE_CONTENT;
+        } else {
+            status = HttpStatus.BAD_GATEWAY;
+        }
+
+        return ResponseEntity
+                .status(status)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(BlindPayIntegrationException.class)
+    public ResponseEntity<Map<String, String>> handleBlindPayIntegration(BlindPayIntegrationException ex) {
+        HttpStatus status;
+        if (ex.isRetryable()) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+        } else if (ex.isRejectedByProvider()) {
             status = HttpStatus.UNPROCESSABLE_CONTENT;
         } else {
             status = HttpStatus.BAD_GATEWAY;
