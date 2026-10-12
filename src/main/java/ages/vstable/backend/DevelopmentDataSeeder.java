@@ -212,14 +212,15 @@ public class DevelopmentDataSeeder implements CommandLineRunner {
         BigDecimal foreignAmount = new BigDecimal(amount);
         BigDecimal exchangeRate = new BigDecimal("5.00");
         BigDecimal convertedBrl = foreignAmount.multiply(exchangeRate);
-        // Taxa de serviço de 0,45% sobre o valor convertido; o total liquidado inclui a taxa.
+        // Taxa de 0,45%: pagamento debita convertido + taxa; recebimento credita convertido - taxa.
         BigDecimal serviceFee = convertedBrl.multiply(new BigDecimal("0.0045")).setScale(2, RoundingMode.HALF_UP);
         transaction.setCompanyId(user.getCompanyId());
         transaction.setCreatorUserId(user.getId());
         transaction.setStatus(status);
         transaction.setForeignCurrency("USD");
         transaction.setForeignAmount(foreignAmount);
-        transaction.setSettlementAmountBrl(convertedBrl.add(serviceFee));
+        transaction.setSettlementAmountBrl(transaction instanceof ExportTransactionEntity
+                ? convertedBrl.subtract(serviceFee) : convertedBrl.add(serviceFee));
         transaction.setServiceFeeBrl(serviceFee);
         transaction.setEffectiveSpreadPercentage(new BigDecimal("0.01"));
         transaction.setExchangeRate(exchangeRate);

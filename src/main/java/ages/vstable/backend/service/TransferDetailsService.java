@@ -31,9 +31,9 @@ import java.util.UUID;
  * registrados na operação; nada é recalculado com cotação ou mercado atuais.
  *
  * <p>Convenções dos valores registrados:
- * {@code settlement_amount_brl} é o total liquidado em BRL, já com a taxa de serviço; o valor
- * convertido (origem no pagamento, destino no recebimento) é {@code settlement_amount_brl -
- * service_fee_brl}.
+ * No pagamento, {@code settlement_amount_brl} é o total debitado (convertido + taxa).
+ * No recebimento, é o líquido creditado (convertido - taxa). O destino do recebimento
+ * conserva esse líquido; a base do percentual da taxa é o valor convertido bruto.
  */
 @Service
 @RequiredArgsConstructor
@@ -115,7 +115,8 @@ public class TransferDetailsService {
         Counterparty counterparty = counterpartyOf(transaction);
         BigDecimal convertedBrl = convertedBrl(transaction);
         Money foreign = new Money(money(transaction.getForeignAmount()), transaction.getForeignCurrency());
-        Money brl = new Money(money(convertedBrl), BRL);
+        Money brl = new Money(money(type == Type.RECEBIMENTO
+                ? transaction.getSettlementAmountBrl() : convertedBrl), BRL);
         boolean incoming = type == Type.RECEBIMENTO;
 
         return new TransferDetailsResponse(
@@ -187,7 +188,9 @@ public class TransferDetailsService {
             return null;
         }
         BigDecimal fee = transaction.getServiceFeeBrl() == null ? BigDecimal.ZERO : transaction.getServiceFeeBrl();
-        return transaction.getSettlementAmountBrl().subtract(fee);
+        return transaction instanceof ExportTransactionEntity
+                ? transaction.getSettlementAmountBrl().add(fee)
+                : transaction.getSettlementAmountBrl().subtract(fee);
     }
 
     private static ExchangeRate exchangeRate(BaseTransactionEntity transaction) {

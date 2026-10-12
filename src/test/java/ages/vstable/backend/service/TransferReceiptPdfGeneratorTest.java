@@ -85,10 +85,42 @@ class TransferReceiptPdfGeneratorTest {
     }
 
     @Test
-    void generate_characterTheFontCannotEncode_becomesQuestionMarkInsteadOfFailing() throws IOException {
-        String text = textOf(generator.generate(payment("東京商事 Ltd 😀\nlinha")));
+    void generate_unicodeNames_preservesCjkEmojiGreekAndCyrillic() throws IOException {
+        String name = "東京商事 Ltd 😀 João Łukasz Ωμέγα Москва";
+        String text = textOf(generator.generate(payment(name)));
 
-        assertThat(text).contains("???? Ltd ??linha").doesNotContain("東京");
+        assertThat(text).contains(name).doesNotContain("?");
+    }
+
+    @Test
+    void generate_longName_wrapsWithoutLosingCharacters() throws IOException {
+        String name = "InternationalBeneficiary".repeat(12) + " 東京商事 FIM";
+        String text = textOf(generator.generate(payment(name))).replaceAll("\\s", "");
+
+        assertThat(text).contains(name.replaceAll("\\s", "")).doesNotContain("...");
+    }
+
+    @Test
+    void generate_explicitNewline_preservesBothLines() throws IOException {
+        String text = textOf(generator.generate(payment("東京商事\nSegunda linha")));
+
+        assertThat(text).contains("東京商事").contains("Segunda linha").doesNotContain("?");
+    }
+
+    @Test
+    void generate_veryLongPayerName_continuesOnAdditionalPages() throws IOException {
+        String name = "Pagador東京".repeat(600) + " FIM";
+        TransferDetailsResponse base = payment(name);
+        TransferDetailsResponse incoming = new TransferDetailsResponse(
+                base.id(), base.companyId(), base.date(), Type.RECEBIMENTO, base.status(), name,
+                null, base.destination(), base.source(), null, base.exchangeRate(), base.costs(), null, true);
+        try (PDDocument document = Loader.loadPDF(generator.generate(incoming))) {
+            assertThat(document.getNumberOfPages()).isGreaterThan(1);
+            String text = new PDFTextStripper().getText(document).replaceAll("\\s", "");
+            String withoutHeaders = text.replace("ComprovantedetransferênciaV-Stable", "");
+            assertThat(withoutHeaders).contains(name.replaceAll("\\s", ""));
+            assertThat(text).contains("Valordeorigem").contains("TaxaV-Stable");
+        }
     }
 
     @Test

@@ -17,6 +17,8 @@ import ages.vstable.backend.repository.BaseTransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -130,7 +132,7 @@ class TransferDetailsServiceTest {
                 .status(TransactionStatus.AWAITING_PAYMENT)
                 .foreignCurrency("USD")
                 .foreignAmount(new BigDecimal("1000.00"))
-                .settlementAmountBrl(new BigDecimal("5022.50"))
+                .settlementAmountBrl(new BigDecimal("4977.50"))
                 .serviceFeeBrl(new BigDecimal("22.50"))
                 .exchangeRate(new BigDecimal("5.00"))
                 .externalPayerName("Demo Overseas Customer")
@@ -146,10 +148,48 @@ class TransferDetailsServiceTest {
         assertThat(details.fundingSource()).isNull();
         assertThat(details.source().amount()).isEqualTo("1000.00");
         assertThat(details.source().currency()).isEqualTo("USD");
-        assertThat(details.destination().amount()).isEqualTo("5000.00");
+        assertThat(details.destination().amount()).isEqualTo("4977.50");
+        assertThat(details.costs().serviceFee().percentage()).isEqualTo("0.45");
         assertThat(details.destination().currency()).isEqualTo("BRL");
         assertThat(details.exchangeRate().rate()).isEqualTo("5.00");
         assertThat(details.receiptAvailable()).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "false, 5100.00, 100.00, 5000.00, 2.00",
+            "true, 4900.00, 100.00, 4900.00, 2.00",
+            "false, 5000.00, 0.00, 5000.00, 0.00",
+            "true, 5000.00, 0.00, 5000.00, 0.00",
+            "false, 5000.00, null, 5000.00, null",
+            "true, 5000.00, null, 5000.00, null",
+            "false, null, 100.00, null, null",
+            "true, null, 100.00, null, null"
+    }, nullValues = "null")
+    void getDetails_feeUsesGrossConversionAndIncomingDestinationKeepsNetSettlement(
+            boolean incoming, String settlement, String fee, String expectedBrl, String percentage) {
+        verifiedUser();
+        BaseTransactionEntity transaction = incoming ? new ExportTransactionEntity() : new ImportTransactionEntity();
+        transaction.setId(transferId);
+        transaction.setCompanyId(companyId);
+        transaction.setStatus(TransactionStatus.SETTLED);
+        transaction.setSettlementAmountBrl(settlement == null ? null : new BigDecimal(settlement));
+        transaction.setServiceFeeBrl(fee == null ? null : new BigDecimal(fee));
+        // Deliberately inconsistent: details must use recorded settlement, not recompute it.
+        transaction.setForeignAmount(new BigDecimal("999.00"));
+        transaction.setForeignCurrency("USD");
+        transaction.setExchangeRate(new BigDecimal("7.00"));
+        when(transactionRepository.findById(transferId)).thenReturn(Optional.of(transaction));
+
+        TransferDetailsResponse details = service.getDetails(transferId, user);
+
+        assertThat((incoming ? details.destination() : details.source()).amount()).isEqualTo(expectedBrl);
+        if (fee == null) {
+            assertThat(details.costs().serviceFee()).isNull();
+        } else {
+            assertThat(details.costs().serviceFee().amount()).isEqualTo(fee);
+            assertThat(details.costs().serviceFee().percentage()).isEqualTo(percentage);
+        }
     }
 
     @Test

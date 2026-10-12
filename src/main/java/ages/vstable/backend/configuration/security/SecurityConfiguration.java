@@ -125,6 +125,12 @@ public class SecurityConfiguration {
     }
 
     private static void writeUnauthorized(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        if (HttpMethod.GET.matches(request.getMethod())
+                && path.matches("/api/transferencias/[^/]+(?:/comprovante)?")) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHENTICATED", "Authentication required");
+            return;
+        }
         Object reason = request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE);
         if (JwtTokenFilter.TOKEN_EXPIRED.equals(reason)) {
             writeError(response, HttpServletResponse.SC_UNAUTHORIZED, JwtTokenFilter.TOKEN_EXPIRED, "Session expired");

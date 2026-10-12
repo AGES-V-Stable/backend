@@ -23,7 +23,7 @@ public record TransferDetailsResponse(
         String counterpartyName,
         String counterpartyDetails,
         @Schema(description = "Lado que sai: BRL no pagamento; moeda estrangeira no recebimento") Money source,
-        @Schema(description = "Lado que entra: moeda estrangeira no pagamento; BRL no recebimento") Money destination,
+        @Schema(description = "Lado que entra: moeda estrangeira no pagamento; BRL líquido da taxa no recebimento") Money destination,
         @Schema(description = "Método de transferência registrado: ACCOUNT_BALANCE, PIX, TED ou BLOCKCHAIN; nulo em recebimentos") String fundingSource,
         ExchangeRate exchangeRate,
         Costs costs,

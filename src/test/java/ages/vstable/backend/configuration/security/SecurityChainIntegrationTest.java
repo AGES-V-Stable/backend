@@ -14,6 +14,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -34,10 +36,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -174,6 +178,32 @@ class SecurityChainIntegrationTest {
                         .accept(MediaType.APPLICATION_PDF))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/comprovante"})
+    void transferEndpoints_invalidOrExpiredToken_returnUnauthenticated(String suffix) throws Exception {
+        String expired = Jwts.builder()
+                .subject(user.getEmail())
+                .issuedAt(new Date(System.currentTimeMillis() - 120_000))
+                .expiration(new Date(System.currentTimeMillis() - 60_000))
+                .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS512)
+                .compact();
+        String wrongSignature = Jwts.builder()
+                .subject(user.getEmail())
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(Keys.hmacShaKeyFor(new byte[64]), Jwts.SIG.HS512)
+                .compact();
+
+        for (String token : List.of("not-a-jwt", expired, wrongSignature)) {
+            mockMvc.perform(get("/api/transferencias/" + UUID.randomUUID() + suffix)
+                            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                            .accept(suffix.isEmpty() ? MediaType.APPLICATION_JSON : MediaType.APPLICATION_PDF))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        }
+        verifyNoInteractions(transferDetailsService);
     }
 
     @Test
