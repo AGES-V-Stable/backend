@@ -51,6 +51,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -64,17 +65,23 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransferService {
 
-    // A cotação de exibição ainda não tem um beneficiário associado (esse dado só chega
-    // em POST /transfers), então não há como saber o método de recebimento real. INTERNAL
-    // representa a rota "saldo em conta" (ACCOUNT_BALANCE) só para fins de exibição do
-    // valor — não confirmado contra o sandbox real.
-    private static final String DEFAULT_PAYMENT_METHOD = "INTERNAL";
-
     // Nenhuma entidade hoje guarda a moeda de operação da empresa; BRL é a única moeda
     // que aparece explicitamente hoje (CompanyEntity.availableBalanceBrl). Ver
     // docs/task-29-avenia-final-review.md — decisão a revisitar com o time.
     private static final String DEFAULT_SOURCE_CURRENCY = "BRL";
     private static final String FEE_SETTLEMENT = AveniaApi.Quote.FeeSettlement.IMMEDIATE.name();
+
+    // Destinos documentados pela Avenia para entrada BRL/PIX
+    // (integration-guide.avenia.io/docs/Operations/combinations): BRL só compra tokens ou
+    // financia SWIFT. Não existem BRL->BRL PIX, BRL->USD ACH/WIRE nem BRL->EUR SEPA; esses
+    // destinos são pagos a partir de saldo em token (INTERNAL). Redes por token conforme a
+    // tabela "Supported Assets" (EURC só existe em INTERNAL, logo não vai para carteira).
+    private static final Set<String> BRLA_USDC_NETWORKS =
+            Set.of("BASE", "CELO", "ETHEREUM", "GNOSIS", "MOONBEAM", "POLYGON");
+    private static final Map<String, Set<String>> PIX_INPUT_TOKEN_NETWORKS = Map.of(
+            "BRLA", BRLA_USDC_NETWORKS,
+            "USDC", BRLA_USDC_NETWORKS,
+            "USDT", Set.of("CELO", "ETHEREUM", "MOONBEAM", "POLYGON", "TRON"));
 
     private final AveniaTransferService aveniaTransferService;
     private final BeneficiaryRepository beneficiaryRepository;
@@ -85,15 +92,25 @@ public class TransferService {
     private final ExportTransactionRepository exportTransactionRepository;
     private final CompanyRepository companyRepository;
 
-    public TransferQuoteResponse quote(TransferQuoteRequest request, UUID currentUserId) {
-        String sourceCurrency = resolveSourceCurrency(request.getSourceCurrency());
-        String destinationCurrency = resolveDestinationCurrency(request.getDestinationCurrency());
-        String subAccountId = resolveSubAccountId(currentUserId);
+    /**
+     * Cotação de exibição. Usa a mesma composição de moedas e métodos da confirmação
+     * ({@link #resolveRoute}); por isso exige o beneficiário e o método de pagamento que
+     * serão confirmados — sem eles não há como saber a rota real, e uma cotação com
+     * métodos arbitrários não poderia ser usada na operação.
+     */
+    public TransferQuoteResponse quote(
+            TransferQuoteRequest request, UUID currentUserId, UUID currentCompanyId) {
+        if (request.getBeneficiaryId() == null || request.getPaymentMethod() == null) {
+            throw new UnprocessableEntityException(
+                    "Informe beneficiaryId e paymentMethod: a cotação precisa representar a mesma operação que será confirmada");
+        }
+        BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
+        TransferRoute route = resolveRoute(
+                request.getSourceCurrency(), request.getDestinationCurrency(),
+                request.getPaymentMethod(), beneficiary, currentUserId);
 
-        AveniaQuoteRequest aveniaRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency, DEFAULT_PAYMENT_METHOD,
-                destinationCurrency, DEFAULT_PAYMENT_METHOD, subAccountId);
-        AveniaQuoteResponse aveniaResponse = aveniaTransferService.createQuote(aveniaRequest);
+        AveniaQuoteResponse aveniaResponse = aveniaTransferService.createQuote(
+                buildAveniaQuoteRequest(request.getAmount(), request.getAmountType(), route));
 
         return toTransferQuoteResponse(aveniaResponse);
     }
@@ -103,37 +120,17 @@ public class TransferService {
      * exibição — é {@link AveniaTransferService#createTransfer} que garante isso) e, com o
      * quoteToken dela, cria o ticket. Se a cotação falhar, a exceção sobe antes de chegar
      * a criar qualquer ticket — e, portanto, antes de persistir qualquer coisa.
-     *
-     * {@code sourceCurrency} é restrito a BRL aqui (diferente de {@link #quote}): é a única
-     * moeda em que a empresa tem saldo registrado ({@code CompanyEntity.availableBalanceBrl}),
-     * e é dela que depende {@code settlement_amount_brl} ao persistir a transação. Ver
-     * docs/transfers-persist-transaction.md seção 5.
      */
     @Transactional
     public CreateTransferResponse create(
             CreateTransferRequest request, UUID currentUserId, UUID currentCompanyId) {
-        if (currentCompanyId == null) {
-            throw new NotFoundException("Beneficiário não encontrado");
-        }
-        BeneficiaryEntity beneficiary = beneficiaryRepository
-                .findByIdAndCompanyId(request.getBeneficiaryId(), currentCompanyId)
-                .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
-
-        String sourceCurrency = resolveSourceCurrency(request.getSourceCurrency());
-        if (!DEFAULT_SOURCE_CURRENCY.equals(sourceCurrency)) {
-            throw new UnprocessableEntityException(
-                    "sourceCurrency deve ser BRL: o saldo da empresa só é mantido nessa moeda");
-        }
-        String destinationCurrency = resolveDestinationCurrency(
-                request.getDestinationCurrency(), beneficiary);
-        validateRegisteredBeneficiary(beneficiary);
-        String subAccountId = resolveSubAccountId(currentUserId);
-        validateBeneficiarySubAccount(beneficiary, subAccountId);
+        BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
+        TransferRoute route = resolveRoute(
+                request.getSourceCurrency(), request.getDestinationCurrency(),
+                request.getPaymentMethod(), beneficiary, currentUserId);
 
         AveniaQuoteRequest quoteRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency,
-                inputPaymentMethod(request.getPaymentMethod()), destinationCurrency,
-                outputPaymentMethod(beneficiary), subAccountId);
+                request.getAmount(), request.getAmountType(), route);
         AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(
                 beneficiary, request.getPaymentMethod(), request.getDescription());
 
@@ -195,16 +192,77 @@ public class TransferService {
         return subAccountProvisioningService.ensureSubAccountId(kyc);
     }
 
+    private BeneficiaryEntity findCompanyBeneficiary(UUID beneficiaryId, UUID currentCompanyId) {
+        if (currentCompanyId == null) {
+            throw new NotFoundException("Beneficiário não encontrado");
+        }
+        return beneficiaryRepository
+                .findByIdAndCompanyId(beneficiaryId, currentCompanyId)
+                .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
+    }
+
+    /** Moedas, métodos e subconta de uma operação na Avenia. */
+    private record TransferRoute(
+            String inputCurrency, String inputPaymentMethod,
+            String outputCurrency, String outputPaymentMethod, String subAccountId) {
+    }
+
+    /**
+     * Regra única de composição da operação, compartilhada pela cotação de exibição e pela
+     * cotação de confirmação. Toda combinação é validada antes de qualquer chamada à Avenia,
+     * inclusive o provisionamento sob demanda da subconta.
+     *
+     * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
+     * registrado ({@code CompanyEntity.availableBalanceBrl}), e é dela que depende
+     * {@code settlement_amount_brl} ao persistir a transação. Ver
+     * docs/transfers-persist-transaction.md seção 5.
+     */
+    private TransferRoute resolveRoute(
+            String requestedSourceCurrency, String requestedDestinationCurrency,
+            TransferMethod paymentMethod, BeneficiaryEntity beneficiary, UUID currentUserId) {
+        String sourceCurrency = resolveSourceCurrency(requestedSourceCurrency);
+        if (!DEFAULT_SOURCE_CURRENCY.equals(sourceCurrency)) {
+            throw new UnprocessableEntityException(
+                    "sourceCurrency deve ser BRL: o saldo da empresa só é mantido nessa moeda");
+        }
+        String destinationCurrency = resolveDestinationCurrency(requestedDestinationCurrency, beneficiary);
+        validateRegisteredBeneficiary(beneficiary);
+        String inputPaymentMethod = inputPaymentMethod(paymentMethod);
+        String outputPaymentMethod = outputPaymentMethod(beneficiary);
+        validatePixInputDestination(beneficiary, destinationCurrency, outputPaymentMethod);
+
+        String subAccountId = resolveSubAccountId(currentUserId);
+        validateBeneficiarySubAccount(beneficiary, subAccountId);
+        return new TransferRoute(
+                sourceCurrency, inputPaymentMethod, destinationCurrency, outputPaymentMethod, subAccountId);
+    }
+
+    /**
+     * Com origem BRL, o único método de entrada é PIX; a Avenia só aceita como saída
+     * tokens em carteira numa rede suportada (SWIFT já foi bloqueado antes).
+     */
+    private void validatePixInputDestination(
+            BeneficiaryEntity beneficiary, String destinationCurrency, String outputPaymentMethod) {
+        if (beneficiary.getReceivingMethod() != ReceivingMethod.CRYPTO_WALLET) {
+            throw new UnprocessableEntityException(
+                    "A Avenia não oferece BRL via PIX para " + destinationCurrency + " via " + outputPaymentMethod
+                            + "; esse destino exige saldo em token na subconta Avenia, ainda não suportado");
+        }
+        Set<String> networks = PIX_INPUT_TOKEN_NETWORKS.get(destinationCurrency);
+        if (networks == null || !networks.contains(outputPaymentMethod)) {
+            throw new UnprocessableEntityException(
+                    "A Avenia não oferece BRL via PIX para " + destinationCurrency + " na rede " + outputPaymentMethod);
+        }
+    }
+
     private AveniaQuoteRequest buildAveniaQuoteRequest(
-            BigDecimal amount, TransferAmountType amountType,
-            String sourceCurrency, String inputPaymentMethod,
-            String destinationCurrency, String outputPaymentMethod, String subAccountId) {
+            BigDecimal amount, TransferAmountType amountType, TransferRoute route) {
         boolean isSource = amountType == TransferAmountType.SOURCE;
         return new AveniaQuoteRequest(
-                sourceCurrency,
-                inputPaymentMethod,
-                destinationCurrency,
-                outputPaymentMethod,
+                route.inputCurrency(),
+                route.inputPaymentMethod(),
+                route.outputCurrency(),
+                route.outputPaymentMethod(),
                 isSource ? amount : null,
                 isSource ? null : amount,
                 null,
@@ -217,7 +275,7 @@ public class TransferService {
                 null,
                 null,
                 FEE_SETTLEMENT,
-                subAccountId);
+                route.subAccountId());
     }
 
     /**
@@ -261,16 +319,28 @@ public class TransferService {
                     beneficiary.getAveniaId(), null, description)).build();
             case "sepa" -> builder.ticketEurSepaOutput(new AveniaTicketRequest.EurSepaOutput(
                     beneficiary.getAveniaId(), description)).build();
-            case "international_swift", "swift" -> throw new UnprocessableEntityException(
-                    "Transferências SWIFT exigem uma invoice processada pela Avenia; esse documento ainda não faz parte do contrato de transferência");
+            case "international_swift", "swift" -> throw swiftRequiresInvoice();
             default -> throw new UnprocessableEntityException(
                     "Método de recebimento bancário não suportado pela Avenia: " + beneficiary.getPaymentRail());
         };
     }
 
+    private UnprocessableEntityException swiftRequiresInvoice() {
+        return new UnprocessableEntityException(
+                "Transferências SWIFT exigem uma invoice processada pela Avenia; esse documento ainda não faz parte do contrato de transferência");
+    }
+
+    /**
+     * Na Avenia, BRL só entra via PIX; INTERNAL é saldo em token (BRLA, USDC, USDT, EURC)
+     * e não existe para BRL. Como a origem é sempre BRL, ACCOUNT_BALANCE não tem método de
+     * entrada válido até o domínio registrar o saldo em token da subconta — não se assume
+     * que o saldo local em BRL esteja disponível na Avenia nem se converte BRL em BRLA.
+     */
     private String inputPaymentMethod(TransferMethod paymentMethod) {
         return switch (paymentMethod) {
-            case ACCOUNT_BALANCE -> "INTERNAL";
+            case ACCOUNT_BALANCE -> throw new UnprocessableEntityException(
+                    "ACCOUNT_BALANCE ainda não é suportado: na Avenia, saldo interno existe apenas em tokens "
+                            + "(BRLA, USDC, USDT, EURC) e o saldo da empresa é registrado somente em BRL");
             case PIX -> "PIX";
             case TED -> throw new UnprocessableEntityException(
                     "TED não é um método de entrada suportado pela Avenia neste fluxo");
@@ -288,7 +358,7 @@ public class TransferService {
                 case "ach" -> "ACH";
                 case "wire" -> "WIRE";
                 case "sepa" -> "SEPA";
-                case "international_swift", "swift" -> "SWIFT";
+                case "international_swift", "swift" -> throw swiftRequiresInvoice();
                 default -> throw new UnprocessableEntityException(
                         "Método de recebimento bancário não suportado pela Avenia: " + beneficiary.getPaymentRail());
             };

@@ -166,15 +166,16 @@ class SecurityChainIntegrationTest {
 
     @Test
     void transferQuote_withUserToken_passesTheAuthenticatedUserIdToService() throws Exception {
-        when(transferService.quote(any(), eq(user.getId())))
+        when(transferService.quote(any(), eq(user.getId()), eq(user.getCompanyId())))
                 .thenReturn(new TransferQuoteResponse(null, null, null, null, null));
 
         mockMvc.perform(post("/v1/transfers/quote")
                         .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\"}"))
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USDC\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isOk());
-        verify(transferService).quote(any(), eq(user.getId()));
+        verify(transferService).quote(any(), eq(user.getId()), eq(user.getCompanyId()));
     }
 
     @Test

@@ -4,8 +4,10 @@ import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
 import ages.vstable.backend.dto.transfer.FeeInfo;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
+import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
 import ages.vstable.backend.entity.enums.TransactionStatus;
+import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -14,6 +16,7 @@ import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -25,7 +28,10 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -50,12 +56,16 @@ class TransferCreationControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
+    private static final UUID BENEFICIARY_ID = UUID.randomUUID();
+
     private String validPayload() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {{
             put("amount", 125000.00);
             put("amountType", "SOURCE");
             put("sourceCurrency", "BRL");
             put("destinationCurrency", "USD");
+            put("beneficiaryId", BENEFICIARY_ID.toString());
+            put("paymentMethod", "PIX");
         }});
     }
 
@@ -70,7 +80,7 @@ class TransferCreationControllerTest {
 
     @Test
     void post_quoteValida_retorna200ComBreakdownSemIdentificadoresDaAvenia() throws Exception {
-        when(transferService.quote(any(), any())).thenReturn(sampleResponse());
+        when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
 
         mockMvc.perform(post("/v1/transfers/quote")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -115,7 +125,7 @@ class TransferCreationControllerTest {
 
     @Test
     void post_moedaDeDestinoNaoDeterminavel_retorna422() throws Exception {
-        when(transferService.quote(any(), any())).thenThrow(
+        when(transferService.quote(any(), any(), any())).thenThrow(
                 new UnprocessableEntityException("Não foi possível determinar a moeda de destino da transferência"));
 
         String payload = objectMapper.writeValueAsString(new HashMap<>() {{
@@ -130,8 +140,61 @@ class TransferCreationControllerTest {
     }
 
     @Test
+    void post_quoteComBeneficiarioEMetodo_repassaOperacaoAoService() throws Exception {
+        when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validPayload()))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<TransferQuoteRequest> captor = ArgumentCaptor.forClass(TransferQuoteRequest.class);
+        verify(transferService).quote(captor.capture(), any(), any());
+        assertThat(captor.getValue().getBeneficiaryId()).isEqualTo(BENEFICIARY_ID);
+        assertThat(captor.getValue().getPaymentMethod()).isEqualTo(TransferMethod.PIX);
+    }
+
+    @Test
+    void post_quoteMetodoDePagamentoInvalido_retorna400SemChamarService() throws Exception {
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
+            put("amount", 100.00);
+            put("amountType", "SOURCE");
+            put("beneficiaryId", BENEFICIARY_ID.toString());
+            put("paymentMethod", "INTERNAL");
+        }});
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest());
+
+        verify(transferService, never()).quote(any(), any(), any());
+    }
+
+    @Test
+    void post_quoteCombinacaoNaoSuportada_retorna422() throws Exception {
+        when(transferService.quote(any(), any(), any())).thenThrow(
+                new UnprocessableEntityException("A Avenia não oferece BRL via PIX para USD via WIRE"));
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validPayload()))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void post_quoteBeneficiarioDeOutraEmpresa_retorna404() throws Exception {
+        when(transferService.quote(any(), any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validPayload()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void post_falhaNaAvenia_retorna503QuandoRetryable() throws Exception {
-        when(transferService.quote(any(), any())).thenThrow(
+        when(transferService.quote(any(), any(), any())).thenThrow(
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers/quote")

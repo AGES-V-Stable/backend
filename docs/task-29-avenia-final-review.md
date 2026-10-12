@@ -16,25 +16,83 @@ credenciais nem dados financeiros reais.
 O contrato HTTP mantém `sourceCurrency` e `destinationCurrency` opcionais, mas
 uma chamada à Avenia só é feita depois de ambas serem resolvidas.
 
-| Fluxo | Dados recebidos | Decisão |
+Cotação e criação usam a mesma regra (`TransferService.resolveRoute`):
+
+| Dados recebidos | Decisão |
+| --- | --- |
+| origem ausente | infere BRL pelo saldo de liquidação da empresa |
+| origem diferente de BRL | retorna 422; persistência e saldo só representam liquidação em BRL |
+| destino informado | precisa coincidir com a moeda do beneficiário; PIX é BRL |
+| destino ausente | usa a moeda cadastrada no beneficiário; PIX é BRL |
+| destino ausente e beneficiário sem moeda inferível | retorna 422 antes da Avenia |
+
+Não existe fallback para USD.
+
+## Métodos de pagamento
+
+Segundo a [tabela de combinações](https://integration-guide.avenia.io/docs/Operations/combinations/):
+
+- BRL entra e sai somente via `PIX` (ou `REFUND`); não existe `BRL/INTERNAL`.
+- `INTERNAL` é saldo em token na conta Avenia: BRLA, USDC, USDT e EURC.
+- Com entrada `BRL/PIX`, as saídas documentadas são tokens (on-chain ou
+  INTERNAL) e `SWIFT`. Não existem `BRL/PIX -> BRL/PIX`, `BRL/PIX -> USD/ACH|WIRE`
+  nem `BRL/PIX -> EUR/SEPA`; esses destinos são pagos a partir de token INTERNAL.
+- Redes por token (tabela *Supported Assets*): BRLA e USDC em BASE, CELO,
+  ETHEREUM, GNOSIS, MOONBEAM e POLYGON; USDT em CELO, ETHEREUM, MOONBEAM, POLYGON
+  e TRON; EURC somente INTERNAL.
+
+Mapeamento aplicado, sempre antes de qualquer chamada à Avenia (inclusive o
+provisionamento da subconta):
+
+| `paymentMethod` | Entrada | Situação |
 | --- | --- | --- |
-| Cotação | origem e destino | usa as moedas informadas |
-| Cotação | somente destino | infere origem BRL, pois o único saldo disponível no domínio é `availableBalanceBrl` |
-| Cotação | somente origem | retorna 422; não há beneficiário para determinar o destino |
-| Cotação | nenhuma moeda | retorna 422; não há contexto para determinar o destino |
-| Criação | origem ausente | infere BRL pelo saldo de liquidação da empresa |
-| Criação | destino ausente | usa a moeda cadastrada no beneficiário; PIX é BRL |
-| Criação | destino ausente e beneficiário sem moeda inferível | retorna 422 antes da Avenia |
+| `PIX` | `BRL/PIX` | suportado |
+| `ACCOUNT_BALANCE` | — | 422: exigiria token INTERNAL; o domínio só registra saldo em BRL |
+| `TED` | — | 422: não é método de entrada da Avenia |
+| `BLOCKCHAIN` | — | 422: exige dados de assinatura fora do contrato |
 
-Não existe fallback para USD. Na criação, uma origem diferente de BRL também é
-rejeitada, pois a persistência e o saldo da empresa só representam liquidação
-em BRL.
+| Beneficiário | Saída | Situação com entrada `BRL/PIX` |
+| --- | --- | --- |
+| `CRYPTO_WALLET` com BRLA/USDC/USDT em rede suportada | rede (ex.: `POLYGON`) | suportado |
+| `CRYPTO_WALLET` com token/rede fora da tabela | — | 422 |
+| `PIX_KEY` / `BANK_ACCOUNT` pix | `PIX` | 422: combinação inexistente |
+| `BANK_ACCOUNT` ach/wire | `ACH`/`WIRE` | 422: exige token INTERNAL |
+| `BANK_ACCOUNT` sepa | `SEPA` | 422: exige token INTERNAL |
+| `BANK_ACCOUNT` swift | `SWIFT` | 422: exige invoice processada |
 
-O endpoint de cotação não recebe beneficiário nem métodos de entrada e saída.
-O mapeamento legado `INTERNAL` usado para exibição precisa ser confirmado no
-sandbox para cada combinação. A tabela pública de combinações da Avenia não é
-suficiente para escolher entre, por exemplo, ACH e WIRE sem contexto do
-beneficiário. Nenhuma nova escolha arbitrária foi adicionada nesta revisão.
+BRL nunca é convertido implicitamente em BRLA, e o saldo local em BRL não é
+tratado como saldo disponível na Avenia.
+
+### Dependência em aberto
+
+Pagar beneficiários PIX, ACH, WIRE e SEPA exige `ACCOUNT_BALANCE` com origem
+em token INTERNAL (por exemplo `BRLA/INTERNAL -> BRL/PIX` ou
+`USDC/INTERNAL -> USD/WIRE`). Para habilitar isso com segurança, o time precisa
+decidir:
+
+1. como representar e consultar o saldo em token da subconta
+   (`GET /v2/account/balances`), em vez de usar `availableBalanceBrl`;
+2. como persistir uma transação cuja origem não é BRL
+   (`settlement_amount_brl` hoje recebe `inputAmount`);
+3. como o saldo em token é abastecido (depósito `BRL/PIX -> BRLA/INTERNAL`),
+   fluxo fora do escopo da task #29.
+
+Até lá, essas rotas são rejeitadas com 422 explicativo, e não com uma cotação
+que não poderia ser confirmada.
+
+## Cotação de exibição
+
+`POST /v1/transfers/quote` aceita `beneficiaryId` e `paymentMethod`, opcionais
+no contrato e com os mesmos tipos de `POST /v1/transfers`. Sem eles, a resposta
+é 422, pois não há como determinar os métodos da operação. Com eles, a cotação:
+
+- busca o beneficiário restrito à empresa do usuário (404 para outra empresa);
+- valida o vínculo com a subconta do usuário;
+- monta a requisição à Avenia pela mesma `resolveRoute` da criação.
+
+A requisição de cotação da exibição é idêntica à da confirmação para os mesmos
+dados (coberto por teste). A confirmação continua gerando uma cotação nova, e
+os valores podem mudar.
 
 ## Semântica financeira
 
@@ -71,15 +129,16 @@ Avenia ou identificador de subconta é devolvido no contrato público.
 
 ## Ordem e consistência da criação
 
-1. valida request, empresa, beneficiário e vínculo da subconta;
-2. resolve moedas e métodos;
-3. solicita uma cotação nova com `IMMEDIATE` na subconta do usuário;
-4. valida token, valores, moedas, métodos, taxas e fee settlement;
-5. substitui qualquer token/subconta do ticket pelo token recém-gerado e pela
+1. valida request, empresa e beneficiário;
+2. resolve moedas e métodos e rejeita combinações não documentadas;
+3. resolve a subconta e valida o vínculo do beneficiário com ela;
+4. solicita uma cotação nova com `IMMEDIATE` na subconta do usuário;
+5. valida token, valores, moedas, métodos, taxas e fee settlement;
+6. substitui qualquer token/subconta do ticket pelo token recém-gerado e pela
    subconta da cotação;
-6. cria e valida o ticket;
-7. persiste o snapshot local;
-8. retorna somente o status público.
+7. cria e valida o ticket;
+8. persiste o snapshot local;
+9. retorna somente o status público.
 
 Os status documentados com hífen (`ON-HOLD` e `PARTIAL-FAILED`) e as variantes
 legadas com sublinhado são mapeados. Status nulo não é tratado como concluído.
@@ -89,7 +148,7 @@ criado com sucesso e a transação local falhar ao persistir. Uma solução robu
 exige reconciliação/outbox e está fora do escopo desta task; a recuperação
 depende de uma consulta segura ao histórico do provedor.
 
-Transferências SWIFT permanecem bloqueadas antes da cotação porque o ticket
+Transferências SWIFT permanecem bloqueadas antes da cotação (inclusive a de exibição) porque o ticket
 exige uma invoice previamente processada e esse documento não faz parte do
 contrato HTTP atual.
 
@@ -102,7 +161,7 @@ fornecidas por variável de ambiente.
 | --- | --- | --- | --- |
 | Cotação SOURCE | `GET /v2/account/quote/fixed-rate` | combinação válida, `inputAmount`, `feeSettlement=IMMEDIATE` e `subAccountId` | resposta confirma `IMMEDIATE`, métodos/moedas e taxas coerentes |
 | Cotação DESTINATION | mesmo endpoint | combinação válida e somente `outputAmount` | Avenia calcula `inputAmount`; nenhum dos valores é nulo |
-| Métodos de exibição | mesmo endpoint | combinação usada por `POST /v1/transfers/quote` | confirmar se `INTERNAL` é aceito para as moedas desejadas; se não, ampliar o contrato HTTP antes de escolher outra rota |
+| Rota suportada | mesmo endpoint | `BRL/PIX -> USDC/POLYGON` com `subAccountId` | quote válida, mesmos métodos/moedas ecoados; ticket com `ticketBrlPixInput` + `ticketBlockchainOutput` |
 | Taxas | mesmo endpoint | operação com taxa | `appliedFees` e `markupAmount` conferem com o custo debitado; `inputAmount` não deve ser somado novamente à taxa |
 | Beneficiário | endpoints `/v2/account/beneficiaries/...` | subconta individual e destino sintético | ID externo retornado na mesma subconta |
 | Isolamento | cotação/beneficiário/ticket | repetir com duas subcontas de teste | identificadores de uma subconta não são aceitos na outra |
