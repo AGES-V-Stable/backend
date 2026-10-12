@@ -35,6 +35,14 @@ public class BeneficiaryEntity {
     @Column(name = "avenia_wallet_id")
     private UUID aveniaWalletId;
 
+    /**
+     * Subconta na qual os identificadores externos acima foram registrados.
+     * O campo não faz parte do contrato HTTP e existe apenas para impedir que um
+     * beneficiário seja usado em uma operação executada por outra subconta Avenia.
+     */
+    @Column(name = "avenia_sub_account_id", length = 255)
+    private String aveniaSubAccountId;
+
     @Column(name = "nickname", nullable = false, length = 100)
     private String nickname;
 

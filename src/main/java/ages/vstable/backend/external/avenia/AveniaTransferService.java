@@ -3,11 +3,15 @@ package ages.vstable.backend.external.avenia;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaAppliedFee;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -66,7 +70,57 @@ public class AveniaTransferService {
             throw new AveniaIntegrationException(
                     "Avenia returned a quote that does not match the request", 502, false, null);
         }
+        validateFinancialData(quote);
         return quote;
+    }
+
+    /**
+     * Valida a composição financeira antes de usar o quoteToken. Isso é especialmente
+     * importante em createTransfer: uma quote inconsistente não pode originar um ticket.
+     */
+    private void validateFinancialData(AveniaQuoteResponse quote) {
+        List<AveniaAppliedFee> appliedFees = quote.appliedFees();
+        BigDecimal feeAmount;
+        if (appliedFees != null && !appliedFees.isEmpty()) {
+            feeAmount = BigDecimal.ZERO;
+            for (AveniaAppliedFee fee : appliedFees) {
+                if (fee == null || fee.amount() == null || fee.amount().signum() < 0
+                        || fee.currency() == null || fee.currency().isBlank()) {
+                    throw incompleteQuote();
+                }
+                if (!fee.currency().equalsIgnoreCase(quote.inputCurrency())) {
+                    throw inconsistentQuoteCurrency();
+                }
+                feeAmount = feeAmount.add(fee.amount());
+            }
+        } else {
+            feeAmount = quote.markupAmount() == null ? BigDecimal.ZERO : quote.markupAmount();
+            if (feeAmount.signum() < 0) {
+                throw incompleteQuote();
+            }
+            if (feeAmount.signum() > 0
+                    && (quote.markupCurrency() == null || quote.markupCurrency().isBlank())) {
+                throw incompleteQuote();
+            }
+            if (feeAmount.signum() > 0
+                    && !quote.markupCurrency().equalsIgnoreCase(quote.inputCurrency())) {
+                throw inconsistentQuoteCurrency();
+            }
+        }
+        if (feeAmount.compareTo(quote.inputAmount()) > 0) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned inconsistent financial data in the quote", 502, false, null);
+        }
+    }
+
+    private AveniaIntegrationException incompleteQuote() {
+        return new AveniaIntegrationException(
+                "Avenia returned an incomplete quote", 502, false, null);
+    }
+
+    private AveniaIntegrationException inconsistentQuoteCurrency() {
+        return new AveniaIntegrationException(
+                "Avenia returned fees in a currency different from the input currency", 502, false, null);
     }
 
     private void validateCustomDuration(AveniaQuoteRequest quoteRequest, AveniaTicketRequest ticketRequest) {

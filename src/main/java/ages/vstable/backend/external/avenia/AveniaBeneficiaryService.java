@@ -21,6 +21,9 @@ public class AveniaBeneficiaryService {
     private final AveniaGateway aveniaGateway;
 
     public AveniaBeneficiaryRegistration register(BeneficiaryEntity beneficiary, String subAccountId) {
+        if (subAccountId == null || subAccountId.isBlank()) {
+            throw new IllegalArgumentException("subAccountId must be provided when registering a beneficiary");
+        }
         return switch (beneficiary.getReceivingMethod()) {
             case PIX_KEY -> bankAccount(aveniaGateway.createBrlBeneficiary(brlPixRequest(beneficiary, subAccountId)));
             case CRYPTO_WALLET -> wallet(aveniaGateway.createWalletBeneficiary(walletRequest(beneficiary, subAccountId)));

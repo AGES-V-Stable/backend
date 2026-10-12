@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,20 @@ class AveniaBeneficiaryServiceTest {
 
     @Mock
     private AveniaGateway gateway;
+
+    @Test
+    void register_withoutSubAccount_rejectsBeforeCallingGateway() {
+        BeneficiaryEntity beneficiary = baseBeneficiary()
+                .receivingMethod(ReceivingMethod.PIX_KEY)
+                .pixKey("pix@example.com")
+                .build();
+
+        assertThatThrownBy(() -> new AveniaBeneficiaryService(gateway).register(beneficiary, " "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("subAccountId");
+
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+    }
 
     @Test
     void register_pixKey_usesBrlEndpointAndReturnsBankAccountId() {

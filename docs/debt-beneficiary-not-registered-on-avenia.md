@@ -24,7 +24,10 @@ Na prática, isso bloqueia o teste ponta a ponta de `POST /v1/transfers` contra 
 Ao criar um beneficiário (`BeneficiaryService.create`), o backend resolve a
 subconta Avenia do usuário autenticado e registra o destino antes de persistir
 localmente. O identificador retornado é gravado em `aveniaId` (contas
-bancárias/PIX) ou `aveniaWalletId` (carteira cripto).
+bancárias/PIX) ou `aveniaWalletId` (carteira cripto). A subconta usada no
+registro também é persistida internamente em `aveniaSubAccountId`; antes de
+criar uma transferência, o backend exige que ela seja igual à subconta da
+operação. Esse identificador não faz parte do contrato HTTP.
 
 Contratos suportados:
 
@@ -34,8 +37,9 @@ Contratos suportados:
 - conta internacional SWIFT: `/v2/account/beneficiaries/bank-accounts/swift/`;
 - carteira cripto: `/v2/account/beneficiaries/wallets/`.
 
-Beneficiários legados sem identificador externo ficam bloqueados na criação
-de transferências com erro 422 e precisam ser recadastrados. Não há
+Beneficiários legados sem identificador externo ou sem vínculo comprovável com
+uma subconta ficam bloqueados na criação de transferências com erro 422 e
+precisam ser recadastrados. Não há
 sincronização automática porque não é possível provar a qual subconta Avenia
 um cadastro antigo deveria pertencer.
 
@@ -46,6 +50,7 @@ um fluxo para associar esse documento ao ticket.
 ## Critérios de aceite
 
 - Um beneficiário criado via `POST /v1/beneficiaries` tem `aveniaId` (ou `aveniaWalletId`, conforme o método de recebimento) preenchido após a criação.
+- O identificador externo só é usado quando a subconta de registro coincide com a subconta da operação.
 - `POST /v1/transfers` para um beneficiário criado por esse fluxo completa com sucesso contra o sandbox real (não só nos testes com mock).
 - Falha ao registrar na Avenia impede a criação local do beneficiário (evita ids nulos silenciosos de novo).
 

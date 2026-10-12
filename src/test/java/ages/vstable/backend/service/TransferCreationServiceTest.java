@@ -151,6 +151,7 @@ class TransferCreationServiceTest {
                 .company(company())
                 .receivingMethod(ReceivingMethod.PIX_KEY)
                 .aveniaId(UUID.randomUUID())
+                .aveniaSubAccountId(SUB_ACCOUNT_ID)
                 .pixKey("chave@empresa.com")
                 .accountHolderName("Fornecedor Ltda")
                 .identificationDocument("11222333000181")
@@ -163,6 +164,7 @@ class TransferCreationServiceTest {
                 .company(company())
                 .receivingMethod(ReceivingMethod.CRYPTO_WALLET)
                 .aveniaWalletId(UUID.randomUUID())
+                .aveniaSubAccountId(SUB_ACCOUNT_ID)
                 .blockchainNetwork(BlockchainNetwork.polygon)
                 .walletAddress("0xabc123")
                 .currency("USDC")
@@ -175,6 +177,7 @@ class TransferCreationServiceTest {
                 .company(company())
                 .receivingMethod(ReceivingMethod.BANK_ACCOUNT)
                 .aveniaId(UUID.randomUUID())
+                .aveniaSubAccountId(SUB_ACCOUNT_ID)
                 .country("Estados Unidos")
                 .currency("USD")
                 .paymentRail("wire")
@@ -203,7 +206,7 @@ class TransferCreationServiceTest {
         assertThat(response.fee().amount()).isEqualByComparingTo("562.50");
         assertThat(response.fee().currency()).isEqualTo("BRL");
         assertThat(response.fee().percentage()).isEqualByComparingTo("0.45");
-        assertThat(response.total().amount()).isEqualByComparingTo("125562.50");
+        assertThat(response.total().amount()).isEqualByComparingTo("125000.00");
         assertThat(response.total().currency()).isEqualTo("BRL");
         assertThat(response.exchangeRate().fromCurrency()).isEqualTo("USD");
         assertThat(response.exchangeRate().toCurrency()).isEqualTo("BRL");
@@ -292,7 +295,63 @@ class TransferCreationServiceTest {
                 requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USD"), CURRENT_USER_ID);
 
         assertThat(result.fee().amount()).isEqualByComparingTo("3.00");
-        assertThat(result.total().amount()).isEqualByComparingTo("103.00");
+        assertThat(result.fee().percentage()).isEqualByComparingTo("3.00");
+        assertThat(result.total().amount()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void quote_taxaEmMoedaDiferenteDaOrigem_rejeitaRespostaSemSomarMoedas() {
+        setUpService();
+        stubSubAccount();
+        AveniaQuoteResponse response = new AveniaQuoteResponse(
+                "token", "BRL", "INTERNAL", new BigDecimal("100.00"),
+                "USD", "INTERNAL", new BigDecimal("20.00"),
+                BigDecimal.ZERO, "BRL", false, false,
+                List.of(new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("2.00"), "USD")),
+                new BigDecimal("5.00"), "BRLUSD");
+        when(aveniaTransferService.createQuote(any())).thenReturn(response);
+
+        assertThatThrownBy(() -> transferService.quote(
+                requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USD"), CURRENT_USER_ID))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessageContaining("different from the source currency");
+    }
+
+    @Test
+    void quote_appliedFeeIncompleta_rejeitaResposta() {
+        setUpService();
+        stubSubAccount();
+        AveniaQuoteResponse response = new AveniaQuoteResponse(
+                "token", "BRL", "INTERNAL", new BigDecimal("100.00"),
+                "USD", "INTERNAL", new BigDecimal("20.00"),
+                BigDecimal.ZERO, "BRL", false, false,
+                List.of(new AveniaAppliedFee("Out Fee", "desc", null, "BRL")),
+                new BigDecimal("5.00"), "BRLUSD");
+        when(aveniaTransferService.createQuote(any())).thenReturn(response);
+
+        assertThatThrownBy(() -> transferService.quote(
+                requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USD"), CURRENT_USER_ID))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessageContaining("incomplete financial data");
+    }
+
+    @Test
+    void quote_semAppliedFees_usaMarkupSomenteQuandoEstaNaMoedaDeOrigem() {
+        setUpService();
+        stubSubAccount();
+        AveniaQuoteResponse response = new AveniaQuoteResponse(
+                "token", "BRL", "INTERNAL", new BigDecimal("100.00"),
+                "USD", "INTERNAL", new BigDecimal("20.00"),
+                new BigDecimal("1.50"), "BRL", false, false,
+                List.of(), new BigDecimal("5.00"), "BRLUSD");
+        when(aveniaTransferService.createQuote(any())).thenReturn(response);
+
+        TransferQuoteResponse result = transferService.quote(
+                requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USD"), CURRENT_USER_ID);
+
+        assertThat(result.fee().amount()).isEqualByComparingTo("1.50");
+        assertThat(result.fee().percentage()).isEqualByComparingTo("1.50");
+        assertThat(result.total().amount()).isEqualByComparingTo("100.00");
     }
 
     @Test
@@ -338,7 +397,7 @@ class TransferCreationServiceTest {
         assertThat(persistedBase.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         assertThat(persistedBase.getForeignCurrency()).isEqualTo("USD");
         assertThat(persistedBase.getForeignAmount()).isEqualByComparingTo("24235.14");
-        assertThat(persistedBase.getSettlementAmountBrl()).isEqualByComparingTo("125562.50");
+        assertThat(persistedBase.getSettlementAmountBrl()).isEqualByComparingTo("125000.00");
         assertThat(persistedBase.getServiceFeeBrl()).isEqualByComparingTo("562.50");
         assertThat(persistedBase.getEffectiveSpreadPercentage()).isEqualByComparingTo("0.4500");
         assertThat(persistedBase.getExchangeRate()).isEqualByComparingTo("5.16");
@@ -491,6 +550,40 @@ class TransferCreationServiceTest {
                 createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não possui conta cadastrada na Avenia");
+
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void create_beneficiarioLegadoSemSubconta_retornaErroSemGerarCotacao() {
+        setUpService();
+        stubSubAccount();
+        BeneficiaryEntity beneficiary = pixBeneficiary();
+        beneficiary.setAveniaSubAccountId(null);
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("vínculo confiável");
+
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void create_beneficiarioDeOutraSubconta_retornaErroSemGerarCotacao() {
+        setUpService();
+        stubSubAccount();
+        BeneficiaryEntity beneficiary = pixBeneficiary();
+        beneficiary.setAveniaSubAccountId("another-sub-account");
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("outra subconta Avenia");
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
     }

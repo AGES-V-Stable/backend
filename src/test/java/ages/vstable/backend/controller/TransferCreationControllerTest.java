@@ -65,7 +65,7 @@ class TransferCreationControllerTest {
                 new MoneyAmount(new BigDecimal("24235.14"), "USD"),
                 new ExchangeRateInfo("USD", "BRL", new BigDecimal("5.16")),
                 new FeeInfo(new BigDecimal("0.45"), new BigDecimal("562.50"), "BRL"),
-                new MoneyAmount(new BigDecimal("125562.50"), "BRL"));
+                new MoneyAmount(new BigDecimal("125000.00"), "BRL"));
     }
 
     @Test
@@ -83,7 +83,7 @@ class TransferCreationControllerTest {
                 .andExpect(jsonPath("$.exchangeRate.rate").value(5.16))
                 .andExpect(jsonPath("$.fee.percentage").value(0.45))
                 .andExpect(jsonPath("$.fee.amount").value(562.50))
-                .andExpect(jsonPath("$.total.amount").value(125562.50))
+                .andExpect(jsonPath("$.total.amount").value(125000.00))
                 .andExpect(jsonPath("$.quoteToken").doesNotExist())
                 .andExpect(jsonPath("$.quoteId").doesNotExist())
                 .andExpect(jsonPath("$.ticketId").doesNotExist());

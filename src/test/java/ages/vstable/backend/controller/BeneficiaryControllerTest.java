@@ -90,7 +90,10 @@ class BeneficiaryControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(response.getId().toString()));
+                .andExpect(jsonPath("$.id").value(response.getId().toString()))
+                .andExpect(jsonPath("$.aveniaId").doesNotExist())
+                .andExpect(jsonPath("$.aveniaWalletId").doesNotExist())
+                .andExpect(jsonPath("$.aveniaSubAccountId").doesNotExist());
     }
 
     @Test
@@ -104,7 +107,10 @@ class BeneficiaryControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(response.getId().toString()));
+                .andExpect(jsonPath("$.id").value(response.getId().toString()))
+                .andExpect(jsonPath("$.aveniaId").doesNotExist())
+                .andExpect(jsonPath("$.aveniaWalletId").doesNotExist())
+                .andExpect(jsonPath("$.aveniaSubAccountId").doesNotExist());
     }
 
     @Test

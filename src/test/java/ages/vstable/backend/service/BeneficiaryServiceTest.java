@@ -106,6 +106,7 @@ class BeneficiaryServiceTest {
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getCompany().getId()).isEqualTo(companyId);
         assertThat(captor.getValue().getAveniaId()).isEqualTo(aveniaId);
+        assertThat(captor.getValue().getAveniaSubAccountId()).isEqualTo(subAccountId);
     }
 
     @Test
@@ -192,6 +193,7 @@ class BeneficiaryServiceTest {
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getAveniaWalletId()).isEqualTo(walletId);
+        assertThat(captor.getValue().getAveniaSubAccountId()).isEqualTo(subAccountId);
     }
 
     @Test

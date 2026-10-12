@@ -52,6 +52,7 @@ public class BeneficiaryService {
         AveniaBeneficiaryRegistration registration = aveniaBeneficiaryService.register(beneficiary, subAccountId);
         beneficiary.setAveniaId(registration.bankAccountId());
         beneficiary.setAveniaWalletId(registration.walletId());
+        beneficiary.setAveniaSubAccountId(subAccountId);
 
         return toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
     }

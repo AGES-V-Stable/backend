@@ -3,6 +3,7 @@ package ages.vstable.backend.external.avenia;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaAppliedFee;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
@@ -77,6 +78,23 @@ class AveniaTransferServiceTest {
         FakeAveniaGateway gateway = new FakeAveniaGateway();
         AveniaTransferService service = new AveniaTransferService(gateway);
         gateway.quoteResponse = quoteResponse(null);
+
+        assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    @Test
+    void doesNotCreateTicketWhenQuoteContainsFeeInDifferentCurrency() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = new AveniaQuoteResponse(
+                "token", "BRLA", "INTERNAL", BigDecimal.TEN,
+                "USD", "SWIFT", BigDecimal.ONE, BigDecimal.ZERO,
+                "BRLA", false, false,
+                List.of(new AveniaAppliedFee("Out Fee", "desc", BigDecimal.ONE, "USD")),
+                BigDecimal.TEN, "BRLAUSD");
 
         assertThrows(AveniaIntegrationException.class,
                 () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));

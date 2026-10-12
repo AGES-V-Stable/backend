@@ -50,7 +50,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -127,6 +126,7 @@ public class TransferService {
                 request.getDestinationCurrency(), beneficiary);
         validateRegisteredBeneficiary(beneficiary);
         String subAccountId = resolveSubAccountId(currentUserId);
+        validateBeneficiarySubAccount(beneficiary, subAccountId);
 
         AveniaQuoteRequest quoteRequest = buildAveniaQuoteRequest(
                 request.getAmount(), request.getAmountType(), sourceCurrency,
@@ -153,7 +153,7 @@ public class TransferService {
             BeneficiaryEntity beneficiary, CreateTransferRequest request, AveniaTransferResult result,
             TransactionStatus status, UUID currentUserId) {
         AveniaQuoteResponse quote = result.quote();
-        BigDecimal feeAmount = totalFeeAmount(quote);
+        BigDecimal feeAmount = totalFeeAmount(quote, quote.inputCurrency());
         BigDecimal feePercentage = feePercentage(quote.inputAmount(), feeAmount);
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -163,7 +163,8 @@ public class TransferService {
                 .status(status)
                 .foreignCurrency(quote.outputCurrency())
                 .foreignAmount(quote.outputAmount())
-                .settlementAmountBrl(quote.inputAmount().add(feeAmount))
+                // A Avenia devolve inputAmount como o custo total, já incluindo as taxas.
+                .settlementAmountBrl(quote.inputAmount())
                 .serviceFeeBrl(feeAmount)
                 .effectiveSpreadPercentage(feePercentage.setScale(4, RoundingMode.HALF_UP))
                 .exchangeRate(quote.basePrice())
@@ -303,6 +304,18 @@ public class TransferService {
         }
     }
 
+    private void validateBeneficiarySubAccount(
+            BeneficiaryEntity beneficiary, String operationSubAccountId) {
+        if (isBlank(beneficiary.getAveniaSubAccountId())) {
+            throw new UnprocessableEntityException(
+                    "Beneficiário não possui vínculo confiável com uma subconta Avenia; cadastre-o novamente");
+        }
+        if (!beneficiary.getAveniaSubAccountId().equals(operationSubAccountId)) {
+            throw new UnprocessableEntityException(
+                    "Beneficiário foi cadastrado em outra subconta Avenia; cadastre-o novamente para este usuário");
+        }
+    }
+
     private String paymentRail(BeneficiaryEntity beneficiary) {
         return isBlank(beneficiary.getPaymentRail())
                 ? "international_swift"
@@ -383,11 +396,12 @@ public class TransferService {
         MoneyAmount source = new MoneyAmount(response.inputAmount(), response.inputCurrency());
         MoneyAmount destination = new MoneyAmount(response.outputAmount(), response.outputCurrency());
 
-        BigDecimal feeAmount = totalFeeAmount(response);
+        BigDecimal feeAmount = totalFeeAmount(response, source.currency());
         String feeCurrency = feeCurrency(response, source.currency());
         BigDecimal feePercentage = feePercentage(source.amount(), feeAmount);
 
-        MoneyAmount total = new MoneyAmount(source.amount().add(feeAmount), source.currency());
+        // inputAmount é o valor efetivamente pago e já incorpora appliedFees.
+        MoneyAmount total = new MoneyAmount(source.amount(), source.currency());
 
         ExchangeRateInfo exchangeRate = new ExchangeRateInfo(
                 destination.currency(), source.currency(), response.basePrice());
@@ -401,43 +415,79 @@ public class TransferService {
     }
 
     private BigDecimal feePercentage(BigDecimal sourceAmount, BigDecimal feeAmount) {
+        if (sourceAmount == null || sourceAmount.signum() <= 0) {
+            throw incompleteFinancialQuote();
+        }
+        if (feeAmount == null || feeAmount.signum() < 0 || feeAmount.compareTo(sourceAmount) > 0) {
+            throw inconsistentFinancialQuote();
+        }
         return feeAmount
                 .divide(sourceAmount, 4, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100))
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal totalFeeAmount(AveniaQuoteResponse response) {
+    private BigDecimal totalFeeAmount(AveniaQuoteResponse response, String sourceCurrency) {
         List<AveniaAppliedFee> appliedFees = response.appliedFees();
         if (appliedFees != null && !appliedFees.isEmpty()) {
+            validateAppliedFees(appliedFees, sourceCurrency);
             return appliedFees.stream()
                     .map(AveniaAppliedFee::amount)
-                    .filter(Objects::nonNull)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
-        return response.markupAmount() == null ? BigDecimal.ZERO : response.markupAmount();
+        BigDecimal markupAmount = response.markupAmount();
+        if (markupAmount == null || markupAmount.signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        if (markupAmount.signum() < 0 || isBlank(response.markupCurrency())) {
+            throw incompleteFinancialQuote();
+        }
+        if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
+            throw differentFeeCurrency();
+        }
+        return markupAmount;
     }
 
     private String feeCurrency(AveniaQuoteResponse response, String sourceCurrency) {
         if (response.appliedFees() == null || response.appliedFees().isEmpty()) {
-            return isBlank(response.markupCurrency()) ? sourceCurrency : response.markupCurrency();
+            if (response.markupAmount() != null && response.markupAmount().signum() != 0) {
+                if (isBlank(response.markupCurrency())) {
+                    throw incompleteFinancialQuote();
+                }
+                if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
+                    throw differentFeeCurrency();
+                }
+            }
+            return sourceCurrency;
         }
-        String currency = response.appliedFees().stream()
-                .map(AveniaAppliedFee::currency)
-                .filter(Objects::nonNull)
-                .filter(value -> !value.isBlank())
-                .findFirst()
-                .orElse(sourceCurrency);
-        boolean hasDifferentCurrency = response.appliedFees().stream()
-                .map(AveniaAppliedFee::currency)
-                .filter(Objects::nonNull)
-                .filter(value -> !value.isBlank())
-                .anyMatch(value -> !value.equalsIgnoreCase(currency));
-        if (hasDifferentCurrency || !currency.equalsIgnoreCase(sourceCurrency)) {
-            throw new AveniaIntegrationException(
-                    "Avenia returned fees in a currency different from the source currency", 502, false, null);
+        validateAppliedFees(response.appliedFees(), sourceCurrency);
+        return sourceCurrency;
+    }
+
+    private void validateAppliedFees(List<AveniaAppliedFee> appliedFees, String sourceCurrency) {
+        for (AveniaAppliedFee fee : appliedFees) {
+            if (fee == null || fee.amount() == null || fee.amount().signum() < 0 || isBlank(fee.currency())) {
+                throw incompleteFinancialQuote();
+            }
+            if (!fee.currency().equalsIgnoreCase(sourceCurrency)) {
+                throw differentFeeCurrency();
+            }
         }
-        return currency;
+    }
+
+    private AveniaIntegrationException incompleteFinancialQuote() {
+        return new AveniaIntegrationException(
+                "Avenia returned incomplete financial data in the quote", 502, false, null);
+    }
+
+    private AveniaIntegrationException inconsistentFinancialQuote() {
+        return new AveniaIntegrationException(
+                "Avenia returned inconsistent financial data in the quote", 502, false, null);
+    }
+
+    private AveniaIntegrationException differentFeeCurrency() {
+        return new AveniaIntegrationException(
+                "Avenia returned fees in a currency different from the source currency", 502, false, null);
     }
 
     @Transactional(readOnly = true)
