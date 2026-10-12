@@ -3,11 +3,16 @@ package ages.vstable.backend.configuration.security;
 import ages.vstable.backend.controller.AuthController;
 import ages.vstable.backend.controller.CompanyController;
 import ages.vstable.backend.controller.TransferDetailsController;
+import ages.vstable.backend.controller.TransferController;
+import ages.vstable.backend.dto.transfer.CreateTransferResponse;
+import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
+import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.controller.UserController;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.CompanyService;
 import ages.vstable.backend.service.TransferDetailsService;
+import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
@@ -20,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +42,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -50,7 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * JSON 401/403 responses), which the standalone controller tests bypass.
  */
 @WebMvcTest(controllers = {CompanyController.class, UserController.class, AuthController.class,
-        TransferDetailsController.class})
+        TransferDetailsController.class, TransferController.class})
 @Import({SecurityConfiguration.class, AuthenticationConfigurer.class, CustomAuthenticationProvider.class,
         BeanManager.class, JwtTokenUtils.class})
 class SecurityChainIntegrationTest {
@@ -75,6 +82,9 @@ class SecurityChainIntegrationTest {
 
     @MockitoBean
     private TransferDetailsService transferDetailsService;
+
+    @MockitoBean
+    private TransferService transferService;
 
     private final UUID companyId = UUID.randomUUID();
     private UserEntity user;
@@ -123,6 +133,63 @@ class SecurityChainIntegrationTest {
         mockMvc.perform(get("/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(expired)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/00000000-0000-0000-0000-000000000001"})
+    void transferHistory_withUserToken_remainsRestrictedToAdmins(String suffix) throws Exception {
+        mockMvc.perform(get("/v1/transfers" + suffix)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void transferHistory_withAdminToken_remainsAllowed() throws Exception {
+        when(transferService.findTransfers(any(), any())).thenReturn(Page.empty());
+
+        mockMvc.perform(get("/v1/transfers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(admin))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/quote"})
+    void transferCreation_withoutToken_requiresAuthentication(String suffix) throws Exception {
+        mockMvc.perform(post("/v1/transfers" + suffix)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void transferQuote_withUserToken_passesTheAuthenticatedUserIdToService() throws Exception {
+        when(transferService.quote(any(), eq(user.getId())))
+                .thenReturn(new TransferQuoteResponse(null, null, null, null, null));
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\"}"))
+                .andExpect(status().isOk());
+        verify(transferService).quote(any(), eq(user.getId()));
+    }
+
+    @Test
+    void transferCreation_withUserToken_passesTheAuthenticatedUserIdToService() throws Exception {
+        when(transferService.create(any(), eq(user.getId())))
+                .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+
+        mockMvc.perform(post("/v1/transfers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSING"));
+        verify(transferService).create(any(), eq(user.getId()));
     }
 
     @Test
