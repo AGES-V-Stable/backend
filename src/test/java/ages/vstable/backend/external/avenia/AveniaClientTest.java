@@ -7,6 +7,9 @@ import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
@@ -274,6 +277,136 @@ class AveniaClientTest {
                 "Wallet", null, "0xabc", "POLYGON", null, "sub-1")))
                 .isInstanceOf(AveniaIntegrationException.class)
                 .hasMessage("Avenia returned a beneficiary without id");
+        server.verify();
+    }
+
+    @Test
+    void createsUsdBeneficiaryInSubAccountWithAddress() {
+        UUID beneficiaryId = UUID.randomUUID();
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/bank-accounts/usd/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {
+                          "alias":"Supplier USD",
+                          "bankAccountNumber":"123456",
+                          "bankRoutingNumber":"021000021",
+                          "bankBeneficiaryName":"Supplier Inc",
+                          "bankName":"Test Bank",
+                          "beneficiaryAddress":{
+                            "streetLine1":"123 Main St",
+                            "city":"New York",
+                            "state":"NY",
+                            "postalCode":"10001",
+                            "country":"USA"
+                          }
+                        }
+                        """, true))
+                .andRespond(withSuccess("{\"id\":\"" + beneficiaryId + "\"}", MediaType.APPLICATION_JSON));
+
+        AveniaBeneficiaryResponse response = client.createUsdBeneficiary(new AveniaUsdBeneficiaryRequest(
+                "Supplier USD", null, "123456", "021000021", "Supplier Inc", "Test Bank",
+                new AveniaUsdBeneficiaryRequest.Address("123 Main St", null, "New York", "NY", "10001", "USA"),
+                "sub-1"));
+
+        assertThat(response.id()).isEqualTo(beneficiaryId);
+        server.verify();
+    }
+
+    @Test
+    void createsEurBeneficiaryInSubAccount() {
+        UUID beneficiaryId = UUID.randomUUID();
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/bank-accounts/eur/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {
+                          "alias":"Supplier EUR",
+                          "iban":"FR1420041010050500013M02606",
+                          "bic":"COBADEFFXXX",
+                          "country":"FRA",
+                          "bankBeneficiaryName":"Supplier SARL"
+                        }
+                        """, true))
+                .andRespond(withSuccess("{\"id\":\"" + beneficiaryId + "\"}", MediaType.APPLICATION_JSON));
+
+        AveniaBeneficiaryResponse response = client.createEurBeneficiary(new AveniaEurBeneficiaryRequest(
+                "Supplier EUR", null, "FR1420041010050500013M02606", "COBADEFFXXX", "FRA",
+                "Supplier SARL", "sub-1"));
+
+        assertThat(response.id()).isEqualTo(beneficiaryId);
+        server.verify();
+    }
+
+    @Test
+    void createsSwiftBeneficiaryInSubAccount() {
+        UUID beneficiaryId = UUID.randomUUID();
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/bank-accounts/swift/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {
+                          "alias":"Supplier GBP",
+                          "beneficiaryName":"Supplier Ltd",
+                          "beneficiaryType":"company",
+                          "accountStandard":"iban",
+                          "accountValue":"GB29NWBK60161331926819",
+                          "bic":"NWBKGB2L",
+                          "currency":"GBP"
+                        }
+                        """, false))
+                .andRespond(withSuccess("{\"id\":\"" + beneficiaryId + "\"}", MediaType.APPLICATION_JSON));
+
+        AveniaBeneficiaryResponse response = client.createSwiftBeneficiary(new AveniaSwiftBeneficiaryRequest(
+                "Supplier GBP", null, "Supplier Ltd", "company", "iban", "GB29NWBK60161331926819",
+                "NWBKGB2L", "NatWest", "GB", "1 King Street", "London", "England", "EC2V 8AU", "GB",
+                "GBP", null, null, "sub-1"));
+
+        assertThat(response.id()).isEqualTo(beneficiaryId);
+        server.verify();
+    }
+
+    @Test
+    void createsWalletBeneficiaryAndReturnsProviderId() {
+        UUID walletId = UUID.randomUUID();
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/wallets/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"id\":\"" + walletId + "\"}", MediaType.APPLICATION_JSON));
+
+        AveniaBeneficiaryResponse response = client.createWalletBeneficiary(new AveniaWalletBeneficiaryRequest(
+                "Wallet", null, "0xabc", "POLYGON", null, "sub-1"));
+
+        assertThat(response.id()).isEqualTo(walletId);
+        server.verify();
+    }
+
+    @Test
+    void rejectsBeneficiaryResponseWithoutBody() {
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/bank-accounts/brl/?subAccountId=sub-1"))
+                .andRespond(withSuccess());
+
+        assertThatThrownBy(() -> client.createBrlBeneficiary(new AveniaBrlBeneficiaryRequest(
+                "Fornecedor PIX", null, "pix@example.com", null, null, null, null, null, null, "sub-1")))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessage("Avenia returned a beneficiary without id");
+        server.verify();
+    }
+
+    @Test
+    void rejectsMissingBeneficiaryRequestsBeforeCallingProvider() {
+        assertThatThrownBy(() -> client.createBrlBeneficiary(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("beneficiary request must be provided");
+        assertThatThrownBy(() -> client.createUsdBeneficiary(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.createEurBeneficiary(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.createSwiftBeneficiary(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.createWalletBeneficiary(null))
+                .isInstanceOf(IllegalArgumentException.class);
         server.verify();
     }
 

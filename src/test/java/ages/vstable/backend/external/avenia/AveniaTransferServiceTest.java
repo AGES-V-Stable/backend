@@ -14,10 +14,15 @@ import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
 import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -231,6 +236,216 @@ class AveniaTransferServiceTest {
         gateway.ticketResponse = new AveniaTicketResponse(null, null, null, null, null, null);
         assertThrows(AveniaIntegrationException.class,
                 () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+    }
+
+    @Test
+    void rejectsMissingQuoteRequestBeforeCallingProvider() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+
+        assertThrows(IllegalArgumentException.class, () -> service.createQuote(null));
+
+        assertEquals(0, gateway.quoteCalls);
+    }
+
+    @Test
+    void rejectsNullTicketResponse() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token");
+        gateway.ticketResponse = null;
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+
+        assertEquals("Avenia returned an incomplete ticket", exception.getMessage());
+    }
+
+    @ParameterizedTest
+    @MethodSource("incompleteQuotes")
+    void rejectsQuoteWithMissingOrNonPositiveRequiredFieldWithoutCreatingTicket(AveniaQuoteResponse quote) {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote;
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+
+        assertEquals("Avenia returned an incomplete quote", exception.getMessage());
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    static Stream<AveniaQuoteResponse> incompleteQuotes() {
+        BigDecimal ten = BigDecimal.TEN;
+        BigDecimal one = BigDecimal.ONE;
+        return Stream.of(
+                quote(null, "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote(" ", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, null, "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, " ", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", null, ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", " ", ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", null, one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", " ", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", null, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", BigDecimal.ZERO, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one.negate(), null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), null),
+                quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), BigDecimal.ZERO));
+    }
+
+    @ParameterizedTest
+    @MethodSource("quotesForAnotherOperation")
+    void rejectsQuoteThatDoesNotMatchRequestedCurrenciesAndMethods(AveniaQuoteResponse quote) {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote;
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+
+        assertEquals("Avenia returned a quote that does not match the request", exception.getMessage());
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    static Stream<AveniaQuoteResponse> quotesForAnotherOperation() {
+        BigDecimal ten = BigDecimal.TEN;
+        BigDecimal one = BigDecimal.ONE;
+        return Stream.of(
+                quote("USDC", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "EUR", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "PIX", ten, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", "WIRE", one, null, null, List.of(), ten));
+    }
+
+    @Test
+    void rejectsQuoteWithoutFeeSettlementWhenImmediateWasRequested() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token", null);
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createQuote(quoteRequestWithImmediateFeeSettlement()));
+
+        assertEquals("Avenia returned a quote with an unexpected fee settlement mode", exception.getMessage());
+    }
+
+    @Test
+    void doesNotRequireFeeSettlementConfirmationWhenNoModeWasRequested() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token", null);
+        AveniaQuoteRequest blankFeeSettlement = new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", "USD", "SWIFT",
+                BigDecimal.TEN, null, false, false, "PERMIT",
+                null, null, null, null, null, null, " ", "sub-1");
+
+        AveniaQuoteResponse response = service.createQuote(blankFeeSettlement);
+
+        assertEquals("token", response.quoteToken());
+    }
+
+    @Test
+    void acceptsAppliedFeesInInputCurrencyWithinInputAmount() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                null, null,
+                List.of(new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("1.50"), "BRLA"),
+                        new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("0.50"), "brla")),
+                BigDecimal.TEN);
+
+        AveniaQuoteResponse response = service.createQuote(quoteRequest());
+
+        assertEquals(2, response.appliedFees().size());
+    }
+
+    @ParameterizedTest
+    @MethodSource("incompleteAppliedFees")
+    void rejectsIncompleteAppliedFee(AveniaAppliedFee fee) {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                null, null, Collections.singletonList(fee), BigDecimal.TEN);
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createQuote(quoteRequest()));
+
+        assertEquals("Avenia returned an incomplete quote", exception.getMessage());
+    }
+
+    static Stream<AveniaAppliedFee> incompleteAppliedFees() {
+        return Stream.of(
+                null,
+                new AveniaAppliedFee("Out Fee", "desc", null, "BRLA"),
+                new AveniaAppliedFee("Out Fee", "desc", BigDecimal.ONE.negate(), "BRLA"),
+                new AveniaAppliedFee("Out Fee", "desc", BigDecimal.ONE, null),
+                new AveniaAppliedFee("Out Fee", "desc", BigDecimal.ONE, " "));
+    }
+
+    @Test
+    void rejectsAppliedFeesAboveInputAmount() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                null, null,
+                List.of(new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("10.01"), "BRLA")),
+                BigDecimal.TEN);
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+
+        assertEquals("Avenia returned inconsistent financial data in the quote", exception.getMessage());
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    @Test
+    void acceptsMarkupInInputCurrencyWhenThereAreNoAppliedFees() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                new BigDecimal("0.75"), "BRLA", null, BigDecimal.TEN);
+
+        AveniaQuoteResponse response = service.createQuote(quoteRequest());
+
+        assertEquals(new BigDecimal("0.75"), response.markupAmount());
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidMarkups")
+    void rejectsInvalidMarkupWhenThereAreNoAppliedFees(
+            BigDecimal markupAmount, String markupCurrency, String expectedMessage) {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                markupAmount, markupCurrency, List.of(), BigDecimal.TEN);
+
+        AveniaIntegrationException exception = assertThrows(AveniaIntegrationException.class,
+                () -> service.createQuote(quoteRequest()));
+
+        assertEquals(expectedMessage, exception.getMessage());
+    }
+
+    static Stream<Arguments> invalidMarkups() {
+        return Stream.of(
+                Arguments.of(BigDecimal.ONE.negate(), "BRLA", "Avenia returned an incomplete quote"),
+                Arguments.of(BigDecimal.ONE, null, "Avenia returned an incomplete quote"),
+                Arguments.of(BigDecimal.ONE, " ", "Avenia returned an incomplete quote"),
+                Arguments.of(BigDecimal.ONE, "USD",
+                        "Avenia returned fees in a currency different from the input currency"),
+                Arguments.of(new BigDecimal("10.01"), "BRLA",
+                        "Avenia returned inconsistent financial data in the quote"));
+    }
+
+    private static AveniaQuoteResponse quote(
+            String inputCurrency, String inputPaymentMethod, BigDecimal inputAmount,
+            String outputCurrency, String outputPaymentMethod, BigDecimal outputAmount,
+            BigDecimal markupAmount, String markupCurrency, List<AveniaAppliedFee> appliedFees,
+            BigDecimal basePrice) {
+        return new AveniaQuoteResponse(
+                "token", inputCurrency, inputPaymentMethod, inputAmount,
+                outputCurrency, outputPaymentMethod, outputAmount, markupAmount, markupCurrency,
+                false, false, appliedFees, basePrice, "BRLAUSD");
     }
 
     private AveniaQuoteRequest quoteRequest() {

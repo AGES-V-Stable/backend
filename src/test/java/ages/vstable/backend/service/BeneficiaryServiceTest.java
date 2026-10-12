@@ -11,6 +11,7 @@ import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.AveniaIntegrationException;
+import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
@@ -202,6 +203,18 @@ class BeneficiaryServiceTest {
 
         assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void create_usuarioNaoIdentificado_rejeitaSemCadastrarNaAveniaNemPersistir() {
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, null, bankAccountRequest()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessage("Usuário autenticado não identificado");
+
+        verify(aveniaBeneficiaryService, never()).register(any(), any());
+        verify(beneficiaryRepository, never()).saveAndFlush(any());
     }
 
     @Test

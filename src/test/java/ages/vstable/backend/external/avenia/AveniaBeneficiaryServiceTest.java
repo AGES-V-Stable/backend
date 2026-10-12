@@ -4,6 +4,7 @@ import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
+import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
@@ -21,7 +22,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -167,6 +170,139 @@ class AveniaBeneficiaryServiceTest {
         assertThat(captor.getValue().accountValue()).isEqualTo("GB29NWBK60161331926819");
         assertThat(captor.getValue().currency()).isEqualTo("GBP");
         assertThat(captor.getValue().bankOtherIdentifier()).isEqualTo("20-20-15");
+    }
+
+    @Test
+    void register_withoutSubAccountId_rejectsBeforeCallingGateway() {
+        BeneficiaryEntity beneficiary = baseBeneficiary()
+                .receivingMethod(ReceivingMethod.PIX_KEY)
+                .pixKey("pix@example.com")
+                .build();
+
+        assertThatThrownBy(() -> new AveniaBeneficiaryService(gateway).register(beneficiary, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("subAccountId");
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void register_brlBankAccountOnPixRail_usesBrlEndpointWithBankData() {
+        UUID externalId = UUID.randomUUID();
+        when(gateway.createBrlBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(externalId));
+        BeneficiaryEntity beneficiary = brlBankAccount().build();
+
+        var registration = new AveniaBeneficiaryService(gateway).register(beneficiary, "sub-1");
+
+        ArgumentCaptor<AveniaBrlBeneficiaryRequest> captor =
+                ArgumentCaptor.forClass(AveniaBrlBeneficiaryRequest.class);
+        verify(gateway).createBrlBeneficiary(captor.capture());
+        assertThat(captor.getValue().pixKey()).isNull();
+        assertThat(captor.getValue().taxId()).isEqualTo("123456789");
+        assertThat(captor.getValue().userName()).isEqualTo("Supplier Ltd");
+        assertThat(captor.getValue().bankCode()).isEqualTo("341");
+        assertThat(captor.getValue().branchCode()).isEqualTo("0001");
+        assertThat(captor.getValue().accountNumber()).isEqualTo("12345-6");
+        assertThat(captor.getValue().accountType()).isEqualTo("checking");
+        assertThat(captor.getValue().subAccountId()).isEqualTo("sub-1");
+        assertThat(registration.bankAccountId()).isEqualTo(externalId);
+    }
+
+    @Test
+    void register_brlBankAccountWithoutAccountType_omitsAccountType() {
+        when(gateway.createBrlBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
+        BeneficiaryEntity beneficiary = brlBankAccount().accountType(null).build();
+
+        new AveniaBeneficiaryService(gateway).register(beneficiary, "sub-1");
+
+        ArgumentCaptor<AveniaBrlBeneficiaryRequest> captor =
+                ArgumentCaptor.forClass(AveniaBrlBeneficiaryRequest.class);
+        verify(gateway).createBrlBeneficiary(captor.capture());
+        assertThat(captor.getValue().accountType()).isNull();
+    }
+
+    @Test
+    void register_unsupportedPaymentRail_rejectsBeforeCallingGateway() {
+        BeneficiaryEntity beneficiary = baseBeneficiary()
+                .receivingMethod(ReceivingMethod.BANK_ACCOUNT)
+                .paymentRail("boleto")
+                .build();
+
+        assertThatThrownBy(() -> new AveniaBeneficiaryService(gateway).register(beneficiary, "sub-1"))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("boleto");
+
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void register_withoutPaymentRail_usesSwiftWithAccountNumberForIndividual() {
+        when(gateway.createSwiftBeneficiary(any()))
+                .thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
+        BeneficiaryEntity beneficiary = baseBeneficiary()
+                .beneficiaryType("INDIVIDUAL")
+                .receivingMethod(ReceivingMethod.BANK_ACCOUNT)
+                .paymentRail(" ")
+                .accountNumber("987654321")
+                .swiftBic("CHASUS33")
+                .build();
+
+        new AveniaBeneficiaryService(gateway).register(beneficiary, "sub-1");
+
+        ArgumentCaptor<AveniaSwiftBeneficiaryRequest> captor =
+                ArgumentCaptor.forClass(AveniaSwiftBeneficiaryRequest.class);
+        verify(gateway).createSwiftBeneficiary(captor.capture());
+        assertThat(captor.getValue().beneficiaryType()).isEqualTo("individual");
+        assertThat(captor.getValue().accountStandard()).isEqualTo("account_number");
+        assertThat(captor.getValue().accountValue()).isEqualTo("987654321");
+        assertThat(captor.getValue().currency()).isNull();
+    }
+
+    @Test
+    void register_swiftWithProviderBeneficiaryTypes_mapsCompanyAndIndividual() {
+        when(gateway.createSwiftBeneficiary(any()))
+                .thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
+        AveniaBeneficiaryService service = new AveniaBeneficiaryService(gateway);
+
+        service.register(swiftAccount().beneficiaryType("company").build(), "sub-1");
+        service.register(swiftAccount().beneficiaryType("individual").build(), "sub-1");
+
+        ArgumentCaptor<AveniaSwiftBeneficiaryRequest> captor =
+                ArgumentCaptor.forClass(AveniaSwiftBeneficiaryRequest.class);
+        verify(gateway, times(2)).createSwiftBeneficiary(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(AveniaSwiftBeneficiaryRequest::beneficiaryType)
+                .containsExactly("company", "individual");
+    }
+
+    @Test
+    void register_swiftWithUnknownBeneficiaryType_rejectsBeforeCallingGateway() {
+        BeneficiaryEntity beneficiary = swiftAccount().beneficiaryType("TRUST").build();
+
+        assertThatThrownBy(() -> new AveniaBeneficiaryService(gateway).register(beneficiary, "sub-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("beneficiaryType deve ser INDIVIDUAL ou LEGAL_ENTITY");
+
+        verifyNoInteractions(gateway);
+    }
+
+    private BeneficiaryEntity.BeneficiaryEntityBuilder brlBankAccount() {
+        return baseBeneficiary()
+                .receivingMethod(ReceivingMethod.BANK_ACCOUNT)
+                .paymentRail("pix")
+                .currency("BRL")
+                .bankCode("341")
+                .branchNumber("0001")
+                .accountNumber("12345-6");
+    }
+
+    private BeneficiaryEntity.BeneficiaryEntityBuilder swiftAccount() {
+        return baseBeneficiary()
+                .receivingMethod(ReceivingMethod.BANK_ACCOUNT)
+                .paymentRail("swift")
+                .currency("usd")
+                .accountNumber("987654321")
+                .swiftBic("CHASUS33");
     }
 
     private BeneficiaryEntity.BeneficiaryEntityBuilder baseBeneficiary() {
