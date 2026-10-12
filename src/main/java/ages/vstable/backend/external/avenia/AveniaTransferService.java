@@ -16,7 +16,10 @@ public class AveniaTransferService {
     private final AveniaGateway aveniaGateway;
 
     public AveniaQuoteResponse createQuote(AveniaQuoteRequest request) {
-        return aveniaGateway.createQuote(request);
+        if (request == null) {
+            throw new IllegalArgumentException("quote request must be provided");
+        }
+        return requireValidQuote(aveniaGateway.createQuote(request), request);
     }
 
     public AveniaTransferResult createTransfer(
@@ -30,16 +33,40 @@ public class AveniaTransferService {
             throw new IllegalArgumentException("ticket request must be provided");
         }
         validateCustomDuration(quoteRequest, ticketRequest);
-        AveniaQuoteResponse quote = aveniaGateway.createQuote(quoteRequest);
-        if (quote == null || quote.quoteToken() == null || quote.quoteToken().isBlank()) {
-            throw new AveniaIntegrationException(
-                    "Avenia returned a quote without quoteToken", 502, false, null);
-        }
+        AveniaQuoteResponse quote = requireValidQuote(aveniaGateway.createQuote(quoteRequest), quoteRequest);
 
         AveniaTicketRequest requestWithCurrentQuote = ticketRequest
                 .withQuoteTokenAndSubAccount(quote.quoteToken(), quoteRequest.subAccountId());
         AveniaTicketResponse ticket = aveniaGateway.createTicket(requestWithCurrentQuote);
+        if (ticket == null || ticket.id() == null) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned an incomplete ticket", 502, false, null);
+        }
         return new AveniaTransferResult(quote, ticket);
+    }
+
+    private AveniaQuoteResponse requireValidQuote(
+            AveniaQuoteResponse quote, AveniaQuoteRequest request) {
+        if (quote == null
+                || quote.quoteToken() == null || quote.quoteToken().isBlank()
+                || quote.inputCurrency() == null || quote.inputCurrency().isBlank()
+                || quote.outputCurrency() == null || quote.outputCurrency().isBlank()
+                || quote.inputPaymentMethod() == null || quote.inputPaymentMethod().isBlank()
+                || quote.outputPaymentMethod() == null || quote.outputPaymentMethod().isBlank()
+                || quote.inputAmount() == null || quote.outputAmount() == null
+                || quote.inputAmount().signum() <= 0 || quote.outputAmount().signum() <= 0
+                || quote.basePrice() == null || quote.basePrice().signum() <= 0) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned an incomplete quote", 502, false, null);
+        }
+        if (!quote.inputCurrency().equalsIgnoreCase(request.inputCurrency())
+                || !quote.outputCurrency().equalsIgnoreCase(request.outputCurrency())
+                || !quote.inputPaymentMethod().equalsIgnoreCase(request.inputPaymentMethod())
+                || !quote.outputPaymentMethod().equalsIgnoreCase(request.outputPaymentMethod())) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned a quote that does not match the request", 502, false, null);
+        }
+        return quote;
     }
 
     private void validateCustomDuration(AveniaQuoteRequest quoteRequest, AveniaTicketRequest ticketRequest) {

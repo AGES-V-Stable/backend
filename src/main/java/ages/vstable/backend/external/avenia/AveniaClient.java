@@ -3,6 +3,8 @@ package ages.vstable.backend.external.avenia;
 import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
@@ -11,11 +13,15 @@ import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -41,6 +47,12 @@ public class AveniaClient implements AveniaGateway {
     private static final String KYC_ATTEMPTS_URI = "/v2/kyc/attempts/";
     private static final String QUOTE_URI = "/v2/account/quote/fixed-rate";
     private static final String TICKETS_URI = "/v2/account/tickets/";
+    private static final String BENEFICIARIES_URI = "/v2/account/beneficiaries/";
+    private static final String BRL_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/brl/";
+    private static final String USD_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/usd/";
+    private static final String EUR_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/eur/";
+    private static final String SWIFT_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/swift/";
+    private static final String WALLET_BENEFICIARIES_URI = BENEFICIARIES_URI + "wallets/";
     private static final String COUNTRY_OF_TAX_ID_BRAZIL = "BR";
 
     // A Avenia exige código ISO 3166-1 alpha-2 no campo "country" (confirmado contra o
@@ -81,6 +93,59 @@ public class AveniaClient implements AveniaGateway {
         String uri = appendSubAccount(TICKETS_URI, request.getSubAccountId());
         String body = serialize(request);
         return post(uri, body, AveniaTicketResponse.class, "Could not create the Avenia ticket");
+    }
+
+    @Override
+    public AveniaBeneficiaryResponse createBrlBeneficiary(AveniaBrlBeneficiaryRequest request) {
+        requireBeneficiaryRequest(request);
+        return createBeneficiary(BRL_BENEFICIARIES_URI, request, request.subAccountId(),
+                "Could not create the Avenia BRL beneficiary");
+    }
+
+    @Override
+    public AveniaBeneficiaryResponse createUsdBeneficiary(AveniaUsdBeneficiaryRequest request) {
+        requireBeneficiaryRequest(request);
+        return createBeneficiary(USD_BENEFICIARIES_URI, request, request.subAccountId(),
+                "Could not create the Avenia USD beneficiary");
+    }
+
+    @Override
+    public AveniaBeneficiaryResponse createEurBeneficiary(AveniaEurBeneficiaryRequest request) {
+        requireBeneficiaryRequest(request);
+        return createBeneficiary(EUR_BENEFICIARIES_URI, request, request.subAccountId(),
+                "Could not create the Avenia EUR beneficiary");
+    }
+
+    @Override
+    public AveniaBeneficiaryResponse createSwiftBeneficiary(AveniaSwiftBeneficiaryRequest request) {
+        requireBeneficiaryRequest(request);
+        return createBeneficiary(SWIFT_BENEFICIARIES_URI, request, request.subAccountId(),
+                "Could not create the Avenia SWIFT beneficiary");
+    }
+
+    @Override
+    public AveniaBeneficiaryResponse createWalletBeneficiary(AveniaWalletBeneficiaryRequest request) {
+        requireBeneficiaryRequest(request);
+        return createBeneficiary(WALLET_BENEFICIARIES_URI, request, request.subAccountId(),
+                "Could not create the Avenia wallet beneficiary");
+    }
+
+    private AveniaBeneficiaryResponse createBeneficiary(
+            String baseUri, Object request, String subAccountId, String errorMessage) {
+        String uri = appendSubAccount(baseUri, subAccountId);
+        AveniaBeneficiaryResponse response = post(
+                uri, serialize(request), AveniaBeneficiaryResponse.class, errorMessage);
+        if (response == null || response.id() == null) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned a beneficiary without id", 502, false, null);
+        }
+        return response;
+    }
+
+    private void requireBeneficiaryRequest(Object request) {
+        if (request == null) {
+            throw new IllegalArgumentException("beneficiary request must be provided");
+        }
     }
 
     public AveniaDocumentResponse iniciarLiveness(String subAccountId) {

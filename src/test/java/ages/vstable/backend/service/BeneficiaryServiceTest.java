@@ -3,12 +3,17 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
+import ages.vstable.backend.exception.AveniaIntegrationException;
+import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
+import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,26 +50,52 @@ class BeneficiaryServiceTest {
     @Mock
     private CompanyRepository companyRepository;
 
+    @Mock
+    private AveniaBeneficiaryService aveniaBeneficiaryService;
+
+    @Mock
+    private AveniaKycVerificationRepository aveniaKycVerificationRepository;
+
+    @Mock
+    private AveniaSubAccountProvisioningService subAccountProvisioningService;
+
     private BeneficiaryService beneficiaryService;
 
     private final UUID companyId = UUID.randomUUID();
+    private final UUID currentUserId = UUID.randomUUID();
+    private final String subAccountId = "sub-account-123";
 
     @BeforeEach
     void setUp() {
         beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository,
-                new BeneficiaryValidator());
+                new BeneficiaryValidator(), aveniaBeneficiaryService,
+                aveniaKycVerificationRepository, subAccountProvisioningService);
+    }
+
+    private void stubSubAccount() {
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .userId(currentUserId)
+                .aveniaSubAccountId(subAccountId)
+                .build();
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId))
+                .thenReturn(Optional.of(kyc));
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(subAccountId);
     }
 
     @Test
     void create_validBankAccountRequest_savesAndReturnsBeneficiary() {
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        stubSubAccount();
+        UUID aveniaId = UUID.randomUUID();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenReturn(AveniaBeneficiaryRegistration.bankAccount(aveniaId));
         when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             BeneficiaryEntity entity = invocation.getArgument(0);
             entity.setId(UUID.randomUUID());
             return entity;
         });
 
-        BeneficiaryResponse response = beneficiaryService.create(companyId, bankAccountRequest());
+        BeneficiaryResponse response = beneficiaryService.create(companyId, currentUserId, bankAccountRequest());
 
         assertThat(response.getId()).isNotNull();
         assertThat(response.getCompanyId()).isEqualTo(companyId);
@@ -73,6 +105,7 @@ class BeneficiaryServiceTest {
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getCompany().getId()).isEqualTo(companyId);
+        assertThat(captor.getValue().getAveniaId()).isEqualTo(aveniaId);
     }
 
     @Test
@@ -141,24 +174,31 @@ class BeneficiaryServiceTest {
     @Test
     void create_validWalletRequest_savesAndReturnsBeneficiary() {
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        stubSubAccount();
+        UUID walletId = UUID.randomUUID();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenReturn(AveniaBeneficiaryRegistration.wallet(walletId));
         when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             BeneficiaryEntity entity = invocation.getArgument(0);
             entity.setId(UUID.randomUUID());
             return entity;
         });
 
-        BeneficiaryResponse response = beneficiaryService.create(companyId, walletRequest());
+        BeneficiaryResponse response = beneficiaryService.create(companyId, currentUserId, walletRequest());
 
         assertThat(response.getReceivingMethod()).isEqualTo(ReceivingMethod.CRYPTO_WALLET);
         assertThat(response.getBlockchainNetwork()).isEqualTo(BlockchainNetwork.ethereum);
         assertThat(response.getWalletAddress()).isEqualTo("0xABCDEF1234567890");
+        ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
+        verify(beneficiaryRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getAveniaWalletId()).isEqualTo(walletId);
     }
 
     @Test
     void create_companyNotFound_throwsNotFound() {
         when(companyRepository.findById(companyId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, bankAccountRequest()))
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -168,7 +208,7 @@ class BeneficiaryServiceTest {
         company.setKybStatus(ComplianceStatus.PENDING);
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
 
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, bankAccountRequest()))
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -179,7 +219,7 @@ class BeneficiaryServiceTest {
         BeneficiaryCreateRequest request = bankAccountRequest();
         request.setBankName(null);
 
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, request))
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("bankName: Campo obrigatório.");
     }
@@ -191,9 +231,22 @@ class BeneficiaryServiceTest {
         BeneficiaryCreateRequest request = walletRequest();
         request.setWalletAddress(null);
 
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, request))
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("walletAddress: Campo obrigatório.");
+    }
+
+    @Test
+    void create_falhaNoCadastroAvenia_naoPersisteBeneficiarioLocal() {
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenThrow(AveniaIntegrationException.communication("Avenia indisponível", null));
+
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, walletRequest()))
+                .isInstanceOf(AveniaIntegrationException.class);
+
+        verify(beneficiaryRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -250,9 +303,15 @@ class BeneficiaryServiceTest {
         request.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
         request.setNickname("Fornecedor Principal");
         request.setBankName("Banco Teste");
-        request.setSwiftBic("TESTBRSPXXX");
         request.setAccountNumber("12345-6");
-        request.setCurrency("BRL");
+        request.setRoutingNumber("021000021");
+        request.setCurrency("USD");
+        request.setPaymentRail("wire");
+        request.setAddressLine1("123 Main Street");
+        request.setCity("New York");
+        request.setStateProvinceRegion("NY");
+        request.setPostalCode("10001");
+        request.setCountryCode("USA");
         request.setConfirmed(true);
         return request;
     }
@@ -268,6 +327,7 @@ class BeneficiaryServiceTest {
         request.setNickname("Carteira Principal");
         request.setWalletAddress("0xABCDEF1234567890");
         request.setBlockchainNetwork(BlockchainNetwork.ethereum);
+        request.setCurrency("USDC");
         request.setConfirmed(true);
         return request;
     }

@@ -4,6 +4,8 @@ import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
@@ -14,6 +16,7 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -201,6 +204,51 @@ class AveniaClientTest {
                 .build());
 
         assertThat(response.status()).isEqualTo("UNPAID");
+        server.verify();
+    }
+
+    @Test
+    void createsPixBeneficiaryInSubAccountWithoutSerializingSubAccountId() {
+        UUID beneficiaryId = UUID.randomUUID();
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/bank-accounts/brl/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-API-Key", "minha-api-key"))
+                .andExpect(content().json("""
+                        {
+                          "alias":"Fornecedor PIX",
+                          "description":"Conta principal",
+                          "pixKey":"pix@example.com"
+                        }
+                        """, true))
+                .andRespond(withSuccess("{\"id\":\"" + beneficiaryId + "\"}", MediaType.APPLICATION_JSON));
+
+        AveniaBeneficiaryResponse response = client.createBrlBeneficiary(new AveniaBrlBeneficiaryRequest(
+                "Fornecedor PIX", "Conta principal", "pix@example.com",
+                null, null, null, null, null, null, "sub-1"));
+
+        assertThat(response.id()).isEqualTo(beneficiaryId);
+        server.verify();
+    }
+
+    @Test
+    void createsWalletBeneficiaryAndRejectsResponseWithoutId() {
+        server.expect(once(), requestTo(
+                        "https://avenia.test/v2/account/beneficiaries/wallets/?subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {
+                          "alias":"Wallet",
+                          "walletAddress":"0xabc",
+                          "walletChain":"POLYGON"
+                        }
+                        """, true))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.createWalletBeneficiary(new AveniaWalletBeneficiaryRequest(
+                "Wallet", null, "0xabc", "POLYGON", null, "sub-1")))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessage("Avenia returned a beneficiary without id");
         server.verify();
     }
 

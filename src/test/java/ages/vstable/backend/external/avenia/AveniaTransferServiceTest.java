@@ -3,9 +3,15 @@ package ages.vstable.backend.external.avenia;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
+import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -140,6 +146,23 @@ class AveniaTransferServiceTest {
         assertEquals(0, gateway.ticketCalls);
     }
 
+    @Test
+    void rejectsIncompleteQuoteAndTicketResponses() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = new AveniaQuoteResponse(
+                "token", "BRLA", "INTERNAL", BigDecimal.TEN,
+                "USD", "WIRE", null, BigDecimal.ZERO,
+                "BRLA", false, false, List.of(), BigDecimal.TEN, "BRLAUSD");
+
+        assertThrows(AveniaIntegrationException.class, () -> service.createQuote(quoteRequest()));
+
+        gateway.quoteResponse = quoteResponse("valid-token");
+        gateway.ticketResponse = new AveniaTicketResponse(null, null, null, null, null, null);
+        assertThrows(AveniaIntegrationException.class,
+                () -> service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build()));
+    }
+
     private AveniaQuoteRequest quoteRequest() {
         return new AveniaQuoteRequest(
                 "BRLA", "INTERNAL", "USD", "SWIFT",
@@ -174,6 +197,31 @@ class AveniaTransferServiceTest {
             ticketCalls++;
             receivedTicketRequest = request;
             return ticketResponse;
+        }
+
+        @Override
+        public AveniaBeneficiaryResponse createBrlBeneficiary(AveniaBrlBeneficiaryRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AveniaBeneficiaryResponse createUsdBeneficiary(AveniaUsdBeneficiaryRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AveniaBeneficiaryResponse createEurBeneficiary(AveniaEurBeneficiaryRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AveniaBeneficiaryResponse createSwiftBeneficiary(AveniaSwiftBeneficiaryRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AveniaBeneficiaryResponse createWalletBeneficiary(AveniaWalletBeneficiaryRequest request) {
+            throw new UnsupportedOperationException();
         }
     }
 }

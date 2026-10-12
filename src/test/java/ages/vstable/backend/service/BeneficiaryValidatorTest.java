@@ -53,7 +53,7 @@ class BeneficiaryValidatorTest {
 
         assertThatThrownBy(() -> validator.validate(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("accountNumber: Campo obrigatório.");
+                .hasMessage("iban ou accountNumber: Campo obrigatório.");
     }
 
     @Test
@@ -106,6 +106,18 @@ class BeneficiaryValidatorTest {
                 .hasMessage("nickname: Campo obrigatório.");
     }
 
+    @Test
+    void shouldRejectPixBeneficiaryWithoutPixKey() {
+        BeneficiaryCreateRequest request = new BeneficiaryCreateRequest();
+        request.setReceivingMethod(ReceivingMethod.PIX_KEY);
+        request.setNickname("Fornecedor PIX");
+        request.setCurrency("BRL");
+
+        assertThatThrownBy(() -> validator.validate(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("pixKey: Campo obrigatório.");
+    }
+
     private BeneficiaryCreateRequest bankAccountRequest() {
         BeneficiaryCreateRequest request = new BeneficiaryCreateRequest();
         request.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
@@ -113,7 +125,14 @@ class BeneficiaryValidatorTest {
         request.setBankName("Banco Teste");
         request.setSwiftBic("TESTBRSPXXX");
         request.setAccountNumber("12345-6");
-        request.setCurrency("BRL");
+        request.setCurrency("USD");
+        request.setPaymentRail("international_swift");
+        request.setAddressLine1("123 Main Street");
+        request.setCity("New York");
+        request.setStateProvinceRegion("NY");
+        request.setPostalCode("10001");
+        request.setCountryCode("US");
+        request.setBankCountryCode("US");
         return request;
     }
 
@@ -123,6 +142,7 @@ class BeneficiaryValidatorTest {
         request.setNickname("Carteira Principal");
         request.setWalletAddress("0xABCDEF1234567890");
         request.setBlockchainNetwork(BlockchainNetwork.ethereum);
+        request.setCurrency("USDC");
         return request;
     }
 }

@@ -84,7 +84,7 @@ class BeneficiaryControllerTest {
         BeneficiaryCreateRequest request = validBankAccountRequest();
         BeneficiaryResponse response = sampleResponse();
 
-        when(beneficiaryService.create(eq(companyId), any())).thenReturn(response);
+        when(beneficiaryService.create(eq(companyId), any(), any())).thenReturn(response);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -98,7 +98,7 @@ class BeneficiaryControllerTest {
         BeneficiaryCreateRequest request = validWalletRequest();
         BeneficiaryResponse response = sampleResponse();
 
-        when(beneficiaryService.create(eq(companyId), any())).thenReturn(response);
+        when(beneficiaryService.create(eq(companyId), any(), any())).thenReturn(response);
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
                 .contentType(MediaType.APPLICATION_JSON)
@@ -120,7 +120,7 @@ class BeneficiaryControllerTest {
 
     @Test
     void create_companyNotFound_returns404() throws Exception {
-        when(beneficiaryService.create(eq(companyId), any()))
+        when(beneficiaryService.create(eq(companyId), any(), any()))
                 .thenThrow(new NotFoundException("Company not found"));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
@@ -132,7 +132,7 @@ class BeneficiaryControllerTest {
 
     @Test
     void create_companyNotApproved_returns403() throws Exception {
-        when(beneficiaryService.create(eq(companyId), any()))
+        when(beneficiaryService.create(eq(companyId), any(), any()))
                 .thenThrow(new ForbiddenException("Empresa não verificada"));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
@@ -144,7 +144,7 @@ class BeneficiaryControllerTest {
 
     @Test
     void create_missingBankFieldsForBankAccount_returns400() throws Exception {
-        when(beneficiaryService.create(eq(companyId), any()))
+        when(beneficiaryService.create(eq(companyId), any(), any()))
                 .thenThrow(new IllegalArgumentException("bankName: Campo obrigatório."));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
@@ -156,7 +156,7 @@ class BeneficiaryControllerTest {
 
     @Test
     void create_missingWalletFieldsForCryptoWallet_returns400() throws Exception {
-        when(beneficiaryService.create(eq(companyId), any()))
+        when(beneficiaryService.create(eq(companyId), any(), any()))
                 .thenThrow(new IllegalArgumentException("walletAddress: Campo obrigatório."));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())

@@ -69,7 +69,8 @@ public class TransferController {
             @Valid @RequestBody CreateTransferRequest request,
             @AuthenticationPrincipal UserEntity currentUser) {
         UUID currentUserId = currentUser == null ? null : currentUser.getId();
-        return ResponseEntity.ok(transferService.create(request, currentUserId));
+        UUID currentCompanyId = currentUser == null ? null : currentUser.getCompanyId();
+        return ResponseEntity.ok(transferService.create(request, currentUserId, currentCompanyId));
     }
 
     @GetMapping

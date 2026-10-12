@@ -19,6 +19,8 @@ import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferAmountType;
 import ages.vstable.backend.entity.enums.TransferDirection;
+import ages.vstable.backend.entity.enums.TransferMethod;
+import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaTransferService;
@@ -47,6 +49,7 @@ import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
@@ -87,7 +90,8 @@ public class TransferService {
         String subAccountId = resolveSubAccountId(currentUserId);
 
         AveniaQuoteRequest aveniaRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency, subAccountId);
+                request.getAmount(), request.getAmountType(), sourceCurrency, DEFAULT_PAYMENT_METHOD,
+                destinationCurrency, DEFAULT_PAYMENT_METHOD, subAccountId);
         AveniaQuoteResponse aveniaResponse = aveniaTransferService.createQuote(aveniaRequest);
 
         return toTransferQuoteResponse(aveniaResponse);
@@ -105,8 +109,13 @@ public class TransferService {
      * docs/transfers-persist-transaction.md seção 5.
      */
     @Transactional
-    public CreateTransferResponse create(CreateTransferRequest request, UUID currentUserId) {
-        BeneficiaryEntity beneficiary = beneficiaryRepository.findById(request.getBeneficiaryId())
+    public CreateTransferResponse create(
+            CreateTransferRequest request, UUID currentUserId, UUID currentCompanyId) {
+        if (currentCompanyId == null) {
+            throw new NotFoundException("Beneficiário não encontrado");
+        }
+        BeneficiaryEntity beneficiary = beneficiaryRepository
+                .findByIdAndCompanyId(request.getBeneficiaryId(), currentCompanyId)
                 .orElseThrow(() -> new NotFoundException("Beneficiário não encontrado"));
 
         String sourceCurrency = resolveSourceCurrency(request.getSourceCurrency());
@@ -116,11 +125,15 @@ public class TransferService {
         }
         String destinationCurrency = resolveDestinationCurrency(
                 request.getDestinationCurrency(), beneficiary);
+        validateRegisteredBeneficiary(beneficiary);
         String subAccountId = resolveSubAccountId(currentUserId);
 
         AveniaQuoteRequest quoteRequest = buildAveniaQuoteRequest(
-                request.getAmount(), request.getAmountType(), sourceCurrency, destinationCurrency, subAccountId);
-        AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(beneficiary, request.getDescription());
+                request.getAmount(), request.getAmountType(), sourceCurrency,
+                inputPaymentMethod(request.getPaymentMethod()), destinationCurrency,
+                outputPaymentMethod(beneficiary), subAccountId);
+        AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(
+                beneficiary, request.getPaymentMethod(), request.getDescription());
 
         AveniaTransferResult result = aveniaTransferService.createTransfer(quoteRequest, ticketRequest);
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
@@ -181,13 +194,14 @@ public class TransferService {
 
     private AveniaQuoteRequest buildAveniaQuoteRequest(
             BigDecimal amount, TransferAmountType amountType,
-            String sourceCurrency, String destinationCurrency, String subAccountId) {
+            String sourceCurrency, String inputPaymentMethod,
+            String destinationCurrency, String outputPaymentMethod, String subAccountId) {
         boolean isSource = amountType == TransferAmountType.SOURCE;
         return new AveniaQuoteRequest(
                 sourceCurrency,
-                DEFAULT_PAYMENT_METHOD,
+                inputPaymentMethod,
                 destinationCurrency,
-                DEFAULT_PAYMENT_METHOD,
+                outputPaymentMethod,
                 isSource ? amount : null,
                 isSource ? null : amount,
                 null,
@@ -203,36 +217,96 @@ public class TransferService {
     }
 
     /**
-     * Monta a variante de destino do ticket a partir do beneficiário local. A Avenia separa
-     * o destino por trilho (PIX, conta bancária americana/europeia, SWIFT, blockchain) — hoje
-     * só distinguimos por {@link ReceivingMethod}; dentro de BANK_ACCOUNT sempre usamos SWIFT
-     * como trilho internacional genérico. NÃO confirmado contra o sandbox real: falta decidir
-     * com o time como diferenciar USD ACH / EUR SEPA / SWIFT dentro de BANK_ACCOUNT.
+     * Monta somente a variante de destino compatível com o cadastro feito na Avenia.
+     * Beneficiários registrados são referenciados apenas pelo ID: misturar o ID com dados
+     * inline no mesmo bloco faz a Avenia rejeitar o ticket.
      */
-    private AveniaTicketRequest buildAveniaTicketRequest(BeneficiaryEntity beneficiary, String description) {
+    private AveniaTicketRequest buildAveniaTicketRequest(
+            BeneficiaryEntity beneficiary, TransferMethod paymentMethod, String description) {
         AveniaTicketRequest.AveniaTicketRequestBuilder builder = AveniaTicketRequest.builder()
                 .externalId(description);
+
+        if (paymentMethod == TransferMethod.PIX) {
+            builder.ticketBrlPixInput(new AveniaTicketRequest.BrlPixInput(null));
+        }
 
         return switch (beneficiary.getReceivingMethod()) {
             case PIX_KEY -> builder.ticketBrlPixOutput(new AveniaTicketRequest.BrlPixOutput(
                     beneficiary.getAveniaId(),
-                    beneficiary.getPixKey(),
-                    null,
-                    beneficiary.getAccountHolderName(),
-                    beneficiary.getBankCode(),
-                    beneficiary.getBranchNumber(),
-                    beneficiary.getAccountNumber(),
-                    beneficiary.getAccountType() != null ? beneficiary.getAccountType().name() : null,
-                    beneficiary.getIdentificationDocument(),
-                    null)).build();
+                    null, description, null, null, null, null, null, null, null)).build();
             case CRYPTO_WALLET -> builder.ticketBlockchainOutput(new AveniaTicketRequest.BlockchainOutput(
                     beneficiary.getAveniaWalletId(),
-                    beneficiary.getBlockchainNetwork() != null ? beneficiary.getBlockchainNetwork().name() : null,
-                    beneficiary.getWalletAddress(),
-                    beneficiary.getWalletMemo())).build();
-            case BANK_ACCOUNT -> builder.ticketSwiftOutput(new AveniaTicketRequest.SwiftOutput(
-                    beneficiary.getAveniaId(), null)).build();
+                    null, null, null)).build();
+            case BANK_ACCOUNT -> buildBankAccountTicket(builder, beneficiary, description);
         };
+    }
+
+    private AveniaTicketRequest buildBankAccountTicket(
+            AveniaTicketRequest.AveniaTicketRequestBuilder builder,
+            BeneficiaryEntity beneficiary,
+            String description) {
+        return switch (paymentRail(beneficiary)) {
+            case "pix" -> builder.ticketBrlPixOutput(new AveniaTicketRequest.BrlPixOutput(
+                    beneficiary.getAveniaId(), null, description, null, null, null, null, null, null, null)).build();
+            case "ach" -> builder.ticketUsdOutput(new AveniaTicketRequest.UsdOutput(
+                    beneficiary.getAveniaId(), description, null)).build();
+            case "wire" -> builder.ticketUsdWireOutput(new AveniaTicketRequest.UsdOutput(
+                    beneficiary.getAveniaId(), null, description)).build();
+            case "sepa" -> builder.ticketEurSepaOutput(new AveniaTicketRequest.EurSepaOutput(
+                    beneficiary.getAveniaId(), description)).build();
+            case "international_swift", "swift" -> throw new UnprocessableEntityException(
+                    "Transferências SWIFT exigem uma invoice processada pela Avenia; esse documento ainda não faz parte do contrato de transferência");
+            default -> throw new UnprocessableEntityException(
+                    "Método de recebimento bancário não suportado pela Avenia: " + beneficiary.getPaymentRail());
+        };
+    }
+
+    private String inputPaymentMethod(TransferMethod paymentMethod) {
+        return switch (paymentMethod) {
+            case ACCOUNT_BALANCE -> "INTERNAL";
+            case PIX -> "PIX";
+            case TED -> throw new UnprocessableEntityException(
+                    "TED não é um método de entrada suportado pela Avenia neste fluxo");
+            case BLOCKCHAIN -> throw new UnprocessableEntityException(
+                    "Pagamento por blockchain exige dados de assinatura que não fazem parte deste contrato");
+        };
+    }
+
+    private String outputPaymentMethod(BeneficiaryEntity beneficiary) {
+        return switch (beneficiary.getReceivingMethod()) {
+            case PIX_KEY -> "PIX";
+            case CRYPTO_WALLET -> beneficiary.getBlockchainNetwork().name().toUpperCase(Locale.ROOT);
+            case BANK_ACCOUNT -> switch (paymentRail(beneficiary)) {
+                case "pix" -> "PIX";
+                case "ach" -> "ACH";
+                case "wire" -> "WIRE";
+                case "sepa" -> "SEPA";
+                case "international_swift", "swift" -> "SWIFT";
+                default -> throw new UnprocessableEntityException(
+                        "Método de recebimento bancário não suportado pela Avenia: " + beneficiary.getPaymentRail());
+            };
+        };
+    }
+
+    private void validateRegisteredBeneficiary(BeneficiaryEntity beneficiary) {
+        if (beneficiary.getReceivingMethod() == ReceivingMethod.CRYPTO_WALLET) {
+            if (beneficiary.getAveniaWalletId() == null) {
+                throw new UnprocessableEntityException(
+                        "Beneficiário não possui carteira cadastrada na Avenia; cadastre-o novamente");
+            }
+            if (beneficiary.getBlockchainNetwork() == null) {
+                throw new UnprocessableEntityException("Beneficiário não possui blockchainNetwork");
+            }
+        } else if (beneficiary.getAveniaId() == null) {
+            throw new UnprocessableEntityException(
+                    "Beneficiário não possui conta cadastrada na Avenia; cadastre-o novamente");
+        }
+    }
+
+    private String paymentRail(BeneficiaryEntity beneficiary) {
+        return isBlank(beneficiary.getPaymentRail())
+                ? "international_swift"
+                : beneficiary.getPaymentRail().trim().toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -275,7 +349,17 @@ public class TransferService {
      */
     private String resolveDestinationCurrency(String destinationCurrency, BeneficiaryEntity beneficiary) {
         if (!isBlank(destinationCurrency)) {
-            return resolveDestinationCurrency(destinationCurrency);
+            String resolved = resolveDestinationCurrency(destinationCurrency);
+            if (!isBlank(beneficiary.getCurrency())
+                    && !resolved.equalsIgnoreCase(beneficiary.getCurrency().trim())) {
+                throw new UnprocessableEntityException(
+                        "destinationCurrency não corresponde à moeda do beneficiário");
+            }
+            if (beneficiary.getReceivingMethod() == ReceivingMethod.PIX_KEY
+                    && !DEFAULT_SOURCE_CURRENCY.equals(resolved)) {
+                throw new UnprocessableEntityException("destinationCurrency deve ser BRL para beneficiário PIX");
+            }
+            return resolved;
         }
         if (!isBlank(beneficiary.getCurrency())) {
             return beneficiary.getCurrency().trim().toUpperCase();
@@ -300,7 +384,7 @@ public class TransferService {
         MoneyAmount destination = new MoneyAmount(response.outputAmount(), response.outputCurrency());
 
         BigDecimal feeAmount = totalFeeAmount(response);
-        String feeCurrency = response.markupCurrency() != null ? response.markupCurrency() : source.currency();
+        String feeCurrency = feeCurrency(response, source.currency());
         BigDecimal feePercentage = feePercentage(source.amount(), feeAmount);
 
         MoneyAmount total = new MoneyAmount(source.amount().add(feeAmount), source.currency());
@@ -324,17 +408,36 @@ public class TransferService {
     }
 
     private BigDecimal totalFeeAmount(AveniaQuoteResponse response) {
-        if (response.markupAmount() != null) {
-            return response.markupAmount();
-        }
         List<AveniaAppliedFee> appliedFees = response.appliedFees();
-        if (appliedFees == null || appliedFees.isEmpty()) {
-            return BigDecimal.ZERO;
+        if (appliedFees != null && !appliedFees.isEmpty()) {
+            return appliedFees.stream()
+                    .map(AveniaAppliedFee::amount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
-        return appliedFees.stream()
-                .map(AveniaAppliedFee::amount)
+        return response.markupAmount() == null ? BigDecimal.ZERO : response.markupAmount();
+    }
+
+    private String feeCurrency(AveniaQuoteResponse response, String sourceCurrency) {
+        if (response.appliedFees() == null || response.appliedFees().isEmpty()) {
+            return isBlank(response.markupCurrency()) ? sourceCurrency : response.markupCurrency();
+        }
+        String currency = response.appliedFees().stream()
+                .map(AveniaAppliedFee::currency)
                 .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .filter(value -> !value.isBlank())
+                .findFirst()
+                .orElse(sourceCurrency);
+        boolean hasDifferentCurrency = response.appliedFees().stream()
+                .map(AveniaAppliedFee::currency)
+                .filter(Objects::nonNull)
+                .filter(value -> !value.isBlank())
+                .anyMatch(value -> !value.equalsIgnoreCase(currency));
+        if (hasDifferentCurrency || !currency.equalsIgnoreCase(sourceCurrency)) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned fees in a currency different from the source currency", 502, false, null);
+        }
+        return currency;
     }
 
     @Transactional(readOnly = true)

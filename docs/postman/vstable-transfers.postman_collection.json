@@ -91,9 +91,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Fornecedor Ltda\",\n  \"identificationDocument\": \"11222333000199\",\n  \"country\": \"Brasil\",\n  \"address\": \"Rua Teste, 100\",\n  \"receivingMethod\": \"PIX_KEY\",\n  \"nickname\": \"Fornecedor PIX\",\n  \"currency\": \"BRL\",\n  \"confirmed\": true\n}"
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Fornecedor Ltda\",\n  \"identificationDocument\": \"11222333000199\",\n  \"country\": \"Brasil\",\n  \"address\": \"Rua Teste, 100\",\n  \"receivingMethod\": \"PIX_KEY\",\n  \"nickname\": \"Fornecedor PIX\",\n  \"pixKey\": \"financeiro@fornecedor.test\",\n  \"currency\": \"BRL\",\n  \"confirmed\": true\n}"
             },
-            "description": "receivingMethod=PIX_KEY é o caminho mais simples pra testar POST /transfers, já que a resolução de moeda de destino cai direto pra BRL. IMPORTANTE (ver docs/debt-beneficiary-not-registered-on-avenia.md): esse cadastro NÃO registra o beneficiário na Avenia, então avenia_id fica nulo — uma chamada real a POST /transfers vai falhar na Avenia por falta desse id, a menos que ele seja preenchido manualmente no banco para teste."
+            "description": "receivingMethod=PIX_KEY registra a chave na mesma subconta Avenia do usuário autenticado antes de persistir o beneficiário localmente."
           },
           "event": [
             {
@@ -124,9 +124,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Supplier Inc\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"BANK_ACCOUNT\",\n  \"nickname\": \"Supplier USD\",\n  \"bankName\": \"Bank of Test\",\n  \"swiftBic\": \"TESTUS33\",\n  \"bankCode\": \"021000021\",\n  \"branchNumber\": \"001\",\n  \"accountNumber\": \"1234567890\",\n  \"currency\": \"USD\",\n  \"confirmed\": true\n}"
+              "raw": "{\n  \"beneficiaryType\": \"LEGAL_ENTITY\",\n  \"legalName\": \"Supplier Inc\",\n  \"identificationDocument\": \"987654321\",\n  \"country\": \"Estados Unidos\",\n  \"address\": \"123 Main St\",\n  \"receivingMethod\": \"BANK_ACCOUNT\",\n  \"nickname\": \"Supplier USD\",\n  \"paymentRail\": \"wire\",\n  \"bankName\": \"Bank of Test\",\n  \"accountNumber\": \"1234567890\",\n  \"routingNumber\": \"021000021\",\n  \"currency\": \"USD\",\n  \"addressLine1\": \"123 Main St\",\n  \"city\": \"New York\",\n  \"stateProvinceRegion\": \"NY\",\n  \"postalCode\": \"10001\",\n  \"countryCode\": \"USA\",\n  \"confirmed\": true\n}"
             },
-            "description": "receivingMethod=BANK_ACCOUNT — TransferService.create hoje sempre monta o ticket como SWIFT (fallback genérico, não confirmado contra o sandbox real)."
+            "description": "receivingMethod=BANK_ACCOUNT com paymentRail=wire usa o contrato USD da Avenia e monta ticketUsdWireOutput."
           }
         },
         {
@@ -287,7 +287,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 125000.00,\n  \"amountType\": \"SOURCE\",\n  \"sourceCurrency\": \"BRL\",\n  \"paymentMethod\": \"PIX\",\n  \"beneficiaryId\": \"{{beneficiaryId}}\",\n  \"description\": \"Pagamento de importação\"\n}"
             },
-            "description": "destinationCurrency omitido de propósito: como o beneficiário é PIX, o backend resolve BRL sozinho. A subconta Avenia usada na cotação/ticket também é resolvida sozinha a partir do usuário do token (ver nota no nível da collection). Contra o sandbox real isso só funciona se o beneficiário tiver avenia_id preenchido — ver docs/debt-beneficiary-not-registered-on-avenia.md."
+            "description": "destinationCurrency omitido de propósito: como o beneficiário é PIX, o backend resolve BRL sozinho. A subconta Avenia usada na cotação/ticket é resolvida a partir do usuário do token."
           },
           "event": [
             {

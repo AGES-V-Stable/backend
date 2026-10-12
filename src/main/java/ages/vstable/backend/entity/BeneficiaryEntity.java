@@ -131,7 +131,7 @@ public class BeneficiaryEntity {
     @Column(name = "postal_code", length = 20)
     private String postalCode;
 
-    @Column(name = "country_code", length = 2)
+    @Column(name = "country_code", length = 3)
     private String countryCode;
 
     @Column(name = "bank_address_line_1", length = 255)
@@ -149,7 +149,7 @@ public class BeneficiaryEntity {
     @Column(name = "bank_postal_code", length = 20)
     private String bankPostalCode;
 
-    @Column(name = "bank_country_code", length = 2)
+    @Column(name = "bank_country_code", length = 3)
     private String bankCountryCode;
 
     @Column(name = "swift_payment_code", length = 100)

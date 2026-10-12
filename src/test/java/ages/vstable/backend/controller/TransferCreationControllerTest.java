@@ -154,7 +154,7 @@ class TransferCreationControllerTest {
 
     @Test
     void post_transferenciaValida_retorna200ComStatusSemIdentificadoresDaAvenia() throws Exception {
-        when(transferService.create(any(), any())).thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+        when(transferService.create(any(), any(), any())).thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
 
         mockMvc.perform(post("/v1/transfers")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -182,7 +182,7 @@ class TransferCreationControllerTest {
 
     @Test
     void post_beneficiarioInexistente_retorna404() throws Exception {
-        when(transferService.create(any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
+        when(transferService.create(any(), any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(post("/v1/transfers")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -192,7 +192,7 @@ class TransferCreationControllerTest {
 
     @Test
     void post_falhaNaAveniaAoCriarTransferencia_retorna503QuandoRetryable() throws Exception {
-        when(transferService.create(any(), any())).thenThrow(
+        when(transferService.create(any(), any(), any())).thenThrow(
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers")

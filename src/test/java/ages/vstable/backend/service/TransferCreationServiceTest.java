@@ -79,6 +79,7 @@ class TransferCreationServiceTest {
     private TransferService transferService;
 
     private static final UUID CURRENT_USER_ID = UUID.randomUUID();
+    private static final UUID CURRENT_COMPANY_ID = UUID.randomUUID();
     private static final String SUB_ACCOUNT_ID = "sub-account-123";
 
     private void stubSubAccount() {
@@ -141,7 +142,7 @@ class TransferCreationServiceTest {
     }
 
     private CompanyEntity company() {
-        return CompanyEntity.builder().id(UUID.randomUUID()).legalName("Empresa Teste Ltda").build();
+        return CompanyEntity.builder().id(CURRENT_COMPANY_ID).legalName("Empresa Teste Ltda").build();
     }
 
     private BeneficiaryEntity pixBeneficiary() {
@@ -149,6 +150,7 @@ class TransferCreationServiceTest {
                 .id(UUID.randomUUID())
                 .company(company())
                 .receivingMethod(ReceivingMethod.PIX_KEY)
+                .aveniaId(UUID.randomUUID())
                 .pixKey("chave@empresa.com")
                 .accountHolderName("Fornecedor Ltda")
                 .identificationDocument("11222333000181")
@@ -175,6 +177,7 @@ class TransferCreationServiceTest {
                 .aveniaId(UUID.randomUUID())
                 .country("Estados Unidos")
                 .currency("USD")
+                .paymentRail("wire")
                 .build();
     }
 
@@ -272,19 +275,41 @@ class TransferCreationServiceTest {
     }
 
     @Test
+    void quote_appliedFeesTemPrecedenciaSobreMarkupAmountNoCalculoDoTotal() {
+        setUpService();
+        stubSubAccount();
+        AveniaQuoteResponse response = new AveniaQuoteResponse(
+                "token", "BRL", "INTERNAL", new BigDecimal("100.00"),
+                "USD", "INTERNAL", new BigDecimal("20.00"),
+                new BigDecimal("1.00"), "BRL", false, false,
+                List.of(
+                        new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("1.00"), "BRL"),
+                        new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("2.00"), "BRL")),
+                new BigDecimal("5.00"), "BRLUSD");
+        when(aveniaTransferService.createQuote(any())).thenReturn(response);
+
+        TransferQuoteResponse result = transferService.quote(
+                requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USD"), CURRENT_USER_ID);
+
+        assertThat(result.fee().amount()).isEqualByComparingTo("3.00");
+        assertThat(result.total().amount()).isEqualByComparingTo("103.00");
+    }
+
+    @Test
     void create_beneficiarioPix_montaTicketBrlPixOutputComDadosDoBeneficiarioEPersisteTransacao() {
         setUpService();
         stubSubAccount();
         stubTransactionPersistence();
         BeneficiaryEntity beneficiary = pixBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         UUID ticketId = UUID.randomUUID();
         AveniaTransferResult result = new AveniaTransferResult(
                 aveniaResponse(), new AveniaTicketResponse(ticketId, null, null, "PROCESSING", null, null));
         when(aveniaTransferService.createTransfer(any(), any())).thenReturn(result);
 
         CreateTransferResponse response = transferService.create(
-                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID);
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
 
         assertThat(response.status()).isEqualTo(TransactionStatus.PROCESSING);
 
@@ -294,8 +319,13 @@ class TransferCreationServiceTest {
 
         // PIX sem moeda de destino informada nem cadastrada no beneficiário: assume BRL.
         assertThat(quoteCaptor.getValue().outputCurrency()).isEqualTo("BRL");
-        assertThat(ticketCaptor.getValue().getTicketBrlPixOutput().pixKey()).isEqualTo("chave@empresa.com");
-        assertThat(ticketCaptor.getValue().getTicketBrlPixOutput().userName()).isEqualTo("Fornecedor Ltda");
+        assertThat(quoteCaptor.getValue().inputPaymentMethod()).isEqualTo("PIX");
+        assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("PIX");
+        assertThat(ticketCaptor.getValue().getTicketBrlPixInput()).isNotNull();
+        assertThat(ticketCaptor.getValue().getTicketBrlPixOutput().beneficiaryBrlBankAccountId())
+                .isEqualTo(beneficiary.getAveniaId());
+        assertThat(ticketCaptor.getValue().getTicketBrlPixOutput().pixKey()).isNull();
+        assertThat(ticketCaptor.getValue().getTicketBrlPixOutput().userName()).isNull();
         assertThat(ticketCaptor.getValue().getTicketBlockchainOutput()).isNull();
         assertThat(ticketCaptor.getValue().getTicketSwiftOutput()).isNull();
         assertThat(ticketCaptor.getValue().getExternalId()).isEqualTo("Pagamento de importação");
@@ -327,13 +357,14 @@ class TransferCreationServiceTest {
         stubSubAccount();
         stubTransactionPersistence();
         BeneficiaryEntity beneficiary = cryptoBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         AveniaTransferResult result = new AveniaTransferResult(
                 aveniaResponse(), new AveniaTicketResponse(UUID.randomUUID(), null, null, "UNPAID", null, null));
         when(aveniaTransferService.createTransfer(any(), any())).thenReturn(result);
 
         CreateTransferResponse response = transferService.create(
-                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID);
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
 
         assertThat(response.status()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
 
@@ -343,41 +374,123 @@ class TransferCreationServiceTest {
 
         // Sem moeda informada, usa a moeda cadastrada no beneficiário (não BRL).
         assertThat(quoteCaptor.getValue().outputCurrency()).isEqualTo("USDC");
-        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletAddress()).isEqualTo("0xabc123");
-        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletChain()).isEqualTo("polygon");
+        assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("POLYGON");
+        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().beneficiaryWalletId())
+                .isEqualTo(beneficiary.getAveniaWalletId());
+        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletAddress()).isNull();
+        assertThat(ticketCaptor.getValue().getTicketBlockchainOutput().walletChain()).isNull();
         assertThat(ticketCaptor.getValue().getTicketBrlPixOutput()).isNull();
     }
 
     @Test
-    void create_beneficiarioContaBancaria_montaTicketSwiftOutput() {
+    void create_beneficiarioContaBancariaWire_montaTicketUsdWireOutput() {
         setUpService();
         stubSubAccount();
         stubTransactionPersistence();
         BeneficiaryEntity beneficiary = bankAccountBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         AveniaTransferResult result = new AveniaTransferResult(
                 aveniaResponse(), new AveniaTicketResponse(UUID.randomUUID(), null, null, "PAID", null, null));
         when(aveniaTransferService.createTransfer(any(), any())).thenReturn(result);
 
         CreateTransferResponse response = transferService.create(
-                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID);
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
 
         assertThat(response.status()).isEqualTo(TransactionStatus.SETTLED);
 
         ArgumentCaptor<AveniaTicketRequest> ticketCaptor = ArgumentCaptor.forClass(AveniaTicketRequest.class);
         verify(aveniaTransferService).createTransfer(any(), ticketCaptor.capture());
-        assertThat(ticketCaptor.getValue().getTicketSwiftOutput().beneficiarySwiftBankAccountId())
+        assertThat(ticketCaptor.getValue().getTicketUsdWireOutput().beneficiaryUsdBankAccountId())
                 .isEqualTo(beneficiary.getAveniaId());
+    }
+
+    @Test
+    void create_beneficiarioSepa_usaSaldoInternoEMontaTicketEur() {
+        setUpService();
+        stubSubAccount();
+        stubTransactionPersistence();
+        BeneficiaryEntity beneficiary = bankAccountBeneficiary();
+        beneficiary.setPaymentRail("sepa");
+        beneficiary.setCurrency("EUR");
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+        when(aveniaTransferService.createTransfer(any(), any())).thenReturn(new AveniaTransferResult(
+                aveniaResponse(), new AveniaTicketResponse(
+                        UUID.randomUUID(), null, null, "PROCESSING", null, null)));
+        CreateTransferRequest request = createRequestWith(beneficiary.getId(), null);
+        request.setPaymentMethod(TransferMethod.ACCOUNT_BALANCE);
+
+        transferService.create(request, CURRENT_USER_ID, CURRENT_COMPANY_ID);
+
+        ArgumentCaptor<AveniaQuoteRequest> quoteCaptor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        ArgumentCaptor<AveniaTicketRequest> ticketCaptor = ArgumentCaptor.forClass(AveniaTicketRequest.class);
+        verify(aveniaTransferService).createTransfer(quoteCaptor.capture(), ticketCaptor.capture());
+        assertThat(quoteCaptor.getValue().inputPaymentMethod()).isEqualTo("INTERNAL");
+        assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("SEPA");
+        assertThat(ticketCaptor.getValue().getTicketBrlPixInput()).isNull();
+        assertThat(ticketCaptor.getValue().getTicketEurSepaOutput().beneficiaryEurBankAccountId())
+                .isEqualTo(beneficiary.getAveniaId());
+    }
+
+    @Test
+    void create_beneficiarioSwift_semInvoiceBloqueiaAntesDaCotacao() {
+        setUpService();
+        BeneficiaryEntity beneficiary = bankAccountBeneficiary();
+        beneficiary.setPaymentRail("international_swift");
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+        stubSubAccount();
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("invoice processada");
+
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
     }
 
     @Test
     void create_beneficiarioInexistente_lancaNotFoundExceptionSemChamarAvenia() {
         setUpService();
         UUID beneficiaryId = UUID.randomUUID();
-        when(beneficiaryRepository.findById(beneficiaryId)).thenReturn(Optional.empty());
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiaryId, CURRENT_COMPANY_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> transferService.create(createRequestWith(beneficiaryId, "BRL"), CURRENT_USER_ID))
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiaryId, "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(NotFoundException.class);
+
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void create_beneficiarioDeOutraEmpresa_retornaNotFoundSemChamarAvenia() {
+        setUpService();
+        UUID beneficiaryId = UUID.randomUUID();
+        UUID anotherCompanyId = UUID.randomUUID();
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiaryId, CURRENT_COMPANY_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiaryId, "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(NotFoundException.class);
+
+        verify(beneficiaryRepository, never()).findByIdAndCompanyId(beneficiaryId, anotherCompanyId);
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void create_beneficiarioSemIdAvenia_retornaErroSemGerarCotacao() {
+        setUpService();
+        BeneficiaryEntity beneficiary = pixBeneficiary();
+        beneficiary.setAveniaId(null);
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("não possui conta cadastrada na Avenia");
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
     }
@@ -387,9 +500,11 @@ class TransferCreationServiceTest {
         setUpService();
         BeneficiaryEntity beneficiary = bankAccountBeneficiary();
         beneficiary.setCurrency(null);
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
 
-        assertThatThrownBy(() -> transferService.create(createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID))
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(UnprocessableEntityException.class);
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
@@ -399,11 +514,12 @@ class TransferCreationServiceTest {
     void create_sourceCurrencyDiferenteDeBrl_lancaUnprocessableEntityExceptionSemChamarAvenia() {
         setUpService();
         BeneficiaryEntity beneficiary = pixBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         CreateTransferRequest request = createRequestWith(beneficiary.getId(), null);
         request.setSourceCurrency("USD");
 
-        assertThatThrownBy(() -> transferService.create(request, CURRENT_USER_ID))
+        assertThatThrownBy(() -> transferService.create(request, CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(UnprocessableEntityException.class);
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
@@ -416,11 +532,13 @@ class TransferCreationServiceTest {
         setUpService();
         stubSubAccount();
         BeneficiaryEntity beneficiary = pixBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         when(aveniaTransferService.createTransfer(any(), any()))
                 .thenThrow(AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
-        assertThatThrownBy(() -> transferService.create(createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID))
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(AveniaIntegrationException.class);
 
         verify(baseTransactionRepository, never()).save(any());
@@ -431,10 +549,12 @@ class TransferCreationServiceTest {
     void create_usuarioSemVerificacaoKyc_lancaUnprocessableEntityExceptionSemChamarAvenia() {
         setUpService();
         BeneficiaryEntity beneficiary = pixBeneficiary();
-        when(beneficiaryRepository.findById(beneficiary.getId())).thenReturn(Optional.of(beneficiary));
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
         when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(CURRENT_USER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> transferService.create(createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID))
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), "BRL"), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(UnprocessableEntityException.class);
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
