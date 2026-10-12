@@ -242,6 +242,7 @@ public class AveniaClient implements AveniaGateway {
         addQueryParam(builder, AveniaApi.Quote.MARKUP_CURRENCY, request.markupCurrency());
         addQueryParam(builder, AveniaApi.Quote.TICKET_REFUND_ID, request.ticketRefundId());
         addQueryParam(builder, AveniaApi.Quote.OUTPUT_BR_CODE, request.outputBrCode());
+        addQueryParam(builder, AveniaApi.Quote.FEE_SETTLEMENT, request.feeSettlement());
         addQueryParam(builder, AveniaApi.SubAccount.SUB_ACCOUNT_ID, request.subAccountId());
 
         return builder.build().encode().toUriString();
@@ -368,6 +369,10 @@ public class AveniaClient implements AveniaGateway {
                 && (request.getCustomDuration() < AveniaApi.Ticket.CUSTOM_DURATION_MIN_SECONDS
                 || request.getCustomDuration() > AveniaApi.Ticket.CUSTOM_DURATION_MAX_SECONDS_NO_CONVERSION)) {
             throw new IllegalArgumentException("customDuration must be between 300 and 259200 seconds");
+        }
+        if (request.getExternalId() != null
+                && request.getExternalId().length() > AveniaApi.Ticket.EXTERNAL_ID_MAX_LENGTH) {
+            throw new IllegalArgumentException("externalId must have at most 68 characters");
         }
     }
 

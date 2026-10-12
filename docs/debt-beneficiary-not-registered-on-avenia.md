@@ -59,4 +59,4 @@ um fluxo para associar esse documento ao ticket.
 - `entity/BeneficiaryEntity.java` (colunas `avenia_id`, `avenia_wallet_id`)
 - `service/TransferService.java` (`buildAveniaTicketRequest`, onde esses ids são consumidos)
 - `external/avenia/AveniaApi.Beneficiary` (constantes do contrato de registro de beneficiário na Avenia, ainda sem client)
-- `docs/transfers-quote-and-creation.md` (guideline da card de transferências)
+- `docs/task-29-avenia-final-review.md` (decisões de cotação, taxas e validação no sandbox)

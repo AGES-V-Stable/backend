@@ -158,6 +158,31 @@ class AveniaClientTest {
     }
 
     @Test
+    void sendsImmediateFeeSettlementAndMapsProviderConfirmation() {
+        server.expect(once(), requestTo("https://avenia.test/v2/account/quote/fixed-rate"
+                        + "?inputCurrency=BRL&inputPaymentMethod=PIX"
+                        + "&outputCurrency=USD&outputPaymentMethod=WIRE"
+                        + "&inputThirdParty=false&outputThirdParty=false"
+                        + "&inputAmount=100.00&feeSettlement=IMMEDIATE"
+                        + "&subAccountId=sub-1"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "quoteToken":"quote-token",
+                          "feeSettlement":"IMMEDIATE"
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        AveniaQuoteResponse response = client.createQuote(new AveniaQuoteRequest(
+                "BRL", "PIX", "USD", "WIRE",
+                new BigDecimal("100.00"), null, null, null, null,
+                null, null, null, null, null, null, "IMMEDIATE", "sub-1"));
+
+        assertThat(response.feeSettlement()).isEqualTo("IMMEDIATE");
+        server.verify();
+    }
+
+    @Test
     void createsSwiftTicketWithQuoteTokenAndSameSubAccount() {
         UUID beneficiaryId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
@@ -399,6 +424,13 @@ class AveniaClientTest {
         assertThatThrownBy(() -> client.createTicket(
                 AveniaTicketRequest.builder().quoteToken("token").customDuration(259201).build()))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.createTicket(
+                AveniaTicketRequest.builder()
+                        .quoteToken("token")
+                        .externalId("x".repeat(69))
+                        .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("68");
     }
 
     @Test

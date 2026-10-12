@@ -103,6 +103,58 @@ class AveniaTransferServiceTest {
     }
 
     @Test
+    void rejectsQuoteWhenProviderDoesNotConfirmRequestedImmediateFeeSettlement() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        AveniaQuoteRequest request = quoteRequestWithImmediateFeeSettlement();
+        gateway.quoteResponse = quoteResponse("token", "EOM");
+
+        assertThrows(AveniaIntegrationException.class, () -> service.createQuote(request));
+    }
+
+    @Test
+    void acceptsQuoteWhenProviderConfirmsRequestedImmediateFeeSettlement() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token", "IMMEDIATE");
+
+        AveniaQuoteResponse response = service.createQuote(quoteRequestWithImmediateFeeSettlement());
+
+        assertEquals("IMMEDIATE", response.feeSettlement());
+    }
+
+    @Test
+    void rejectsExternalIdAboveProviderLimitBeforeRequestingQuoteOrTicket() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        AveniaTicketRequest request = AveniaTicketRequest.builder()
+                .externalId("x".repeat(69))
+                .build();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createTransfer(quoteRequest(), request));
+
+        assertEquals(0, gateway.quoteCalls);
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    @Test
+    void acceptsExternalIdAtProviderLimit() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token");
+        gateway.ticketResponse = new AveniaTicketResponse(
+                UUID.randomUUID(), null, null, "PROCESSING", null, null);
+
+        service.createTransfer(quoteRequest(), AveniaTicketRequest.builder()
+                .externalId("x".repeat(68))
+                .build());
+
+        assertEquals("x".repeat(68), gateway.receivedTicketRequest.getExternalId());
+        assertEquals(1, gateway.ticketCalls);
+    }
+
+    @Test
     void rejectsCustomDurationAboveTenMinutesForCurrencyConversion() {
         FakeAveniaGateway gateway = new FakeAveniaGateway();
         AveniaTransferService service = new AveniaTransferService(gateway);
@@ -188,6 +240,13 @@ class AveniaTransferServiceTest {
                 null, null, null, null, null, null, "sub-1");
     }
 
+    private AveniaQuoteRequest quoteRequestWithImmediateFeeSettlement() {
+        return new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", "USD", "SWIFT",
+                BigDecimal.TEN, null, false, false, "PERMIT",
+                null, null, null, null, null, null, "IMMEDIATE", "sub-1");
+    }
+
     private AveniaQuoteResponse quoteResponse(String token) {
         return new AveniaQuoteResponse(
                 token, "BRLA", "INTERNAL", BigDecimal.TEN,
@@ -195,15 +254,25 @@ class AveniaTransferServiceTest {
                 "BRLA", false, false, List.of(), BigDecimal.TEN, "BRLAUSD");
     }
 
+    private AveniaQuoteResponse quoteResponse(String token, String feeSettlement) {
+        return new AveniaQuoteResponse(
+                token, "BRLA", "INTERNAL", BigDecimal.TEN,
+                "USD", "SWIFT", BigDecimal.ONE, BigDecimal.ZERO,
+                "BRLA", false, false, List.of(), BigDecimal.TEN, "BRLAUSD",
+                feeSettlement);
+    }
+
     private static class FakeAveniaGateway implements AveniaGateway {
         private AveniaQuoteResponse quoteResponse;
         private AveniaTicketResponse ticketResponse;
         private AveniaIntegrationException quoteFailure;
         private AveniaTicketRequest receivedTicketRequest;
+        private int quoteCalls;
         private int ticketCalls;
 
         @Override
         public AveniaQuoteResponse createQuote(AveniaQuoteRequest request) {
+            quoteCalls++;
             if (quoteFailure != null) {
                 throw quoteFailure;
             }

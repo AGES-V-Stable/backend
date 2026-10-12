@@ -200,6 +200,7 @@ class TransferCreationServiceTest {
         assertThat(captor.getValue().inputCurrency()).isEqualTo("BRL");
         assertThat(captor.getValue().outputCurrency()).isEqualTo("USD");
         assertThat(captor.getValue().subAccountId()).isEqualTo(SUB_ACCOUNT_ID);
+        assertThat(captor.getValue().feeSettlement()).isEqualTo("IMMEDIATE");
 
         assertThat(response.source()).isEqualTo(new MoneyAmount(new BigDecimal("125000.00"), "BRL"));
         assertThat(response.destination()).isEqualTo(new MoneyAmount(new BigDecimal("24235.14"), "USD"));
@@ -229,7 +230,7 @@ class TransferCreationServiceTest {
     }
 
     @Test
-    void quote_semMoedasInformadas_usaBrlComoOrigemPadrao() {
+    void quote_apenasMoedaDeDestinoInformada_infereBrlComoOrigem() {
         setUpService();
         stubSubAccount();
         when(aveniaTransferService.createQuote(any())).thenReturn(aveniaResponse());
@@ -240,6 +241,18 @@ class TransferCreationServiceTest {
         ArgumentCaptor<AveniaQuoteRequest> captor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
         verify(aveniaTransferService).createQuote(captor.capture());
         assertThat(captor.getValue().inputCurrency()).isEqualTo("BRL");
+    }
+
+    @Test
+    void quote_semNenhumaMoeda_rejeitaSemChamarAvenia() {
+        setUpService();
+
+        assertThatThrownBy(() -> transferService.quote(
+                requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, null, null), CURRENT_USER_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("destinationCurrency");
+
+        verify(aveniaTransferService, never()).createQuote(any());
     }
 
     @Test
@@ -367,8 +380,11 @@ class TransferCreationServiceTest {
                 aveniaResponse(), new AveniaTicketResponse(ticketId, null, null, "PROCESSING", null, null));
         when(aveniaTransferService.createTransfer(any(), any())).thenReturn(result);
 
+        CreateTransferRequest request = createRequestWith(beneficiary.getId(), null);
+        request.setSourceCurrency(null);
+
         CreateTransferResponse response = transferService.create(
-                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
+                request, CURRENT_USER_ID, CURRENT_COMPANY_ID);
 
         assertThat(response.status()).isEqualTo(TransactionStatus.PROCESSING);
 
@@ -376,8 +392,10 @@ class TransferCreationServiceTest {
         ArgumentCaptor<AveniaTicketRequest> ticketCaptor = ArgumentCaptor.forClass(AveniaTicketRequest.class);
         verify(aveniaTransferService).createTransfer(quoteCaptor.capture(), ticketCaptor.capture());
 
-        // PIX sem moeda de destino informada nem cadastrada no beneficiário: assume BRL.
+        // Sem nenhuma moeda no request, o saldo da empresa e o PIX fornecem contexto BRL.
+        assertThat(quoteCaptor.getValue().inputCurrency()).isEqualTo("BRL");
         assertThat(quoteCaptor.getValue().outputCurrency()).isEqualTo("BRL");
+        assertThat(quoteCaptor.getValue().feeSettlement()).isEqualTo("IMMEDIATE");
         assertThat(quoteCaptor.getValue().inputPaymentMethod()).isEqualTo("PIX");
         assertThat(quoteCaptor.getValue().outputPaymentMethod()).isEqualTo("PIX");
         assertThat(ticketCaptor.getValue().getTicketBrlPixInput()).isNotNull();
@@ -462,6 +480,31 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService).createTransfer(any(), ticketCaptor.capture());
         assertThat(ticketCaptor.getValue().getTicketUsdWireOutput().beneficiaryUsdBankAccountId())
                 .isEqualTo(beneficiary.getAveniaId());
+    }
+
+    @Test
+    void create_statusComHifen_mapeiaEstadosDocumentadosPelaAvenia() {
+        setUpService();
+        stubSubAccount();
+        stubTransactionPersistence();
+        BeneficiaryEntity beneficiary = pixBeneficiary();
+        when(beneficiaryRepository.findByIdAndCompanyId(beneficiary.getId(), CURRENT_COMPANY_ID))
+                .thenReturn(Optional.of(beneficiary));
+        when(aveniaTransferService.createTransfer(any(), any()))
+                .thenReturn(new AveniaTransferResult(
+                        aveniaResponse(), new AveniaTicketResponse(
+                                UUID.randomUUID(), null, null, "ON-HOLD", null, null)))
+                .thenReturn(new AveniaTransferResult(
+                        aveniaResponse(), new AveniaTicketResponse(
+                                UUID.randomUUID(), null, null, "PARTIAL-FAILED", null, null)));
+
+        CreateTransferResponse held = transferService.create(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
+        CreateTransferResponse partialFailure = transferService.create(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID);
+
+        assertThat(held.status()).isEqualTo(TransactionStatus.HELD);
+        assertThat(partialFailure.status()).isEqualTo(TransactionStatus.PARTIAL_FAILURE);
     }
 
     @Test

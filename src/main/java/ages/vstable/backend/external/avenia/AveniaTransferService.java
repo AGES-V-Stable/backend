@@ -36,6 +36,7 @@ public class AveniaTransferService {
         if (ticketRequest == null) {
             throw new IllegalArgumentException("ticket request must be provided");
         }
+        validateExternalId(ticketRequest);
         validateCustomDuration(quoteRequest, ticketRequest);
         AveniaQuoteResponse quote = requireValidQuote(aveniaGateway.createQuote(quoteRequest), quoteRequest);
 
@@ -70,8 +71,21 @@ public class AveniaTransferService {
             throw new AveniaIntegrationException(
                     "Avenia returned a quote that does not match the request", 502, false, null);
         }
+        if (request.feeSettlement() != null && !request.feeSettlement().isBlank()
+                && (quote.feeSettlement() == null
+                || !quote.feeSettlement().equalsIgnoreCase(request.feeSettlement()))) {
+            throw new AveniaIntegrationException(
+                    "Avenia returned a quote with an unexpected fee settlement mode", 502, false, null);
+        }
         validateFinancialData(quote);
         return quote;
+    }
+
+    private void validateExternalId(AveniaTicketRequest ticketRequest) {
+        if (ticketRequest.getExternalId() != null
+                && ticketRequest.getExternalId().length() > AveniaApi.Ticket.EXTERNAL_ID_MAX_LENGTH) {
+            throw new IllegalArgumentException("externalId must have at most 68 characters");
+        }
     }
 
     /**

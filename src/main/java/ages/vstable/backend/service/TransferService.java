@@ -23,6 +23,7 @@ import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.external.avenia.AveniaApi;
 import ages.vstable.backend.external.avenia.AveniaTransferService;
 import ages.vstable.backend.external.avenia.dto.AveniaAppliedFee;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
@@ -71,8 +72,9 @@ public class TransferService {
 
     // Nenhuma entidade hoje guarda a moeda de operação da empresa; BRL é a única moeda
     // que aparece explicitamente hoje (CompanyEntity.availableBalanceBrl). Ver
-    // docs/transfers-quote-and-creation.md seção 4 — decisão a revisitar com o time.
+    // docs/task-29-avenia-final-review.md — decisão a revisitar com o time.
     private static final String DEFAULT_SOURCE_CURRENCY = "BRL";
+    private static final String FEE_SETTLEMENT = AveniaApi.Quote.FeeSettlement.IMMEDIATE.name();
 
     private final AveniaTransferService aveniaTransferService;
     private final BeneficiaryRepository beneficiaryRepository;
@@ -214,6 +216,7 @@ public class TransferService {
                 null,
                 null,
                 null,
+                FEE_SETTLEMENT,
                 subAccountId);
     }
 
@@ -224,8 +227,11 @@ public class TransferService {
      */
     private AveniaTicketRequest buildAveniaTicketRequest(
             BeneficiaryEntity beneficiary, TransferMethod paymentMethod, String description) {
+        String reference = normalizeReference(description);
         AveniaTicketRequest.AveniaTicketRequestBuilder builder = AveniaTicketRequest.builder()
-                .externalId(description);
+                // externalId é uma referência livre e não única na Avenia; a descrição
+                // pública é reutilizada como referência de conciliação, limitada a 68 chars.
+                .externalId(reference);
 
         if (paymentMethod == TransferMethod.PIX) {
             builder.ticketBrlPixInput(new AveniaTicketRequest.BrlPixInput(null));
@@ -234,11 +240,11 @@ public class TransferService {
         return switch (beneficiary.getReceivingMethod()) {
             case PIX_KEY -> builder.ticketBrlPixOutput(new AveniaTicketRequest.BrlPixOutput(
                     beneficiary.getAveniaId(),
-                    null, description, null, null, null, null, null, null, null)).build();
+                    null, reference, null, null, null, null, null, null, null)).build();
             case CRYPTO_WALLET -> builder.ticketBlockchainOutput(new AveniaTicketRequest.BlockchainOutput(
                     beneficiary.getAveniaWalletId(),
                     null, null, null)).build();
-            case BANK_ACCOUNT -> buildBankAccountTicket(builder, beneficiary, description);
+            case BANK_ACCOUNT -> buildBankAccountTicket(builder, beneficiary, reference);
         };
     }
 
@@ -334,9 +340,9 @@ public class TransferService {
         return switch (aveniaStatus) {
             case "UNPAID" -> TransactionStatus.AWAITING_PAYMENT;
             case "PROCESSING" -> TransactionStatus.PROCESSING;
-            case "ON_HOLD" -> TransactionStatus.HELD;
+            case "ON_HOLD", "ON-HOLD" -> TransactionStatus.HELD;
             case "PAID" -> TransactionStatus.SETTLED;
-            case "PARTIAL_FAILED" -> TransactionStatus.PARTIAL_FAILURE;
+            case "PARTIAL_FAILED", "PARTIAL-FAILED" -> TransactionStatus.PARTIAL_FAILURE;
             case "CANCELED" -> TransactionStatus.CANCELED;
             default -> TransactionStatus.FAILED;
         };
@@ -385,6 +391,10 @@ public class TransferService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String normalizeReference(String description) {
+        return isBlank(description) ? null : description.trim();
     }
 
     /**

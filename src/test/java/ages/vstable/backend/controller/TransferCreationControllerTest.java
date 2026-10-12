@@ -181,6 +181,23 @@ class TransferCreationControllerTest {
     }
 
     @Test
+    void post_externalIdAcimaDoLimiteDaAvenia_retorna400SemChamarService() throws Exception {
+        UUID beneficiaryId = UUID.randomUUID();
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
+            put("amount", 100.00);
+            put("amountType", "SOURCE");
+            put("paymentMethod", "PIX");
+            put("beneficiaryId", beneficiaryId.toString());
+            put("description", "x".repeat(69));
+        }});
+
+        mockMvc.perform(post("/v1/transfers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void post_beneficiarioInexistente_retorna404() throws Exception {
         when(transferService.create(any(), any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
