@@ -70,6 +70,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
+                        // Autenticado pela assinatura Svix no BlindPayWebhookService, não por JWT.
+                        .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()
                         .anyRequest().authenticated()
                 )

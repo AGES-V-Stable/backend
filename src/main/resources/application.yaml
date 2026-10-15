@@ -22,6 +22,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  # Documentos de compliance da BlindPay têm no máximo 3MB.
+  servlet:
+    multipart:
+      max-file-size: 3MB
+      max-request-size: 4MB
+
   # Timeouts dos clientes HTTP de saída (Avenia e BlindPay). Sem eles, um provedor
   # lento prende a thread da requisição indefinidamente.
   http:
@@ -53,6 +59,7 @@ blindpay:
   api-key: ${BLINDPAY_API_KEY:}
   instance-id: ${BLINDPAY_INSTANCE_ID:}
   webhook-secret: ${BLINDPAY_WEBHOOK_SECRET:}
+  tos-redirect-url: ${BLINDPAY_TOS_REDIRECT_URL:}
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}

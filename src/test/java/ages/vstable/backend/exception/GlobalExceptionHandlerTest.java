@@ -9,6 +9,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.Map;
 
@@ -154,5 +156,23 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Map<String, String>> response = handler.handleUnexpected(ex);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).containsEntry("message", "Internal error");
+    }
+
+    @Test
+    void handleMaxUploadSize_returns413WithFixedMessage() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleMaxUploadSize(new MaxUploadSizeExceededException(3_145_728));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
+        assertThat(response.getBody()).containsEntry("message", "File is too large");
+    }
+
+    @Test
+    void handleMissingRequestPart_returns400() {
+        ResponseEntity<Map<String, String>> response =
+                handler.handleMissingRequestPart(new MissingServletRequestPartException("file"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().get("message")).contains("file");
     }
 }

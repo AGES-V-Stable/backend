@@ -7,9 +7,12 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.Map;
 
@@ -46,6 +49,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler({ MissingServletRequestParameterException.class, MissingServletRequestPartException.class })
+    public ResponseEntity<Map<String, String>> handleMissingRequestPart(Exception ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONTENT_TOO_LARGE)
+                .body(Map.of("message", "File is too large"));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

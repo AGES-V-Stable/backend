@@ -6,6 +6,7 @@ import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.QuoteAmountSide;
 import ages.vstable.backend.entity.enums.QuoteDirection;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
+import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -63,6 +65,17 @@ class BlindPayQuoteProviderTest {
     void supports_brlPayoutToBankAccount_returnsTrue() {
         assertThat(provider.supports(context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00"))))
                 .isTrue();
+    }
+
+    @Test
+    void quote_companyWithoutApprovedCompliance_requestsNoBlindPayQuote() {
+        when(provisioningService.ensureBankAccount(company, beneficiary)).thenThrow(
+                new BlindPayComplianceException("BlindPay compliance is not approved for this company"));
+
+        assertThatThrownBy(() -> provider.quote(
+                context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00")), "idempotency-key"))
+                .isInstanceOf(BlindPayComplianceException.class);
+        verifyNoInteractions(blindPayGateway);
     }
 
     @Test

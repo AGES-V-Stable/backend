@@ -1,7 +1,9 @@
 package ages.vstable.backend.service.quote;
 
 import ages.vstable.backend.entity.*;
+import ages.vstable.backend.entity.enums.BlindPayOnboardingStatus;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
+import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -9,7 +11,6 @@ import ages.vstable.backend.external.blindpay.dto.*;
 import ages.vstable.backend.repository.BeneficiaryProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderWalletRepository;
-import ages.vstable.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,10 +26,9 @@ public class BlindPayProvisioningService {
     private final ProviderAccountRepository providerAccountRepository;
     private final BeneficiaryProviderAccountRepository beneficiaryProviderAccountRepository;
     private final ProviderWalletRepository providerWalletRepository;
-    private final UserRepository userRepository;
 
     public String ensureBankAccount(CompanyEntity company, BeneficiaryEntity beneficiary) {
-        ProviderAccountEntity providerAccount = ensureCustomer(company);
+        ProviderAccountEntity providerAccount = approvedCustomer(company);
         BeneficiaryProviderAccountEntity existing = beneficiaryProviderAccountRepository
                 .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
                 .orElse(null);
@@ -86,7 +86,7 @@ public class BlindPayProvisioningService {
             throw new IllegalArgumentException("Unsupported BlindPay network: " + networkValue);
         }
 
-        ProviderAccountEntity providerAccount = ensureCustomer(company);
+        ProviderAccountEntity providerAccount = approvedCustomer(company);
         ProviderWalletEntity existing = providerWalletRepository
                 .findByProviderAccountIdAndNetwork(providerAccount.getId(), network.name())
                 .orElse(null);
@@ -140,69 +140,19 @@ public class BlindPayProvisioningService {
         }
     }
 
-    private ProviderAccountEntity ensureCustomer(CompanyEntity company) {
-        ProviderAccountEntity existing = providerAccountRepository
+    /**
+     * O cliente BlindPay é criado e aprovado no onboarding de compliance
+     * ({@code BlindPayComplianceService}), nunca durante uma cotação. Conta, wallet e
+     * cotações só são pedidos para clientes com KYB aprovado, AML liberado e termos aceitos.
+     */
+    private ProviderAccountEntity approvedCustomer(CompanyEntity company) {
+        return providerAccountRepository
                 .findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY)
-                .orElse(null);
-        if (existing != null && hasText(existing.getExternalCustomerId())) {
-            return existing;
-        }
-
-        UserEntity representative = userRepository.findFirstByCompanyIdOrderByCreatedAtAsc(company.getId())
-                .orElseThrow(() -> new IllegalStateException("Company has no representative"));
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        ProviderAccountEntity account = existing == null
-                ? ProviderAccountEntity.builder()
-                    .company(company)
-                    .provider(IntegrationProvider.BLINDPAY)
-                    .status("PENDING")
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build()
-                : existing;
-
-        try {
-            BlindPayCustomerCreatedResponse response = blindPayGateway.createCustomer(
-                    BlindPayCreateCustomerRequest.builder()
-                            .type(BlindPayApi.Customer.Type.business)
-                            .kycType(BlindPayApi.Customer.KycType.standard)
-                            .email(representative.getEmail())
-                            .taxId(company.getCnpj())
-                            .legalName(company.getLegalName())
-                            .city(company.getCity())
-                            .stateProvinceRegion(company.getState())
-                            .country(countryCode(company.getCountry()))
-                            .postalCode(company.getZipCode())
-                            .externalId(company.getId().toString())
-                            .build(),
-                    "company:" + company.getId() + ":blindpay");
-            if (response == null) {
-                throw BlindPayIntegrationException.invalidResponse("BlindPay customer response has no id");
-            }
-            String customerId = hasText(response.customerId()) ? response.customerId() : response.id();
-            if (!hasText(customerId)) {
-                throw BlindPayIntegrationException.invalidResponse("BlindPay customer response has no id");
-            }
-            account.setExternalCustomerId(customerId);
-            account.setStatus("CREATED");
-            account.setLastErrorCode(null);
-            account.setSynchronizedAt(now);
-            account.setUpdatedAt(now);
-            try {
-                return providerAccountRepository.save(account);
-            } catch (DataIntegrityViolationException ex) {
-                return providerAccountRepository
-                        .findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY)
-                        .filter(saved -> hasText(saved.getExternalCustomerId()))
-                        .orElseThrow(() -> ex);
-            }
-        } catch (BlindPayIntegrationException ex) {
-            account.setStatus("FAILED");
-            account.setLastErrorCode(ex.getProviderErrorCode());
-            account.setUpdatedAt(now);
-            providerAccountRepository.save(account);
-            throw ex;
-        }
+                .filter(account -> hasText(account.getExternalCustomerId()))
+                .filter(account -> BlindPayOnboardingStatus.parse(account.getStatus())
+                        == BlindPayOnboardingStatus.APPROVED)
+                .orElseThrow(() -> new BlindPayComplianceException(
+                        "BlindPay compliance is not approved for this company"));
     }
 
     private BlindPayCreateBankAccountRequest bankAccountRequest(BeneficiaryEntity beneficiary) {

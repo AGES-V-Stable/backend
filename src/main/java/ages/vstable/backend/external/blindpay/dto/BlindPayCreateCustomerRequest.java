@@ -55,7 +55,9 @@ public record BlindPayCreateCustomerRequest(
         String sourceOfFundsDocType,
         String sourceOfFundsDocFile,
         String purposeOfTransactions,
+        String purposeOfTransactionsExplanation,
         String accountPurpose,
+        String accountPurposeOther,
         Boolean publiclyTraded,
         String occupation,
         List<Owner> owners,
@@ -71,11 +73,15 @@ public record BlindPayCreateCustomerRequest(
         owners = owners == null ? null : List.copyOf(owners);
     }
 
-    /** Sócio ou controlador de um cliente empresa (KYB). */
+    /**
+     * Sócio ou controlador de um cliente empresa (KYB). {@code id} ({@code ub_...})
+     * só é enviado na atualização, para identificar um sócio já cadastrado.
+     */
     @Builder
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Owner(
+            String id,
             BlindPayApi.Customer.OwnerRole role,
             String firstName,
             String lastName,
