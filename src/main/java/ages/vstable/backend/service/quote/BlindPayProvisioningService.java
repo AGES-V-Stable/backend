@@ -33,7 +33,16 @@ public class BlindPayProvisioningService {
                 .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
                 .orElse(null);
         if (existing != null && hasText(existing.getExternalBankAccountId())) {
-            return existing.getExternalBankAccountId();
+            BlindPayBankAccountResponse current = blindPayGateway.getBankAccount(
+                    providerAccount.getExternalCustomerId(), existing.getExternalBankAccountId());
+            if (current == null || !existing.getExternalBankAccountId().equals(current.id())) {
+                throw BlindPayIntegrationException.invalidResponse("BlindPay returned an unexpected bank account");
+            }
+            existing.setStatus(normalizedBankStatus(current.status()));
+            existing.setSynchronizedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            existing.setUpdatedAt(existing.getSynchronizedAt());
+            beneficiaryProviderAccountRepository.save(existing);
+            return requireApprovedBankAccount(current);
         }
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -61,12 +70,21 @@ public class BlindPayProvisioningService {
             link.setUpdatedAt(now);
             try {
                 beneficiaryProviderAccountRepository.save(link);
-                return response.id();
+                return requireApprovedBankAccount(response);
             } catch (DataIntegrityViolationException ex) {
                 return beneficiaryProviderAccountRepository
                         .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
                         .map(BeneficiaryProviderAccountEntity::getExternalBankAccountId)
                         .filter(this::hasText)
+                        .map(id -> {
+                            BlindPayBankAccountResponse current = blindPayGateway.getBankAccount(
+                                    providerAccount.getExternalCustomerId(), id);
+                            if (current == null || !id.equals(current.id())) {
+                                throw BlindPayIntegrationException.invalidResponse(
+                                        "BlindPay returned an unexpected bank account");
+                            }
+                            return requireApprovedBankAccount(current);
+                        })
                         .orElseThrow(() -> ex);
             }
         } catch (BlindPayIntegrationException ex) {
@@ -76,6 +94,19 @@ public class BlindPayProvisioningService {
             beneficiaryProviderAccountRepository.save(link);
             throw ex;
         }
+    }
+
+    private String requireApprovedBankAccount(BlindPayBankAccountResponse account) {
+        String status = normalizedBankStatus(account.status());
+        if (!"APPROVED".equals(status)) {
+            throw new BlindPayComplianceException(
+                    "BlindPay beneficiary bank account is not approved (status=" + status + ")");
+        }
+        return account.id();
+    }
+
+    private String normalizedBankStatus(String status) {
+        return hasText(status) ? status.trim().toUpperCase(java.util.Locale.ROOT) : "VERIFYING";
     }
 
     public String ensureWallet(CompanyEntity company, String networkValue) {
