@@ -13,6 +13,7 @@ import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.CompanyService;
 import ages.vstable.backend.service.TransferDetailsService;
 import ages.vstable.backend.service.TransferService;
+import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
@@ -85,6 +86,9 @@ class SecurityChainIntegrationTest {
 
     @MockitoBean
     private TransferService transferService;
+
+        @MockitoBean
+        private TwoFactorAuthService twoFactorAuthService;
 
     private final UUID companyId = UUID.randomUUID();
     private UserEntity user;

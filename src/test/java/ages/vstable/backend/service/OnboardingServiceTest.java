@@ -68,7 +68,7 @@ class OnboardingServiceTest {
                 companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
         onboardingService = new OnboardingService(
                 userRepository, administratorRepository, companyRepository, aveniaKycVerificationRepository,
-                new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils);
+                new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService());
     }
 
     @Test

@@ -12,4 +12,6 @@ public class OnboardingResponseDTO {
     UUID companyId;
     UUID kycVerificationId;
     String accessToken;
+    boolean twoFactorSetupRequired;
+    String otpauthUri;
 }

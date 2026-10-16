@@ -19,6 +19,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import ages.vstable.backend.dto.authentication.TwoFactorActivateRequestDTO;
+import ages.vstable.backend.dto.authentication.TwoFactorSetupResponseDTO;
+import ages.vstable.backend.service.TwoFactorAuthService;
+import jakarta.validation.Valid;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.Map;
 
@@ -31,6 +36,7 @@ public class AuthController {
 
   private final AuthenticationManager authenticationManager;
   private final JwtTokenUtils jwtTokenUtil;
+  private final TwoFactorAuthService twoFactorAuthService;
 
   @PostMapping(path = "login")
   @Operation(summary = "Authenticates a company user or an administrator and returns a JWT token in the Authorization header")
@@ -44,7 +50,8 @@ public class AuthController {
       Authentication authenticate = authenticationManager.authenticate(
           new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
 
-      // The token is generated for the principal that actually authenticated (user or admin)
+      // The token is generated for the principal that actually authenticated (user or
+      // admin)
       UserDetails principal = (UserDetails) authenticate.getPrincipal();
 
       return ResponseEntity
@@ -53,10 +60,50 @@ public class AuthController {
           .build();
     } catch (LockedException | DisabledException le) {
       log.error(le.getMessage());
-      return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("code", "ACCOUNT_LOCKED", "message", le.getMessage()));
+      return ResponseEntity.status(HttpStatus.LOCKED)
+          .body(Map.of("code", "ACCOUNT_LOCKED", "message", le.getMessage()));
     } catch (AuthenticationException ex) {
       log.error(ex.getMessage());
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("code", "INVALID_CREDENTIALS", "message", "Invalid credentials"));
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+          .body(Map.of("code", "INVALID_CREDENTIALS", "message", "Invalid credentials"));
+    }
+  }
+
+  @PostMapping(path = "2fa/setup")
+  @Operation(summary = "Generates a new temporary TOTP secret for the authenticated account and returns the otpauth:// URI")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "2FA setup URI generated"),
+      @ApiResponse(responseCode = "401", description = "Not authenticated"),
+  })
+  public ResponseEntity<TwoFactorSetupResponseDTO> setupTwoFactor(
+      @AuthenticationPrincipal UserDetails principal) {
+    if (principal == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+    return ResponseEntity.ok(twoFactorAuthService.setupTwoFactor(principal));
+  }
+
+  @PostMapping(path = "2fa/activate")
+  @Operation(summary = "Validates the 6-digit TOTP code and activates 2FA on the authenticated account")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "2FA activated successfully"),
+      @ApiResponse(responseCode = "400", description = "Invalid request format"),
+      @ApiResponse(responseCode = "401", description = "Not authenticated or invalid TOTP code"),
+      @ApiResponse(responseCode = "422", description = "2FA setup not initiated"),
+  })
+  public ResponseEntity<Map<String, Object>> activateTwoFactor(
+      @AuthenticationPrincipal UserDetails principal,
+      @Valid @RequestBody TwoFactorActivateRequestDTO request) {
+    if (principal == null) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+          .body(Map.of("code", "UNAUTHENTICATED", "message", "Authentication required"));
+    }
+    try {
+      twoFactorAuthService.activateTwoFactor(principal, request.getCode());
+      return ResponseEntity.ok(Map.of("twoFactorEnabled", true, "message", "2FA activated successfully"));
+    } catch (AuthenticationException ex) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+          .body(Map.of("code", "INVALID_2FA_CODE", "message", "Invalid 2FA verification code"));
     }
   }
 }
