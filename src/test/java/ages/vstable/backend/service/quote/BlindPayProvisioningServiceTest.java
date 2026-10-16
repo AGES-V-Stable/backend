@@ -75,6 +75,47 @@ class BlindPayProvisioningServiceTest {
         assertThat(bank.getValue().swiftBeneficiaryCountry()).isEqualTo("BR");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"verifying", "rejected", "deprecated"})
+    void ensureBankAccount_pendingOrRejectedBankAccount_isNotUsedForQuote(String status) {
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .paymentRail("pix").pixKey("pix@example.com").build();
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), anyString()))
+                .thenReturn(new BlindPayBankAccountResponse(
+                        "ba_1", "pix", "Fornecedor", status, null, "BR", null, OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.ensureBankAccount(company, beneficiary))
+                .isInstanceOf(BlindPayComplianceException.class)
+                .hasMessageContaining("not approved");
+        verify(beneficiaryProviderAccountRepository).save(any());
+    }
+
+    @Test
+    void ensureBankAccount_existingAccount_checksProviderStatusBeforeQuote() {
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company).build();
+        BeneficiaryProviderAccountEntity linked = BeneficiaryProviderAccountEntity.builder()
+                .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY)
+                .externalBankAccountId("ba_1").status("APPROVED").build();
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.of(linked));
+        when(gateway.getBankAccount("customer-id", "ba_1")).thenReturn(
+                new BlindPayBankAccountResponse("ba_1", "pix", "Fornecedor", "verifying",
+                        null, "BR", null, OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.ensureBankAccount(company, beneficiary))
+                .isInstanceOf(BlindPayComplianceException.class);
+        assertThat(linked.getStatus()).isEqualTo("VERIFYING");
+        verify(gateway, never()).createBankAccount(any(), any(), anyString());
+    }
+
     @Test
     void ensureWallet_approvedCustomer_createsOneManagedWalletPerCompanyAndNetwork() {
         // Arrange
