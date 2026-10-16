@@ -170,13 +170,13 @@ class BlindPayQuoteProviderTest {
     }
 
     @Test
-    void quote_convertsBlindPayExpirationFromEpochMilliseconds() {
+    void quote_convertsBlindPayExpirationFromEpochSeconds() {
         beneficiary.setCurrency("BRL");
         beneficiary.setPaymentRail("pix");
         when(provisioningService.ensureBankAccount(company, beneficiary)).thenReturn("bank-account-id");
         Instant expiration = Instant.parse("2026-10-08T15:30:00Z");
         when(blindPayGateway.createQuote(any(), anyString())).thenReturn(blindPayQuote(
-                new BigDecimal("10000"), new BigDecimal("52000"), expiration.toEpochMilli()));
+                new BigDecimal("10000"), new BigDecimal("52000"), expiration.getEpochSecond()));
 
         QuoteRequest request = new QuoteRequest(
                 beneficiary.getId(), QuoteDirection.PAYOUT,
@@ -310,7 +310,7 @@ class BlindPayQuoteProviderTest {
             BigDecimal senderAmount, BigDecimal receiverAmount) {
         return new BlindPayPayinQuoteResponse(
                 "blindpay-payin-quote",
-                Instant.now().plusSeconds(50).toEpochMilli(),
+                Instant.now().plusSeconds(50).getEpochSecond(),
                 new BigDecimal("5.50"),
                 new BigDecimal("5.55"),
                 receiverAmount,
@@ -321,7 +321,7 @@ class BlindPayQuoteProviderTest {
     }
 
     private BlindPayQuoteResponse blindPayQuote(BigDecimal senderAmount, BigDecimal receiverAmount) {
-        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).toEpochMilli());
+        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).getEpochSecond());
     }
 
     private BlindPayQuoteResponse blindPayQuote(
