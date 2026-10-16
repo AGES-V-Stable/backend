@@ -15,4 +15,6 @@ public class BlindPayProperties {
     private String apiKey;
     private String instanceId;
     private String webhookSecret;
+    /** Para onde a página hospedada de aceite dos termos redireciona; opcional. */
+    private String tosRedirectUrl;
 }
