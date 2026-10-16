@@ -80,7 +80,7 @@ class BlindPayProvisioningServiceTest {
     void ensureBankAccount_pendingOrRejectedBankAccount_isNotUsedForQuote(String status) {
         CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
-                .paymentRail("pix").pixKey("pix@example.com").build();
+                .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com").build();
         when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
         when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
