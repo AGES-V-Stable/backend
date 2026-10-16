@@ -4,7 +4,6 @@ import ages.vstable.backend.entity.enums.AdminAccessLevel;
 import jakarta.persistence.*;
 import lombok.*;
 
-import org.apache.commons.lang3.builder.ToStringExclude;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.security.core.GrantedAuthority;
@@ -44,20 +43,22 @@ public class AdministratorEntity implements UserDetails {
     @Column(name = "password_salt", nullable = false, length = 255)
     private String passwordSalt;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "access_level", columnDefinition = "admin_access_level_enum")
-    private AdminAccessLevel accessLevel;
+    private AdminAccessLevel accessLevel = AdminAccessLevel.SUPER_ADMIN;
 
+    @Builder.Default
     @Column(name = "active")
-    private Boolean active;
+    private Boolean active = true;
 
     @Builder.Default
     @Column(name = "require_2fa", nullable = false)
     private Boolean require2fa = true;
 
     @JsonIgnore 
-    @ToStringExclude 
+    @ToString.Exclude 
     @Convert(converter = TwoFactorSecretConverter.class)
     @Column(name = "two_factor_secret", length = 255)
     private String twoFactorSecret;

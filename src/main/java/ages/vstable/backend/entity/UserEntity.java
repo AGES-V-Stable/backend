@@ -50,7 +50,7 @@ public class UserEntity implements UserDetails {
     @JsonIgnore
     @ToString.Exclude
     @Convert(converter = TwoFactorSecretConverter.class)
-    @Column(name = "twoFactorSecret", length = 255)
+    @Column(name = "two_factor_secret", length = 255)
     private String twoFactorSecret;
 
     @Builder.Default
