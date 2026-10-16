@@ -5,6 +5,8 @@ import lombok.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import ages.vstable.backend.utils.TwoFactorSecretConverter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -44,6 +46,16 @@ public class UserEntity implements UserDetails {
     // aplicação altera esse campo ainda; inserir null explicitamente anularia o default.
     @Column(name = "active", insertable = false, updatable = false)
     private Boolean active;
+
+    @JsonIgnore
+    @ToString.Exclude
+    @Convert(converter = TwoFactorSecretConverter.class)
+    @Column(name = "twoFactorSecret", length = 255)
+    private String twoFactorSecret;
+
+    @Builder.Default
+    @Column(name = "two_factor_enabled", nullable = false)
+    private Boolean twoFactorEnabled = false;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;

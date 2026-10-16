@@ -3,11 +3,15 @@ package ages.vstable.backend.entity;
 import ages.vstable.backend.entity.enums.AdminAccessLevel;
 import jakarta.persistence.*;
 import lombok.*;
+
+import org.apache.commons.lang3.builder.ToStringExclude;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import ages.vstable.backend.utils.TwoFactorSecretConverter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -47,6 +51,20 @@ public class AdministratorEntity implements UserDetails {
 
     @Column(name = "active")
     private Boolean active;
+
+    @Builder.Default
+    @Column(name = "require_2fa", nullable = false)
+    private Boolean require2fa = true;
+
+    @JsonIgnore 
+    @ToStringExclude 
+    @Convert(converter = TwoFactorSecretConverter.class)
+    @Column(name = "two_factor_secret", length = 255)
+    private String twoFactorSecret;
+
+    @Builder.Default
+    @Column(name = "two_factor_enabled", nullable = false)
+    private Boolean twoFactorEnabled = false;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
