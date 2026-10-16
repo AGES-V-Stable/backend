@@ -7,5 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AdministratorRepository extends JpaRepository<AdministratorEntity, UUID> {
+    boolean existsByEmail(String email);
+
     Optional<AdministratorEntity> findByEmail(String email);
 }

@@ -18,8 +18,34 @@ public record AveniaQuoteRequest(
         String markupCurrency,
         String ticketRefundId,
         String outputBrCode,
+        String feeSettlement,
         String subAccountId
 ) {
+
+    public AveniaQuoteRequest(
+            String inputCurrency,
+            String inputPaymentMethod,
+            String outputCurrency,
+            String outputPaymentMethod,
+            BigDecimal inputAmount,
+            BigDecimal outputAmount,
+            Boolean inputThirdParty,
+            Boolean outputThirdParty,
+            String blockchainSendMethod,
+            BigDecimal markupFloatingFee,
+            BigDecimal markupInputFixedFee,
+            BigDecimal markupOutputFixedFee,
+            String markupCurrency,
+            String ticketRefundId,
+            String outputBrCode,
+            String subAccountId
+    ) {
+        this(inputCurrency, inputPaymentMethod, outputCurrency, outputPaymentMethod,
+                inputAmount, outputAmount, inputThirdParty, outputThirdParty,
+                blockchainSendMethod, markupFloatingFee, markupInputFixedFee,
+                markupOutputFixedFee, markupCurrency, ticketRefundId, outputBrCode,
+                null, subAccountId);
+    }
 
     public AveniaQuoteRequest {
         requireText(inputCurrency, "inputCurrency");

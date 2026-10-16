@@ -2,14 +2,18 @@ package ages.vstable.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDate;
 
+
+/** Detalhe de uma transação de recebimento (exportação) de um pagador externo. */
 @Entity
-@Getter
-@Setter
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
+@Getter
+@Setter
 @Table(name = "export_transactions")
 @PrimaryKeyJoinColumn(name = "transaction_id")
 public class ExportTransactionEntity extends BaseTransactionEntity {
@@ -26,7 +30,6 @@ public class ExportTransactionEntity extends BaseTransactionEntity {
     @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
 
-    @Column(name = "reason_description", nullable = false, columnDefinition = "TEXT")
+    @Column(name = "reason_description", nullable = false, columnDefinition = "text")
     private String reasonDescription;
 }
-

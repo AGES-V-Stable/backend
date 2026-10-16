@@ -156,6 +156,11 @@ class DevelopmentDataSeederTest {
             assertThat(transaction.getForeignAmount()).isPositive();
             assertThat(transaction.getExchangeRate()).isPositive();
             assertThat(transaction.getSettlementAmountBrl()).isPositive();
+            var converted = transaction.getForeignAmount().multiply(transaction.getExchangeRate());
+            var expectedSettlement = transaction instanceof ExportTransactionEntity
+                    ? converted.subtract(transaction.getServiceFeeBrl())
+                    : converted.add(transaction.getServiceFeeBrl());
+            assertThat(transaction.getSettlementAmountBrl()).isEqualByComparingTo(expectedSettlement);
             assertThat(transaction.getAveniaTicketId()).isNull();
             assertThat(transaction.getCreatedAt()).isNotNull();
             assertThat(transaction.getUpdatedAt()).isNotNull();

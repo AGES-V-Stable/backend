@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.compliance.DocumentSubmitRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartResponse;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -29,14 +31,16 @@ public class ComplianceDocumentController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Upload iniciado, retorna id e URL(s) de upload"),
             @ApiResponse(responseCode = "400", description = "documentType inválido"),
+            @ApiResponse(responseCode = "403", description = "kycVerificationId não pertence ao usuário autenticado"),
             @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
     })
     public ResponseEntity<DocumentUploadStartResponse> iniciar(
             @PathVariable UUID kycVerificationId,
-            @Valid @RequestBody DocumentUploadStartRequest request) {
+            @Valid @RequestBody DocumentUploadStartRequest request,
+            Authentication authentication) {
 
-        return complianceDocumentoService.iniciar(kycVerificationId, request)
+        return complianceDocumentoService.iniciar(kycVerificationId, CompanyAccess.currentUserId(authentication), request)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -46,13 +50,16 @@ public class ComplianceDocumentController {
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Documento registrado com sucesso"),
             @ApiResponse(responseCode = "400", description = "documentoId ausente ou vazio"),
+            @ApiResponse(responseCode = "403", description = "kycVerificationId não pertence ao usuário autenticado"),
             @ApiResponse(responseCode = "404", description = "kycVerificationId inválido ou inexistente"),
     })
     public ResponseEntity<Void> concluir(
             @PathVariable UUID kycVerificationId,
-            @Valid @RequestBody DocumentSubmitRequest request) {
+            @Valid @RequestBody DocumentSubmitRequest request,
+            Authentication authentication) {
 
-        boolean atualizado = complianceDocumentoService.concluir(kycVerificationId, request);
+        boolean atualizado = complianceDocumentoService.concluir(
+                kycVerificationId, CompanyAccess.currentUserId(authentication), request);
 
         return atualizado
                 ? ResponseEntity.noContent().build()

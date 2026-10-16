@@ -5,8 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -18,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class CustomAuthenticationProviderTest {
 
     @Mock
@@ -38,6 +36,33 @@ class CustomAuthenticationProviderTest {
                 userDetailsService,
                 passwordEncoder
         );
+        lenient().when(userDetails.isEnabled()).thenReturn(true);
+        lenient().when(userDetails.isAccountNonLocked()).thenReturn(true);
+    }
+
+    @Test
+    void authenticate_shouldThrowLockedException_whenAccountIsDisabled() {
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken("user@example.com", "password");
+
+        when(userDetailsService.loadUserByUsername("user@example.com")).thenReturn(userDetails);
+        when(userDetails.getPassword()).thenReturn("encoded-password");
+        when(passwordEncoder.matches("password", "encoded-password")).thenReturn(true);
+        when(userDetails.isEnabled()).thenReturn(false);
+
+        assertThrows(LockedException.class, () -> authenticationProvider.authenticate(authentication));
+    }
+
+    @Test
+    void authenticate_shouldThrowLockedException_whenAccountIsLocked() {
+        Authentication authentication =
+                new UsernamePasswordAuthenticationToken("user@example.com", "password");
+        when(userDetailsService.loadUserByUsername("user@example.com")).thenReturn(userDetails);
+        when(userDetails.getPassword()).thenReturn("encoded-password");
+        when(passwordEncoder.matches("password", "encoded-password")).thenReturn(true);
+        when(userDetails.isAccountNonLocked()).thenReturn(false);
+
+        assertThrows(LockedException.class, () -> authenticationProvider.authenticate(authentication));
     }
 
     @Test

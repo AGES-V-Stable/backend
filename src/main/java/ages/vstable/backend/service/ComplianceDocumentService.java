@@ -20,9 +20,11 @@ public class ComplianceDocumentService {
     private final AveniaClient aveniaClient;
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
-    public Optional<DocumentUploadStartResponse> iniciar(UUID kycVerificationId, DocumentUploadStartRequest request) {
+    public Optional<DocumentUploadStartResponse> iniciar(UUID kycVerificationId, UUID currentUserId,
+                                                        DocumentUploadStartRequest request) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
+                    KycOwnership.verify(kyc, currentUserId);
                     String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
                     AveniaDocumentUploadResponse aveniaResponse = aveniaClient.iniciarDocumento(
                             request.getDocumentType(), request.isDoubleSided(), subAccountId);
@@ -35,9 +37,10 @@ public class ComplianceDocumentService {
                 });
     }
 
-    public boolean concluir(UUID kycVerificationId, DocumentSubmitRequest request) {
+    public boolean concluir(UUID kycVerificationId, UUID currentUserId, DocumentSubmitRequest request) {
         return aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
+                    KycOwnership.verify(kyc, currentUserId);
                     kyc.setDocumentId(request.getDocumentoId());
                     aveniaKycVerificationRepository.save(kyc);
                     return true;

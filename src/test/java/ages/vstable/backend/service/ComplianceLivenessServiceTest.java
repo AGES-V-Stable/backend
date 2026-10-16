@@ -1,5 +1,6 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.dto.compliance.LivenessStartResponse;
 import ages.vstable.backend.dto.compliance.LivenessStatusResponse;
 import ages.vstable.backend.dto.compliance.LivenessSubmitRequest;
@@ -26,6 +27,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ComplianceLivenessServiceTest {
 
+    private static final UUID USER_ID = UUID.randomUUID();
+
     private static final String SUB_ACCOUNT_ID = "sub-1";
 
     @Mock
@@ -47,7 +50,7 @@ class ComplianceLivenessServiceTest {
     void iniciar_kycExistente_provisionaSubcontaEChamaAveniaComEla() {
         service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         AveniaDocumentResponse aveniaResponse = new AveniaDocumentResponse();
         aveniaResponse.setId("liveness-123");
@@ -59,7 +62,7 @@ class ComplianceLivenessServiceTest {
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
-        Optional<LivenessStartResponse> resultado = service.iniciar(kycId);
+        Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
 
         assertThat(resultado).isPresent();
         assertThat(resultado.get().getId()).isEqualTo("liveness-123");
@@ -74,7 +77,7 @@ class ComplianceLivenessServiceTest {
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        Optional<LivenessStartResponse> resultado = service.iniciar(kycId);
+        Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
 
         assertThat(resultado).isEmpty();
         verifyNoInteractions(aveniaClient);
@@ -85,14 +88,14 @@ class ComplianceLivenessServiceTest {
     void iniciar_falhaNaAvenia_propagaAveniaIntegrationException() {
         service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID))
                 .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
-        assertThatThrownBy(() -> service.iniciar(kycId))
+        assertThatThrownBy(() -> service.iniciar(kycId, USER_ID))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -102,6 +105,7 @@ class ComplianceLivenessServiceTest {
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
                 .id(kycId)
+                .userId(USER_ID)
                 .aveniaSubAccountId(SUB_ACCOUNT_ID)
                 .build();
 
@@ -114,7 +118,7 @@ class ComplianceLivenessServiceTest {
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
         when(aveniaClient.consultarStatusDocumento("liveness-123", SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
-        Optional<LivenessStatusResponse> resultado = service.consultarStatus(kycId, "liveness-123");
+        Optional<LivenessStatusResponse> resultado = service.consultarStatus(kycId, USER_ID, "liveness-123");
 
         assertThat(resultado).isPresent();
         assertThat(resultado.get().isReady()).isTrue();
@@ -127,7 +131,7 @@ class ComplianceLivenessServiceTest {
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        Optional<LivenessStatusResponse> resultado = service.consultarStatus(kycId, "liveness-123");
+        Optional<LivenessStatusResponse> resultado = service.consultarStatus(kycId, USER_ID, "liveness-123");
 
         assertThat(resultado).isEmpty();
         verifyNoInteractions(aveniaClient);
@@ -139,6 +143,7 @@ class ComplianceLivenessServiceTest {
         UUID kycId = UUID.randomUUID();
         AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
                 .id(kycId)
+                .userId(USER_ID)
                 .aveniaSubAccountId(SUB_ACCOUNT_ID)
                 .build();
 
@@ -146,7 +151,7 @@ class ComplianceLivenessServiceTest {
         when(aveniaClient.consultarStatusDocumento("liveness-123", SUB_ACCOUNT_ID))
                 .thenThrow(AveniaIntegrationException.communication("falha", new RuntimeException()));
 
-        assertThatThrownBy(() -> service.consultarStatus(kycId, "liveness-123"))
+        assertThatThrownBy(() -> service.consultarStatus(kycId, USER_ID, "liveness-123"))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
 
@@ -154,14 +159,14 @@ class ComplianceLivenessServiceTest {
     void concluir_kycExistente_salvaLivenessIdERetornaTrue() {
         service = service();
         UUID kycId = UUID.randomUUID();
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).build();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(USER_ID).build();
 
         LivenessSubmitRequest request = new LivenessSubmitRequest();
         request.setLivenessId("liveness-123");
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
 
-        boolean resultado = service.concluir(kycId, request);
+        boolean resultado = service.concluir(kycId, USER_ID, request);
 
         assertThat(resultado).isTrue();
 
@@ -179,9 +184,45 @@ class ComplianceLivenessServiceTest {
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        boolean resultado = service.concluir(kycId, request);
+        boolean resultado = service.concluir(kycId, USER_ID, request);
 
         assertThat(resultado).isFalse();
+        verify(aveniaKycVerificationRepository, never()).save(any());
+    }
+
+    @Test
+    void iniciar_kycDeOutroUsuario_lancaForbiddenSemChamarAvenia() {
+        service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(UUID.randomUUID()).build();
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.iniciar(kycId, USER_ID)).isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(aveniaClient);
+    }
+
+    @Test
+    void consultarStatus_kycDeOutroUsuario_lancaForbiddenSemChamarAvenia() {
+        service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(UUID.randomUUID()).build();
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.consultarStatus(kycId, USER_ID, "liveness-123"))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(aveniaClient);
+    }
+
+    @Test
+    void concluir_kycDeOutroUsuario_lancaForbiddenSemSalvar() {
+        service = service();
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder().id(kycId).userId(UUID.randomUUID()).build();
+        LivenessSubmitRequest request = new LivenessSubmitRequest();
+        request.setLivenessId("liveness-123");
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+
+        assertThatThrownBy(() -> service.concluir(kycId, USER_ID, request)).isInstanceOf(ForbiddenException.class);
         verify(aveniaKycVerificationRepository, never()).save(any());
     }
 }

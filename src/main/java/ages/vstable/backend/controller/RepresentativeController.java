@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,9 +24,11 @@ public class RepresentativeController {
     private final UserService userService;
 
     @GetMapping
-    @Operation(summary = "Lists all registered representatives (used by the admin panel)")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Lists all registered representatives (used by the admin panel, Admin only)")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of representatives returned successfully"),
+            @ApiResponse(responseCode = "403", description = "Requires ADMIN"),
     })
     public ResponseEntity<List<UserResponse>> findAll() {
         return ResponseEntity.ok(userService.findAll());

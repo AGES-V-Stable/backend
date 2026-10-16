@@ -35,6 +35,14 @@ public class BeneficiaryEntity {
     @Column(name = "avenia_wallet_id")
     private UUID aveniaWalletId;
 
+    /**
+     * Subconta na qual os identificadores externos acima foram registrados.
+     * O campo não faz parte do contrato HTTP e existe apenas para impedir que um
+     * beneficiário seja usado em uma operação executada por outra subconta Avenia.
+     */
+    @Column(name = "avenia_sub_account_id", length = 255)
+    private String aveniaSubAccountId;
+
     @Column(name = "nickname", nullable = false, length = 100)
     private String nickname;
 
@@ -131,7 +139,7 @@ public class BeneficiaryEntity {
     @Column(name = "postal_code", length = 20)
     private String postalCode;
 
-    @Column(name = "country_code", length = 2)
+    @Column(name = "country_code", length = 3)
     private String countryCode;
 
     @Column(name = "bank_address_line_1", length = 255)
@@ -149,7 +157,7 @@ public class BeneficiaryEntity {
     @Column(name = "bank_postal_code", length = 20)
     private String bankPostalCode;
 
-    @Column(name = "bank_country_code", length = 2)
+    @Column(name = "bank_country_code", length = 3)
     private String bankCountryCode;
 
     @Column(name = "swift_payment_code", length = 100)

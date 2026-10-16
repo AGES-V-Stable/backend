@@ -1,6 +1,6 @@
 package ages.vstable.backend.utils;
 
-import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.AdministratorEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -25,6 +25,9 @@ public class JwtTokenUtils implements Serializable {
     @Serial
     private static final long serialVersionUID = -2550185165626007488L;
     public static final long JWT_TOKEN_VALIDITY = 5 * 60 * 60;
+    public static final String ACCOUNT_TYPE_CLAIM = "account_type";
+    public static final String ACCOUNT_TYPE_ADMIN = "ADMIN";
+    public static final String ACCOUNT_TYPE_USER = "USER";
 
     @Value("${api.auth.jwt.secret}")
     private String secret;
@@ -58,13 +61,21 @@ public class JwtTokenUtils implements Serializable {
         return expiration.before(new Date());
     }
 
-    //generate token for user
-    public String generateToken(UserDetails user) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("role", user.getAuthorities().stream().map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList()));
+    //retrieve account type (ADMIN or USER) from jwt token; tokens without the claim are USER tokens
+    public String getAccountTypeFromToken(String token) {
+        String accountType = getClaimFromToken(token, claims -> claims.get(ACCOUNT_TYPE_CLAIM, String.class));
+        return accountType == null ? ACCOUNT_TYPE_USER : accountType;
+    }
 
-        return doGenerateToken(claims, user.getUsername());
+    //generate token for a company user or an administrator
+    public String generateToken(UserDetails principal) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", principal.getAuthorities().stream().map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toList()));
+        claims.put(ACCOUNT_TYPE_CLAIM,
+                principal instanceof AdministratorEntity ? ACCOUNT_TYPE_ADMIN : ACCOUNT_TYPE_USER);
+
+        return doGenerateToken(claims, principal.getUsername());
     }
 
     //while creating the token -

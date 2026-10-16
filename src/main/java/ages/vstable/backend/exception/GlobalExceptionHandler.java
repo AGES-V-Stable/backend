@@ -23,7 +23,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "INVALID_ARGUMENT", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -34,21 +34,21 @@ public class GlobalExceptionHandler {
                 .orElse("Invalid data");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", message));
+                .body(Map.of("code", "VALIDATION_ERROR", "message", message));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> handleMalformedPayload(HttpMessageNotReadableException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Malformed payload"));
+                .body(Map.of("code", "MALFORMED_PAYLOAD", "message", "Malformed payload"));
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<Map<String, String>> handleMissingHeader(MissingRequestHeaderException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "MISSING_HEADER", "message", ex.getMessage()));
     }
 
     @ExceptionHandler({ MissingServletRequestParameterException.class, MissingServletRequestPartException.class })
@@ -69,35 +69,35 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", "Parameter '" + ex.getName() + "' has an invalid format"));
+                .body(Map.of("code", "INVALID_PARAMETER", "message", "Parameter '" + ex.getName() + "' has an invalid format"));
     }
 
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<Map<String, String>> handleConflict(ConflictException ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "CONFLICT", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenException ex) {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "FORBIDDEN", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NotFoundException ex) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "NOT_FOUND", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(UnprocessableEntityException.class)
     public ResponseEntity<Map<String, String>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "UNPROCESSABLE_ENTITY", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(AveniaIntegrationException.class)
@@ -117,7 +117,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(status)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "PROVIDER_ERROR", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(BlindPayIntegrationException.class)
@@ -133,20 +133,20 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(status)
-                .body(Map.of("message", ex.getMessage()));
+                .body(Map.of("code", "PROVIDER_ERROR", "message", ex.getMessage()));
     }
 
     @ExceptionHandler({ AccessDeniedException.class, AuthorizationDeniedException.class })
     public ResponseEntity<Map<String, String>> handleAccessDenied(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
-                .body(Map.of("message", "Access denied"));
+                .body(Map.of("code", "ACCESS_DENIED", "message", "Access denied"));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Internal error"));
+                .body(Map.of("code", "INTERNAL_ERROR", "message", "Internal error"));
     }
 }

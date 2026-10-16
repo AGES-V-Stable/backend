@@ -39,10 +39,10 @@ public class CompanyEntity {
     @Column(name = "zip_code", nullable = false, length = 20)
     private String zipCode;
 
-    @Column(name = "city")
+    @Column(name = "city", length = 100)
     private String city;
 
-    @Column(name = "state", nullable = false, length = 100)
+    @Column(name = "state", nullable = false, length = 50)
     private String state;
 
     @Enumerated(EnumType.STRING)
