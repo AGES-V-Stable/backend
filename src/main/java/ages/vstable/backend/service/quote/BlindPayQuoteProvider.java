@@ -216,12 +216,12 @@ public class BlindPayQuoteProvider implements QuoteProvider {
 
     private OffsetDateTime expiresAt(BlindPayQuoteResponse response) {
         return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochMilli(response.expiresAt()), java.time.ZoneOffset.UTC);
+                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
     }
 
     private OffsetDateTime expiresAt(BlindPayPayinQuoteResponse response) {
         return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochMilli(response.expiresAt()), java.time.ZoneOffset.UTC);
+                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
     }
 
     private BigDecimal payoutFees(BlindPayQuoteResponse response) {

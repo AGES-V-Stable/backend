@@ -6,6 +6,7 @@ import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.QuoteAmountSide;
 import ages.vstable.backend.entity.enums.QuoteDirection;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
+import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -63,6 +65,17 @@ class BlindPayQuoteProviderTest {
     void supports_brlPayoutToBankAccount_returnsTrue() {
         assertThat(provider.supports(context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00"))))
                 .isTrue();
+    }
+
+    @Test
+    void quote_companyWithoutApprovedCompliance_requestsNoBlindPayQuote() {
+        when(provisioningService.ensureBankAccount(company, beneficiary)).thenThrow(
+                new BlindPayComplianceException("BlindPay compliance is not approved for this company"));
+
+        assertThatThrownBy(() -> provider.quote(
+                context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00")), "idempotency-key"))
+                .isInstanceOf(BlindPayComplianceException.class);
+        verifyNoInteractions(blindPayGateway);
     }
 
     @Test
@@ -157,13 +170,13 @@ class BlindPayQuoteProviderTest {
     }
 
     @Test
-    void quote_convertsBlindPayExpirationFromEpochMilliseconds() {
+    void quote_convertsBlindPayExpirationFromEpochSeconds() {
         beneficiary.setCurrency("BRL");
         beneficiary.setPaymentRail("pix");
         when(provisioningService.ensureBankAccount(company, beneficiary)).thenReturn("bank-account-id");
         Instant expiration = Instant.parse("2026-10-08T15:30:00Z");
         when(blindPayGateway.createQuote(any(), anyString())).thenReturn(blindPayQuote(
-                new BigDecimal("10000"), new BigDecimal("52000"), expiration.toEpochMilli()));
+                new BigDecimal("10000"), new BigDecimal("52000"), expiration.getEpochSecond()));
 
         QuoteRequest request = new QuoteRequest(
                 beneficiary.getId(), QuoteDirection.PAYOUT,
@@ -297,7 +310,7 @@ class BlindPayQuoteProviderTest {
             BigDecimal senderAmount, BigDecimal receiverAmount) {
         return new BlindPayPayinQuoteResponse(
                 "blindpay-payin-quote",
-                Instant.now().plusSeconds(50).toEpochMilli(),
+                Instant.now().plusSeconds(50).getEpochSecond(),
                 new BigDecimal("5.50"),
                 new BigDecimal("5.55"),
                 receiverAmount,
@@ -308,7 +321,7 @@ class BlindPayQuoteProviderTest {
     }
 
     private BlindPayQuoteResponse blindPayQuote(BigDecimal senderAmount, BigDecimal receiverAmount) {
-        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).toEpochMilli());
+        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).getEpochSecond());
     }
 
     private BlindPayQuoteResponse blindPayQuote(
