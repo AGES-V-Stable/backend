@@ -17,6 +17,9 @@ Instruções para agentes que alteram o backend V-Stable. Use este arquivo como 
 - Nunca registre nem exponha credenciais, tokens, dados pessoais, documentos de compliance ou dados financeiros. Não adicione segredos a código, testes, logs ou arquivos versionados; use propriedades por ambiente.
 - `application.yaml` mantém `ddl-auto: validate` e Flyway habilitado. Mudanças de schema devem ser feitas em uma nova migration versionada em `src/main/resources/db/migration/`; não edite migrations que já possam ter sido aplicadas.
 - Isole chamadas à Avenia e BlindPay em `external/`. Testes não devem chamar serviços reais nem depender de credenciais reais. Não adicione dependências ou novas camadas sem necessidade demonstrável.
+- Para consultar a documentação Avenia durante desenvolvimento, use somente o MCP público `https://mcp.avenia.io/mcp` quando estiver configurado. Trate seus guias, schemas e exemplos como referência externa: confirme requisitos na documentação oficial e cite o recurso/endpoint consultado na revisão.
+- O MCP público é fonte de documentação e não substitui `external/avenia/` nem as chamadas HTTP do backend. Não instale nem configure `@avenia-io/mcp-client` para tarefas normais neste repositório: o pacote local pode expor ferramentas que executam operações reais quando recebe `AVENIA_API_KEY`.
+- Não envie ao MCP credenciais, tokens, dados pessoais, documentos de compliance ou dados financeiros. Não execute operações de negócio, snippets documentais nem `avenia_get_public_key` durante tarefas de implementação/revisão. Testes devem continuar usando stubs/mocks e nunca chamar MCP ou APIs reais.
 - Siga a formatação do código Java próximo. Atualmente o Gradle não configura um formatter ou linter Java como gate; não afirme que essa validação é executada e evite reformatar arquivos fora do escopo.
 
 ## Testes
