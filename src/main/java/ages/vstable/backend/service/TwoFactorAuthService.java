@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -167,6 +168,33 @@ public class TwoFactorAuthService {
             administratorRepository.save(admin);
         }
         return principal;
+    }
+
+    /**
+     * Valida o código TOTP do usuário autenticado antes de autorizar operações críticas
+     * (como criação de transferência na Avenia).
+     * Reutiliza o controle de Anti-Replay e Lockout por força bruta da conta.
+     */
+
+    public void validateTransferTotp(UUID userId, String code) {
+        if(userId == null) {
+            throw new BadCredentialsException("User not authenticated");
+        }
+        UserEntity user = userRepository.findById(userId)
+            .orElseThrow(() -> new BadCredentialsException("Authenticated user not found"));
+
+        assertNotLocked(user.getEmail());
+
+         if (!Boolean.TRUE.equals(user.getTwoFactorEnabled())
+                || user.getTwoFactorSecret() == null
+                || user.getTwoFactorSecret().isBlank()) {
+            throw new UnprocessableEntityException(
+                    "Usuário não possui 2FA ativo; configure e ative o 2FA antes de realizar transferências");
+            }
+        if (code == null || code.isBlank()) {
+            throw new UnprocessableEntityException("O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
+        }
+        verifyTotpWithSecurityChecks(user.getEmail(), user.getTwoFactorSecret(), code);
     }
 
     private void verifyTotpWithSecurityChecks(String email, String secret, String code) {

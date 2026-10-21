@@ -21,9 +21,12 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -213,5 +216,74 @@ class TwoFactorAuthServiceTest {
         // Na 6ª tentativa, mesmo antes de validar o TOTP, a conta está bloqueada com LockedException
         assertThatThrownBy(() -> twoFactorAuthService.verifyLoginChallenge("challenge", "000000"))
                 .isInstanceOf(LockedException.class);
+    }
+        @Test
+    void validateTransferTotp_quandoCodigoValido_autorizaEBloqueiaReplaySeguinte() {
+        UUID userId = UUID.randomUUID();
+        String secret = totpService.generateSecret();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .email("transfer@vstable.com")
+                .twoFactorSecret(secret)
+                .twoFactorEnabled(true)
+                .build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        long window = FIXED_INSTANT.getEpochSecond() / 30L;
+        String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+
+        twoFactorAuthService.validateTransferTotp(userId, validCode);
+
+        // Se tentar reutilizar o mesmo código na mesma janela (ex: 2ª transferência ou código capturado no login), bloqueia!
+        assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, validCode))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("already been used");
+    }
+
+    @Test
+    void validateTransferTotp_quandoUsuarioSem2faAtivo_lancaUnprocessableEntityException() {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .email("no2fa@vstable.com")
+                .twoFactorSecret(totpService.generateSecret())
+                .twoFactorEnabled(false)
+                .build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, "123456"))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("2FA");
+    }
+
+    @Test
+    void validateTransferTotp_quandoCodigoAusente_lancaUnprocessableEntityException() {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .email("transfer@vstable.com")
+                .twoFactorSecret(totpService.generateSecret())
+                .twoFactorEnabled(true)
+                .build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, "   "))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("TOTP");
+    }
+
+    @Test
+    void validateTransferTotp_quandoCodigoInvalido_lancaBadCredentialsException() {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .email("transfer@vstable.com")
+                .twoFactorSecret(totpService.generateSecret())
+                .twoFactorEnabled(true)
+                .build();
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, "000000"))
+                .isInstanceOf(BadCredentialsException.class);
     }
 }
