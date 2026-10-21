@@ -71,7 +71,7 @@ public class SecurityConfiguration {
                 // with @PreAuthorize and CompanyAccess.
                 .authorizeHttpRequests(authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/login/verify-2fa").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()
                         .requestMatchers("/error").permitAll()
