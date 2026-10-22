@@ -27,15 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.UUID;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class OnboardingService {
-
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-    private static final Pattern STRONG_PASSWORD_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
 
     private final UserRepository userRepository;
     private final AdministratorRepository administratorRepository;
@@ -101,15 +96,33 @@ public class OnboardingService {
     }
 
     private void validatePayload(OnboardingRequestDTO request) {
-        if (!EMAIL_PATTERN.matcher(request.getEmail()).matches()) {
-            throw new UnprocessableEntityException("Email has an invalid format");
-        }
         if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
             throw new UnprocessableEntityException("Password and confirmation do not match");
         }
-        if (!STRONG_PASSWORD_PATTERN.matcher(request.getPassword()).matches()) {
+        if (!isStrongPassword(request.getPassword())) {
             throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
         }
+    }
+
+    private static boolean isStrongPassword(String password) {
+        if (password.length() < 8) {
+            return false;
+        }
+
+        boolean hasNumber = false;
+        boolean hasSpecialCharacter = false;
+        for (int i = 0; i < password.length(); i++) {
+            char character = password.charAt(i);
+            if (character == '\n' || character == '\r' || character == '\u0085'
+                    || character == '\u2028' || character == '\u2029') {
+                return false;
+            }
+            hasNumber |= character >= '0' && character <= '9';
+            hasSpecialCharacter |= !((character >= 'a' && character <= 'z')
+                    || (character >= 'A' && character <= 'Z')
+                    || (character >= '0' && character <= '9'));
+        }
+        return hasNumber && hasSpecialCharacter;
     }
 
     @Transactional(readOnly = true)

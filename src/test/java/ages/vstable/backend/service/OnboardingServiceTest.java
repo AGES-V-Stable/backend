@@ -201,9 +201,20 @@ class OnboardingServiceTest {
     }
 
     @Test
-    void performOnboarding_invalidEmail_throwsUnprocessable() {
+    void performOnboarding_passwordWithoutNumber_throwsUnprocessable() {
         OnboardingRequestDTO request = validRequest();
-        request.setEmail("email-invalido");
+        request.setPassword("Senha@abc");
+        request.setConfirmPassword("Senha@abc");
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @Test
+    void performOnboarding_passwordWithoutSpecialCharacter_throwsUnprocessable() {
+        OnboardingRequestDTO request = validRequest();
+        request.setPassword("Senha1234");
+        request.setConfirmPassword("Senha1234");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
