@@ -121,7 +121,7 @@ class OnboardingControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_ENTITY"))
+                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_CONTENT"))
                 .andExpect(jsonPath("$.message").value("Email has an invalid format"));
     }
 
