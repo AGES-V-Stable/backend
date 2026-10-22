@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.compliance.LivenessStartResponse;
 import ages.vstable.backend.dto.compliance.LivenessStatusResponse;
 import ages.vstable.backend.dto.compliance.LivenessSubmitRequest;
@@ -22,7 +24,7 @@ public class ComplianceLivenessService {
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
     public Optional<LivenessStartResponse> iniciar(UUID kycVerificationId, UUID currentUserId) {
-        return aveniaKycVerificationRepository.findById(kycVerificationId)
+        Optional<LivenessStartResponse> result = aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
                     KycOwnership.verify(kyc, currentUserId);
                     String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
@@ -35,6 +37,8 @@ public class ComplianceLivenessService {
                     response.setValidateLivenessToken(aveniaResponse.getValidateLivenessToken());
                     return response;
                 });
+        OperationalLog.milestone("liveness.started", result.isPresent() ? "success" : "unavailable");
+        return result;
     }
 
     public Optional<LivenessStatusResponse> consultarStatus(UUID kycVerificationId, UUID currentUserId, String livenessId) {
@@ -53,7 +57,7 @@ public class ComplianceLivenessService {
     }
 
     public boolean concluir(UUID kycVerificationId, UUID currentUserId, LivenessSubmitRequest request) {
-        return aveniaKycVerificationRepository.findById(kycVerificationId)
+        boolean result = aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
                     KycOwnership.verify(kyc, currentUserId);
                     kyc.setLivenessId(request.getLivenessId());
@@ -61,5 +65,7 @@ public class ComplianceLivenessService {
                     return true;
                 })
                 .orElse(false);
+        OperationalLog.milestone("liveness.submission.completed", result ? "success" : "unavailable");
+        return result;
     }
 }

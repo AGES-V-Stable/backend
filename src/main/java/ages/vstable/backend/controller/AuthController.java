@@ -1,5 +1,7 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.swagger.v3.oas.annotations.Operation;
@@ -7,7 +9,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +23,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-@Slf4j
 @RestController
 @RequestMapping("/v1/auth")
 @RequiredArgsConstructor
@@ -52,10 +52,10 @@ public class AuthController {
           .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtTokenUtil.generateToken(principal))
           .build();
     } catch (LockedException | DisabledException le) {
-      log.error(le.getMessage());
+      OperationalLog.authentication("account_unavailable");
       return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of("code", "ACCOUNT_LOCKED", "message", le.getMessage()));
     } catch (AuthenticationException ex) {
-      log.error(ex.getMessage());
+      OperationalLog.authentication("invalid_credentials");
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("code", "INVALID_CREDENTIALS", "message", "Invalid credentials"));
     }
   }

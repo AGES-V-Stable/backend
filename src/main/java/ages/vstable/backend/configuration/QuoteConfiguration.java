@@ -1,5 +1,7 @@
 package ages.vstable.backend.configuration;
 
+import ages.vstable.backend.logging.LogContext;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -16,6 +18,7 @@ public class QuoteConfiguration {
         executor.setMaxPoolSize(8);
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("quote-provider-");
+        executor.setTaskDecorator(new LogContext());
         executor.initialize();
         return executor;
     }

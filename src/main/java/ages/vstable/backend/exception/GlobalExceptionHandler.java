@@ -1,6 +1,8 @@
 package ages.vstable.backend.exception;
 
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
+import ages.vstable.backend.logging.OperationalLog;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -140,6 +142,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        OperationalLog.unexpected(ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("code", "INTERNAL_ERROR", "message", "Internal error"));

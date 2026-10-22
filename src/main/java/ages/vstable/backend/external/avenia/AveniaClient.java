@@ -1,5 +1,7 @@
 package ages.vstable.backend.external.avenia;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -277,18 +279,29 @@ public class AveniaClient implements AveniaGateway {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
         String signature = sign(timestamp, "GET", uri, "");
 
+        long startedAt = System.nanoTime();
+        Integer status = null;
+        String outcome = "failure";
         try {
-            return restClient.get()
+            var response = restClient.get()
                     .uri(absoluteUri(uri))
                     .header("X-API-Key", apiKey())
                     .header("X-API-Timestamp", timestamp)
                     .header("X-API-Signature", signature)
                     .retrieve()
-                    .body(responseType);
+                    .toEntity(responseType);
+            status = response.getStatusCode().value();
+            outcome = "success";
+            return response.getBody();
         } catch (RestClientResponseException ex) {
+            status = ex.getStatusCode().value();
+            outcome = "http_failure";
             throw providerError(errorMessage, ex);
         } catch (RestClientException ex) {
+            outcome = OperationalLog.communicationOutcome(ex);
             throw AveniaIntegrationException.communication(errorMessage, ex);
+        } finally {
+            OperationalLog.provider("avenia", "get." + responseType.getSimpleName(), outcome, status, startedAt);
         }
     }
 
@@ -296,8 +309,11 @@ public class AveniaClient implements AveniaGateway {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
         String signature = sign(timestamp, "POST", uri, body);
 
+        long startedAt = System.nanoTime();
+        Integer status = null;
+        String outcome = "failure";
         try {
-            return restClient.post()
+            var response = restClient.post()
                     .uri(absoluteUri(uri))
                     .header("X-API-Key", apiKey())
                     .header("X-API-Timestamp", timestamp)
@@ -305,11 +321,19 @@ public class AveniaClient implements AveniaGateway {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .body(responseType);
+                    .toEntity(responseType);
+            status = response.getStatusCode().value();
+            outcome = "success";
+            return response.getBody();
         } catch (RestClientResponseException ex) {
+            status = ex.getStatusCode().value();
+            outcome = "http_failure";
             throw providerError(errorMessage, ex);
         } catch (RestClientException ex) {
+            outcome = OperationalLog.communicationOutcome(ex);
             throw AveniaIntegrationException.communication(errorMessage, ex);
+        } finally {
+            OperationalLog.provider("avenia", "post." + responseType.getSimpleName(), outcome, status, startedAt);
         }
     }
 
