@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
@@ -139,7 +141,9 @@ public class TransferService {
 
         persistTransaction(beneficiary, request, result, status, currentUserId);
 
-        return new CreateTransferResponse(status);
+        CreateTransferResponse response = new CreateTransferResponse(status);
+        OperationalLog.milestone("transfer.creation.completed", "success");
+        return response;
     }
 
     /**

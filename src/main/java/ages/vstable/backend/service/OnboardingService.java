@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
@@ -56,7 +58,9 @@ public class OnboardingService {
         companyService.assertCnpjAvailable(companyData.cnpj());
 
         try {
-            return createCompanyUserAndKyc(request, companyData);
+            OnboardingResponseDTO response = createCompanyUserAndKyc(request, companyData);
+            OperationalLog.milestone("onboarding.completed", "success");
+            return response;
         } catch (DataIntegrityViolationException e) {
             assertEmailAvailable(request.getEmail());
             companyService.assertCnpjAvailable(companyData.cnpj());

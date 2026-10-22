@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
@@ -54,7 +56,9 @@ public class BeneficiaryService {
         beneficiary.setAveniaWalletId(registration.walletId());
         beneficiary.setAveniaSubAccountId(subAccountId);
 
-        return toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
+        BeneficiaryResponse response = toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
+        OperationalLog.milestone("beneficiary.creation.completed", "success");
+        return response;
     }
 
     private String resolveSubAccountId(UUID currentUserId) {

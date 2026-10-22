@@ -1,8 +1,9 @@
 package ages.vstable.backend.exception;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.controller.TransferDetailsController;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
@@ -15,7 +16,6 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * Erros do {@link TransferDetailsController} no formato {@code {code, message}} do contrato.
  * Restrito a esse controller para não mudar o formato de erro dos demais endpoints.
  */
-@Slf4j
 @RestControllerAdvice(assignableTypes = TransferDetailsController.class)
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class TransferDetailsExceptionHandler {
@@ -39,7 +39,7 @@ public class TransferDetailsExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorBody> handleUnexpected(Exception ex) {
         // Só o tipo, sem a mensagem: ela pode carregar dados da operação.
-        log.error("Falha inesperada em detalhes/comprovante de transferência: {}", ex.getClass().getName());
+        OperationalLog.unexpected(ex);
         return json(TransferDetailsException.internalError());
     }
 

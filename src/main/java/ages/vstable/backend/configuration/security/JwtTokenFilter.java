@@ -1,5 +1,7 @@
 package ages.vstable.backend.configuration.security;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
@@ -9,7 +11,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -26,7 +27,6 @@ import java.io.IOException;
 
 import static org.apache.logging.log4j.util.Strings.isEmpty;
 
-@Slf4j
 @Component
 public class JwtTokenFilter extends OncePerRequestFilter {
 
@@ -78,7 +78,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
         } catch (ExpiredJwtException ex) {
             rejectToken(httpServletRequest, TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
-            log.debug("Rejected bearer token: {}", ex.getMessage());
+            OperationalLog.authentication("invalid_token");
             rejectToken(httpServletRequest, TOKEN_INVALID);
         }
 

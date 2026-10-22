@@ -5,12 +5,17 @@ import ages.vstable.backend.dto.quote.QuoteResponse;
 import ages.vstable.backend.entity.*;
 import ages.vstable.backend.entity.enums.*;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
+import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.LogContext;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -19,6 +24,10 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -112,7 +121,7 @@ class QuoteOrchestratorServiceTest {
         when(blindPay.supports(any())).thenReturn(false);
 
         assertThatThrownBy(() -> service.quote(user, request()))
-                .isInstanceOf(ages.vstable.backend.exception.UnprocessableEntityException.class)
+                .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessage("No quote is available for the requested operation");
         verify(avenia, never()).quote(any(), any());
         verify(blindPay, never()).quote(any(), any());
@@ -228,4 +237,73 @@ class QuoteOrchestratorServiceTest {
                 beneficiary.getId(), QuoteDirection.PAYOUT, "USDC", "USD", "BLOCKCHAIN", "SWIFT",
                 new BigDecimal("100.00"), amountSide, "USDC", "base", false, "Invoice");
     }
+    @Test
+    void quotePartialFailureLogsOnlySafeAggregationMetadata() {
+        configureSuccessfulProviders(result(IntegrationProvider.AVENIA, "100.00", "19.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "18.00", "1.00"));
+        when(blindPay.quote(any(), any())).thenThrow(new IllegalStateException("synthetic-private-payload"));
+        try (var capture = new LogCapture(
+                OperationalLog.class)) {
+            service.quote(user, request());
+            assertThat(capture.events()).hasSize(1);
+            var fields = LogCapture.fields(capture.events().getFirst());
+            assertThat(fields).containsEntry("event", "quote.aggregation.completed")
+                    .containsEntry("outcome", "partial").containsEntry("timeoutCount", 0L);
+            assertThat(fields.toString()).doesNotContain("synthetic-private-payload", "Invoice", "external-");
+        }
+    }
+
+    @Test
+    void orchestrationTimeoutIsDistinctFromCorrelatedLateProviderCompletion() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var finished = new CountDownLatch(1);
+        var worker = Executors.newSingleThreadExecutor();
+        when(avenia.supports(any())).thenReturn(true);
+        when(blindPay.supports(any())).thenReturn(false);
+        when(avenia.provider()).thenReturn(IntegrationProvider.AVENIA);
+        when(avenia.quote(any(), any())).thenAnswer(invocation -> {
+            long startedAt = System.nanoTime();
+            entered.countDown();
+            assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            OperationalLog.provider("avenia", "quote.fetch", "success", 200, startedAt);
+            finished.countDown();
+            return result(IntegrationProvider.AVENIA, "100.00", "19.00", "1.00");
+        });
+        Executor executor = command -> {
+            worker.submit(new LogContext().decorate(command));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(ex);
+            }
+        };
+        service = new QuoteOrchestratorService(List.of(avenia, blindPay), companyRepository,
+                beneficiaryRepository, quoteRequestRepository, providerQuoteRepository, executor);
+        ReflectionTestUtils.setField(service, "providerTimeout", Duration.ZERO);
+        MDC.put("requestId", "timed-out-request");
+        try (var capture = new LogCapture(
+                OperationalLog.class)) {
+            assertThatThrownBy(() -> service.quote(user, request()))
+                    .isInstanceOf(UnprocessableEntityException.class);
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "quote.aggregation.completed").containsEntry("timeoutCount", 1L)
+                    .containsEntry("outcome", "failure");
+            MDC.clear();
+            release.countDown();
+            assertThat(finished.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(capture.events()).hasSize(2);
+            var late = capture.events().getLast();
+            assertThat(LogCapture.fields(late))
+                    .containsEntry("event", "provider.call.completed").containsEntry("outcome", "success");
+            assertThat(late.getMDCPropertyMap()).containsEntry("requestId", "timed-out-request");
+        } finally {
+            release.countDown();
+            worker.shutdownNow();
+            MDC.clear();
+        }
+    }
+
 }

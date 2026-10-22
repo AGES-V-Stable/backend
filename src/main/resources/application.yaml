@@ -1,3 +1,22 @@
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    ages.vstable.backend: ${LOG_LEVEL_APP:INFO}
+    org.springframework: ${LOG_LEVEL_SPRING:INFO}
+    org.hibernate: INFO
+    org.hibernate.SQL: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.springframework.web.client: INFO
+    org.springframework.web.filter.CommonsRequestLoggingFilter: "OFF"
+    org.apache.hc.client5.http: INFO
+    org.apache.hc.client5.http.wire: "OFF"
+    org.apache.hc.client5.http.headers: "OFF"
+    reactor.netty.http.client: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} requestId=%X{requestId:-none} %kvp %msg%n"
+
 server:
   port: ${SPRING_SERVER_PORT:8080}
 

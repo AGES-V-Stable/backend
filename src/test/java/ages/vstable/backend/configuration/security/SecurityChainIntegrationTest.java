@@ -2,14 +2,16 @@ package ages.vstable.backend.configuration.security;
 
 import ages.vstable.backend.controller.AuthController;
 import ages.vstable.backend.controller.CompanyController;
-import ages.vstable.backend.controller.TransferDetailsController;
 import ages.vstable.backend.controller.TransferController;
+import ages.vstable.backend.controller.TransferDetailsController;
+import ages.vstable.backend.controller.UserController;
 import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
-import ages.vstable.backend.entity.enums.TransactionStatus;
-import ages.vstable.backend.controller.UserController;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.TransactionStatus;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.RequestLoggingFilter;
 import ages.vstable.backend.service.CompanyService;
 import ages.vstable.backend.service.TransferDetailsService;
 import ages.vstable.backend.service.TransferService;
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -38,17 +41,18 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -308,4 +312,55 @@ class SecurityChainIntegrationTest {
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
                         org.hamcrest.Matchers.containsString(HttpHeaders.AUTHORIZATION)));
     }
+    @Test
+    void requestLoggingCoversRealSecurityAndControllerResponsesWithoutChangingContracts() throws Exception {
+        String requestId = UUID.randomUUID().toString();
+        String adminToken = bearer(jwtTokenUtils.generateToken(admin));
+        String userToken = bearer(jwtTokenUtils.generateToken(user));
+        try (var capture = new LogCapture(
+                RequestLoggingFilter.class)) {
+            mockMvc.perform(get("/v1/companies").header("X-Request-ID", requestId))
+                    .andExpect(status().isUnauthorized()).andExpect(header().string("X-Request-ID", requestId));
+            mockMvc.perform(get("/v1/companies").header(HttpHeaders.AUTHORIZATION, userToken))
+                    .andExpect(status().isForbidden()).andExpect(header().exists("X-Request-ID"));
+            mockMvc.perform(get("/v1/companies").header(HttpHeaders.AUTHORIZATION, adminToken))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/v1/companies/invalid-id").header(HttpHeaders.AUTHORIZATION, adminToken))
+                    .andExpect(status().isBadRequest());
+            mockMvc.perform(get("/v1/companies/" + companyId).header(HttpHeaders.AUTHORIZATION, adminToken))
+                    .andExpect(status().isNotFound());
+            when(companyService.findAll()).thenThrow(new IllegalStateException("synthetic-private-data"));
+            mockMvc.perform(get("/v1/companies").header(HttpHeaders.AUTHORIZATION, adminToken))
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+            assertThat(capture.events()).hasSize(6);
+            assertThat(capture.events().stream()
+                    .map(event -> LogCapture.fields(event).get("status")))
+                    .containsExactly(401, 403, 200, 400, 404, 500);
+            assertThat(MDC.get("requestId")).isNull();
+        }
+    }
+
+    @Test
+    void corsAllowsAndExposesCorrelationHeaderAndStillRejectsUnknownOrigin() throws Exception {
+        mockMvc.perform(options("/v1/auth/login")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "content-type,x-request-id"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,
+                        org.hamcrest.Matchers.containsString("x-request-id")));
+        mockMvc.perform(post("/v1/auth/login")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                        .header("X-Request-ID", "00000000-0000-0000-0000-000000000001")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                        org.hamcrest.Matchers.containsString("X-Request-ID")));
+        mockMvc.perform(options("/v1/auth/login")
+                        .header(HttpHeaders.ORIGIN, "https://untrusted.example.test")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "x-request-id"))
+                .andExpect(status().isForbidden());
+    }
+
 }
