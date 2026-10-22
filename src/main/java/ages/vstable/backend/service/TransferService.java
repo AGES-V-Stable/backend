@@ -211,7 +211,7 @@ public class TransferService {
      * Regra única de composição da operação, compartilhada pela cotação de exibição e pela
      * cotação de confirmação. Toda combinação é validada antes de qualquer chamada à Avenia,
      * inclusive o provisionamento sob demanda da subconta.
-     *
+
      * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
      * registrado ({@code CompanyEntity.availableBalanceBrl}), e é dela que depende
      * {@code settlement_amount_brl} ao persistir a transação. Ver
@@ -529,18 +529,23 @@ public class TransferService {
     }
 
     private String feeCurrency(AveniaQuoteResponse response, String sourceCurrency) {
-        if (response.appliedFees() == null || response.appliedFees().isEmpty()) {
-            if (response.markupAmount() != null && response.markupAmount().signum() != 0) {
-                if (isBlank(response.markupCurrency())) {
-                    throw incompleteFinancialQuote();
-                }
-                if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
-                    throw differentFeeCurrency();
-                }
-            }
-            return sourceCurrency;
+        List<AveniaAppliedFee> appliedFees = response.appliedFees();
+        if (appliedFees != null && !appliedFees.isEmpty()) {
+            validateAppliedFees(appliedFees, sourceCurrency);
+            return appliedFees.getFirst().currency();
         }
-        validateAppliedFees(response.appliedFees(), sourceCurrency);
+
+        BigDecimal markupAmount = response.markupAmount();
+        if (markupAmount != null && markupAmount.signum() != 0) {
+            if (isBlank(response.markupCurrency())) {
+                throw incompleteFinancialQuote();
+            }
+            if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
+                throw differentFeeCurrency();
+            }
+            return response.markupCurrency();
+        }
+
         return sourceCurrency;
     }
 
