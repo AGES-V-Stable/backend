@@ -25,15 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class OnboardingService {
 
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-    private static final Pattern STRONG_PASSWORD_PATTERN = Pattern.compile("^(?=.*\\d)(?=.*[^a-zA-Z0-9]).{8,}$");
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]++@(?=[^@\\s]+\\.[^@\\s]+)[^@\\s]++$");
+    private static final Pattern STRONG_PASSWORD_PATTERN = Pattern.compile("^(?=[^\\d]*+\\d)(?=[a-zA-Z0-9]*+[^a-zA-Z0-9]).{8,}+$");
 
     private final UserRepository userRepository;
     private final AdministratorRepository administratorRepository;
