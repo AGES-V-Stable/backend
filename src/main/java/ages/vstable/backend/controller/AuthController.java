@@ -54,7 +54,7 @@ public class AuthController {
 
       UserDetails principal = (UserDetails) authenticate.getPrincipal();
 
-      if (twoFactorAuthService.requiresTwoFactorOnLogin(principal)){
+      if (twoFactorAuthService.requiresTwoFactorOnLogin(principal)) {
         LoginResponseDTO challengeResponse = twoFactorAuthService.createLoginChallenge(principal);
         return ResponseEntity.ok(challengeResponse);
       }
@@ -101,17 +101,29 @@ public class AuthController {
   }
 
   @PostMapping(path = "2fa/setup")
-  @Operation(summary = "Generates a new temporary TOTP secret for the authenticated account and returns the otpauth:// URI")
+  @Operation(summary = "Gera um novo segredo TOTP e retorna a URI otpauth://. Se o 2FA já estiver ativo, exige o código atual para autorizar a reconfiguração.")
   @ApiResponses({
       @ApiResponse(responseCode = "200", description = "2FA setup URI generated"),
-      @ApiResponse(responseCode = "401", description = "Not authenticated"),
+      @ApiResponse(responseCode = "401", description = "Not authenticated or invalid current TOTP code"),
   })
   public ResponseEntity<TwoFactorSetupResponseDTO> setupTwoFactor(
+      @RequestHeader(value = "X-Current-Totp", required = false) String currentTotpHeader,
+      @RequestBody(required = false) Map<String, String> body,
+      @RequestParam(required = false) String currentCode,
       @AuthenticationPrincipal UserDetails principal) {
     if (principal == null) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    return ResponseEntity.ok(twoFactorAuthService.setupTwoFactor(principal));
+    // Resolve o código caso venha pelo Header X-Current-Totp, pelo Body JSON ou por
+    // Query Param
+    String effectiveCode = currentTotpHeader;
+    if (effectiveCode == null || effectiveCode.isBlank()) {
+      effectiveCode = body != null ? body.get("currentTotpCode") : null;
+    }
+    if (effectiveCode == null || effectiveCode.isBlank()) {
+      effectiveCode = currentCode;
+    }
+    return ResponseEntity.ok(twoFactorAuthService.setupTwoFactor(principal, effectiveCode));
   }
 
   @PostMapping(path = "2fa/activate")
@@ -131,7 +143,10 @@ public class AuthController {
     }
     try {
       twoFactorAuthService.activateTwoFactor(principal, request.getCode());
-      return ResponseEntity.ok(Map.of("twoFactorEnabled", true, "message", "2FA activated successfully"));
+      return ResponseEntity.ok(Map.of(
+          "success", true,
+          "twoFactorEnabled", true,
+          "message", "2FA activated successfully"));
     } catch (AuthenticationException ex) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
           .body(Map.of("code", "INVALID_2FA_CODE", "message", "Invalid 2FA verification code"));

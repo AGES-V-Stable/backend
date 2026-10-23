@@ -40,12 +40,14 @@ public class UserController {
             response.setName(admin.getFullName());
             response.setEmail(admin.getEmail());
             response.setAccountType(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+            response.setTwoFactorEnabled(admin.getTwoFactorEnabled());
         } else if (authentication.getPrincipal() instanceof UserEntity user) {
             response.setId(user.getId());
             response.setName(user.getFullName());
             response.setEmail(user.getEmail());
             response.setCompanyId(user.getCompanyId());
             response.setAccountType(JwtTokenUtils.ACCOUNT_TYPE_USER);
+            response.setTwoFactorEnabled(user.getTwoFactorEnabled());
         } else {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }

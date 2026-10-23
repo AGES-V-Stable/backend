@@ -43,13 +43,26 @@ public class TwoFactorAuthService {
 
     @Transactional
     public TwoFactorSetupResponseDTO setupTwoFactor(UserDetails principal) {
-        if (isTwoFactorAlreadyEnabled(principal)) {
-            throw new ConflictException("2FA is already enabled for this account");
-        }
+        return setupTwoFactor(principal, null);
+    }
 
+    /**
+     * Inicia a configuração do 2FA.
+     * Se o 2FA já estiver ativo, exige o código TOTP atual (currentCode) para
+     * autorizar a geração
+     * de um novo QR Code (troca de aparelho).
+     */
+    @Transactional
+    public TwoFactorSetupResponseDTO setupTwoFactor(UserDetails principal, String currentCode) {
+        if (isTwoFactorAlreadyEnabled(principal)) {
+            if (currentCode == null || currentCode.isBlank()) {
+                throw new BadCredentialsException("O código TOTP atual é obrigatório para reconfigurar o 2FA");
+            }
+            String currentSecret = getSecret(principal);
+            verifyTotpWithSecurityChecks(principal.getUsername(), currentSecret, currentCode);
+        }
         String secret = totpService.generateSecret();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-
         if (principal instanceof UserEntity user) {
             user.setTwoFactorSecret(secret);
             user.setTwoFactorEnabled(false);
@@ -171,28 +184,30 @@ public class TwoFactorAuthService {
     }
 
     /**
-     * Valida o código TOTP do usuário autenticado antes de autorizar operações críticas
+     * Valida o código TOTP do usuário autenticado antes de autorizar operações
+     * críticas
      * (como criação de transferência na Avenia).
      * Reutiliza o controle de Anti-Replay e Lockout por força bruta da conta.
      */
 
     public void validateTransferTotp(UUID userId, String code) {
-        if(userId == null) {
+        if (userId == null) {
             throw new BadCredentialsException("User not authenticated");
         }
         UserEntity user = userRepository.findById(userId)
-            .orElseThrow(() -> new BadCredentialsException("Authenticated user not found"));
+                .orElseThrow(() -> new BadCredentialsException("Authenticated user not found"));
 
         assertNotLocked(user.getEmail());
 
-         if (!Boolean.TRUE.equals(user.getTwoFactorEnabled())
+        if (!Boolean.TRUE.equals(user.getTwoFactorEnabled())
                 || user.getTwoFactorSecret() == null
                 || user.getTwoFactorSecret().isBlank()) {
             throw new UnprocessableEntityException(
                     "Usuário não possui 2FA ativo; configure e ative o 2FA antes de realizar transferências");
-            }
+        }
         if (code == null || code.isBlank()) {
-            throw new UnprocessableEntityException("O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
+            throw new UnprocessableEntityException(
+                    "O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
         }
         verifyTotpWithSecurityChecks(user.getEmail(), user.getTwoFactorSecret(), code);
     }

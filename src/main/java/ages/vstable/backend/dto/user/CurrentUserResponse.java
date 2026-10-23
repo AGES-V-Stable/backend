@@ -14,6 +14,7 @@ public class CurrentUserResponse {
     /** Null for administrators, who do not belong to a company. */
     private UUID companyId;
     /** ADMIN or USER. */
+    private Boolean twoFactorEnabled; 
     private String accountType;
     private List<String> roles;
 }
