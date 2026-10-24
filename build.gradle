@@ -40,6 +40,8 @@ dependencies {
 	implementation 'org.springframework.security:spring-security-crypto'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
 	implementation 'org.apache.pdfbox:pdfbox:3.0.8'
+	implementation platform('software.amazon.awssdk:bom:2.55.14')
+	implementation 'software.amazon.awssdk:secretsmanager'
 
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 	implementation 'org.flywaydb:flyway-core'
@@ -85,6 +87,7 @@ abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
 		agentJar.from(configurations.mockitoAgent)
 	})
