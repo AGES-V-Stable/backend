@@ -39,3 +39,13 @@ out/
 ### Environment ###
 .env
 .env.*
+
+### Terraform ###
+/terraform/**/.terraform/
+/terraform/**/*.tfstate
+/terraform/**/*.tfstate.*
+/terraform/**/terraform.tfstate.d/
+/terraform/**/*.tfvars
+/terraform/**/*.tfvars.json
+/terraform/**/*.tfplan
+/terraform/**/crash.log
