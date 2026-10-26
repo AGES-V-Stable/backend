@@ -15,6 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  avenia-mcp-server:
+    name: Avenia MCP Server
+    uses: ./.github/workflows/avenia-mcp-server.yml
+
   deploy:
     if: github.event_name == 'push' || (github.event.release.prerelease == false && github.event.release.draft == false)
     runs-on: ubuntu-latest

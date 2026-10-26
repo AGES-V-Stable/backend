@@ -48,3 +48,6 @@ jobs:
           BLINDPAY_API_KEY: test-only-not-a-real-credential
           BLINDPAY_INSTANCE_ID: in_000000000000
           BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
+  avenia-mcp-server:
+    name: Avenia MCP Server
+    uses: ./.github/workflows/avenia-mcp-server.yml

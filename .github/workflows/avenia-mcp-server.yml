@@ -1,0 +1,168 @@
+name: Avenia MCP Server
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  # Para habilitar verificação periódica futura, descomente:
+  # schedule:
+  #   - cron: '17 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-guardrail:
+    name: Validate Avenia MCP Guardrails & Contract
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify local MCP guardrails (.codex/config.toml, AGENTS.md & AveniaClient)
+        shell: bash
+        run: |
+          set -euo pipefail
+          config='.codex/config.toml'
+          [[ -f "$config" ]] || { echo 'Missing .codex/config.toml' >&2; exit 1; }
+          grep -Fqx 'url = "https://mcp.avenia.io/mcp"' "$config"
+          grep -Fqx 'default_tools_approval_mode = "prompt"' "$config"
+
+          expected_tools=$(printf '%s\n' \
+            '  "avenia_list_guides",' \
+            '  "avenia_read_guide",' \
+            '  "avenia_list_flows",' \
+            '  "avenia_get_flow",' \
+            '  "avenia_list_endpoints",' \
+            '  "avenia_describe_endpoint",')
+          configured_tools=$(awk '
+            /^enabled_tools = \[/ { in_tools = 1; next }
+            in_tools && /^\]/ { in_tools = 0; exit }
+            in_tools { print }
+          ' "$config")
+          [[ "$configured_tools" == "$expected_tools" ]] || {
+            echo 'enabled_tools must contain only the six approved documentation tools' >&2
+            exit 1
+          }
+          ! grep -Fq 'avenia_get_public_key' "$config"
+
+          agents='AGENTS.md'
+          grep -Fq 'use somente o MCP público `https://mcp.avenia.io/mcp`' "$agents"
+          grep -Fq 'Não envie ao MCP credenciais, tokens, dados pessoais, documentos de compliance ou dados financeiros.' "$agents"
+          grep -Fq 'Não execute operações de negócio, snippets documentais nem `avenia_get_public_key`' "$agents"
+          grep -Fq 'Testes devem continuar usando stubs/mocks e nunca chamar MCP ou APIs reais.' "$agents"
+
+          client='src/main/java/ages/vstable/backend/external/avenia/AveniaClient.java'
+          for constant in \
+            'DOCUMENTS_URI = "/v2/documents/"' \
+            'KYC_LEVEL_1_URI = "/v2/kyc/new-level-1/api"' \
+            'SUB_ACCOUNTS_URI = "/v2/account/sub-accounts"' \
+            'KYC_ATTEMPTS_URI = "/v2/kyc/attempts/"' \
+            'QUOTE_URI = "/v2/account/quote/fixed-rate"' \
+            'TICKETS_URI = "/v2/account/tickets/"' \
+            'BENEFICIARIES_URI = "/v2/account/beneficiaries/"' \
+            'BRL_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/brl/"' \
+            'USD_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/usd/"' \
+            'EUR_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/eur/"' \
+            'SWIFT_BENEFICIARIES_URI = BENEFICIARIES_URI + "bank-accounts/swift/"' \
+            'WALLET_BENEFICIARIES_URI = BENEFICIARIES_URI + "wallets/"'; do
+            grep -Fq "$constant" "$client"
+          done
+          echo 'Local MCP guardrails and AveniaClient URI contracts are valid.'
+
+      - name: Validate backend Avenia contract against public MCP (Non-Blocking)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://mcp.avenia.io/mcp'
+          protocol='2025-11-25'
+          temp_dir="$(mktemp -d)"
+          session_file="$temp_dir/session_id"
+          response_file="$temp_dir/response"
+          headers_file="$temp_dir/headers"
+          : > "$session_file"
+
+          on_exit() {
+            local status=$?
+            trap - EXIT
+            if (( status != 0 )) && [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+              {
+                echo '### Avenia MCP Server (Non-Blocking)'
+                echo '- **Status:** A verificação online do MCP público não pôde ser concluída (indisponibilidade externa ou divergência de catálogo).'
+                echo '- **Divergências documentadas:** `avenia_create_ticket` (schema de input vs. variantes de output do `AveniaTicketRequest`) e endpoint `swift` ausente no catálogo MCP.'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            rm -rf "$temp_dir"
+            exit "$status"
+          }
+          trap on_exit EXIT
+
+          mcp_post() {
+            local payload="$1"
+            local -a headers=(
+              -H 'Content-Type: application/json'
+              -H 'Accept: application/json, text/event-stream'
+              -H "MCP-Protocol-Version: $protocol"
+            )
+            local sid
+            sid="$(<"$session_file")"
+            [[ -z "$sid" ]] || headers+=(-H "Mcp-Session-Id: $sid")
+
+            curl --fail --silent --show-error --max-time 15 \
+              -D "$headers_file" -o "$response_file" -X POST "$endpoint" \
+              "${headers[@]}" --data "$payload"
+
+            local new_sid
+            new_sid="$(awk 'BEGIN{IGNORECASE=1} /^Mcp-Session-Id:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers_file")"
+            [[ -z "$new_sid" ]] || printf '%s' "$new_sid" > "$session_file"
+
+            if ! jq -e '.jsonrpc == "2.0" and .error == null and .result != null' "$response_file" >/dev/null 2>&1; then
+              sed -n 's/^data:[[:space:]]*//p' "$response_file" | jq -sc 'last(.[] | select(.result != null))' > "$response_file.sse"
+              mv "$response_file.sse" "$response_file"
+              jq -e '.jsonrpc == "2.0" and .error == null and .result != null' "$response_file" >/dev/null
+            fi
+          }
+
+          # 1. Handshake (initialize)
+          mcp_post "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"$protocol\",\"capabilities\":{},\"clientInfo\":{\"name\":\"vstable-ci-guardrail\",\"version\":\"1.0.0\"}}}"
+          jq -e --arg p "$protocol" '.result.protocolVersion == $p and .result.serverInfo.name == "avenia-mcp"' "$response_file" >/dev/null
+
+          # 2. Allowlisted Read-Only Tools (tools/list)
+          mcp_post '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+          for tool in avenia_list_guides avenia_read_guide avenia_list_flows avenia_get_flow avenia_list_endpoints avenia_describe_endpoint; do
+            jq -e --arg name "$tool" '.result.tools[] | select(.name == $name and .annotations.readOnlyHint == true)' "$response_file" >/dev/null
+          done
+
+          # 3. Endpoint Catalog Drift Check (avenia_list_endpoints)
+          mcp_post '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"avenia_list_endpoints","arguments":{}}}'
+          jq -e '.result.isError != true' "$response_file" >/dev/null
+          catalog_dump="$(jq -r '[.result.content[]? | select(.type == "text") | .text] | join("\n")' "$response_file")"
+
+          for entry in \
+            'avenia_get_fixed_rate_quote|/v2/account/quote/fixed-rate' \
+            'avenia_create_ticket|/v2/account/tickets' \
+            'avenia_create_sub_account|/v2/account/sub-accounts' \
+            'avenia_upload_document|/v2/documents' \
+            'avenia_get_document_by_id|/v2/documents/{document-id}' \
+            'avenia_new_level_1_api|/v2/kyc/new-level-1/api' \
+            'avenia_get_attempts|/v2/kyc/attempts' \
+            'avenia_get_attempt_by_id|/v2/kyc/attempts/{attempt-id}' \
+            'avenia_create_beneficiary_brl_bank_account|/v2/account/beneficiaries/bank-accounts/brl' \
+            'avenia_create_beneficiary_usd_bank_account|/v2/account/beneficiaries/bank-accounts/usd' \
+            'avenia_create_beneficiary_eur_bank_account|/v2/account/beneficiaries/bank-accounts/eur' \
+            'avenia_create_beneficiary_wallet|/v2/account/beneficiaries/wallets'; do
+            name="${entry%%|*}"
+            path="${entry#*|}"
+            grep -Fq "$name" <<<"$catalog_dump" || { echo "Missing catalog tool: $name" >&2; exit 1; }
+            grep -Fq "$path" <<<"$catalog_dump" || { echo "Path drift for $name: expected $path" >&2; exit 1; }
+          done
+
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo '### Avenia MCP Server (Non-Blocking)'
+              echo '- **Status:** Handshake JSON-RPC (`2025-11-25`), allowlist de 6 tools (`readOnlyHint: true`) e catálogo de 12 endpoints do `AveniaClient` validados com sucesso.'
+              echo '- **Divergências conhecidas monitoradas:** schema de `avenia_create_ticket` e rota `swift` fora do catálogo MCP.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

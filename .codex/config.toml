@@ -1,0 +1,11 @@
+[mcp_servers.avenia]
+url = "https://mcp.avenia.io/mcp"
+enabled_tools = [
+  "avenia_list_guides",
+  "avenia_read_guide",
+  "avenia_list_flows",
+  "avenia_get_flow",
+  "avenia_list_endpoints",
+  "avenia_describe_endpoint",
+]
+default_tools_approval_mode = "prompt"

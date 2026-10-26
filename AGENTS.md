@@ -32,6 +32,8 @@ Instruções para agentes que alteram o backend V-Stable. Use este arquivo como 
 
 ## Validação
 
+`.codex/config.toml` e o workflow não-bloqueante `avenia-mcp-server.yml` validam os guardrails do MCP público sem substituir os testes mockados locais.
+
 Para alterações Java, execute os testes e o build localmente quando possível:
 
 ```bash
