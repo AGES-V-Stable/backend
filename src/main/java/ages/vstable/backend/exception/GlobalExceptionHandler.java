@@ -1,5 +1,8 @@
 package ages.vstable.backend.exception;
 
+import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
+import ages.vstable.backend.logging.OperationalLog;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -27,6 +30,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
+        boolean invalidOnboardingEmail = ex.getTarget() instanceof OnboardingRequestDTO
+                && ex.getBindingResult().getFieldErrors("email").stream()
+                        .anyMatch(error -> error.getCodes() != null
+                                && java.util.Arrays.stream(error.getCodes())
+                                        .anyMatch(code -> code.equals("Email") || code.startsWith("Email.")));
+        if (invalidOnboardingEmail) {
+            return ResponseEntity
+                    .status(HttpStatus.UNPROCESSABLE_CONTENT)
+                    .body(Map.of("code", "UNPROCESSABLE_CONTENT", "message", "Email has an invalid format"));
+        }
+
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
@@ -81,8 +95,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UnprocessableEntityException.class)
     public ResponseEntity<Map<String, String>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity
-                .status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(Map.of("code", "UNPROCESSABLE_ENTITY", "message", ex.getMessage()));
+                .status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(Map.of("code", "UNPROCESSABLE_CONTENT", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
@@ -144,6 +158,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        OperationalLog.unexpected(ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("code", "INTERNAL_ERROR", "message", "Internal error"));

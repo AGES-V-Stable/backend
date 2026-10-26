@@ -1,5 +1,6 @@
 package ages.vstable.backend;
 
+import ages.vstable.backend.service.SyntheticDataSeeder;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.BaseTransactionEntity;
@@ -83,7 +84,7 @@ class DevelopmentDataSeederTest {
         });
 
         // Act
-        seeder(password).run();
+        seeder().seed(password, true);
 
         // Assert
         verify(userRepository).existsByEmail("dev.user@example.test");
@@ -206,7 +207,7 @@ class DevelopmentDataSeederTest {
         when(userRepository.existsByEmail("dev.user@example.test")).thenReturn(true);
 
         // Act
-        seeder("").run();
+        seeder().seed("", true);
 
         // Assert
         verify(userRepository).existsByEmail("dev.user@example.test");
@@ -215,11 +216,39 @@ class DevelopmentDataSeederTest {
                 beneficiaryRepository, transactionRepository, passwordEncoder);
     }
 
+    @Test
+    void stagingData_doesNotCreateFixedDevelopmentAdministrator() {
+        // Arrange
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            CompanyEntity company = invocation.getArgument(0);
+            company.setId(UUID.randomUUID());
+            return company;
+        });
+        when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            UserEntity user = invocation.getArgument(0);
+            user.setId(UUID.randomUUID());
+            return user;
+        });
+        when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            BeneficiaryEntity beneficiary = invocation.getArgument(0);
+            beneficiary.setId(UUID.randomUUID());
+            return beneficiary;
+        });
+
+        // Act
+        seeder().seed("staging-demo-password", false);
+
+        // Assert
+        verifyNoInteractions(administratorRepository);
+        verify(userRepository).saveAndFlush(any());
+        verify(transactionRepository, times(3)).save(any());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"", " ", "\t"})
     void run_missingPassword_failsBeforeWriting(String password) {
         // Act / Assert
-        assertThatThrownBy(() -> seeder(password).run())
+        assertThatThrownBy(() -> seeder().seed(password, true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("DEV_SEED_PASSWORD");
         verify(userRepository).existsByEmail("dev.user@example.test");
@@ -245,14 +274,14 @@ class DevelopmentDataSeederTest {
                 .run(context -> assertThat(context).hasSingleBean(DevelopmentDataSeeder.class));
     }
 
-    private DevelopmentDataSeeder seeder(String password) {
-        return new DevelopmentDataSeeder(companyRepository, userRepository, administratorRepository,
-                kycRepository, beneficiaryRepository, transactionRepository, passwordEncoder, password);
+    private SyntheticDataSeeder seeder() {
+        return new SyntheticDataSeeder(companyRepository, userRepository, administratorRepository,
+                kycRepository, beneficiaryRepository, transactionRepository, passwordEncoder);
     }
 
     private ApplicationContextRunner contextRunner() {
         return new ApplicationContextRunner()
-                .withUserConfiguration(DevelopmentDataSeeder.class)
+                .withUserConfiguration(DevelopmentDataSeeder.class, SyntheticDataSeeder.class)
                 .withBean(CompanyRepository.class, () -> companyRepository)
                 .withBean(UserRepository.class, () -> userRepository)
                 .withBean(AdministratorRepository.class, () -> administratorRepository)

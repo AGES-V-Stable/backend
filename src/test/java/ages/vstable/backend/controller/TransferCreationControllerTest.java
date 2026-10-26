@@ -340,7 +340,7 @@ class TransferCreationControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_ENTITY"));
+                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_CONTENT"));
     }
 
     @Test

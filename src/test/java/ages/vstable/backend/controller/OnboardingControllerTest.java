@@ -114,6 +114,18 @@ class OnboardingControllerTest {
     }
 
     @Test
+    void post_invalidEmail_returns422() throws Exception {
+        String payload = validPayload().replace("joao@example.com", "email-invalido");
+
+        mockMvc.perform(post("/v1/onboarding")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_CONTENT"))
+                .andExpect(jsonPath("$.message").value("Email has an invalid format"));
+    }
+
+    @Test
     void post_emailOrCnpjAlreadyRegistered_returns409() throws Exception {
         when(onboardingService.performOnboarding(any()))
                 .thenThrow(new ConflictException("Email already registered"));

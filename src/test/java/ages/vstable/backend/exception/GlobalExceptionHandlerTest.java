@@ -99,7 +99,7 @@ class GlobalExceptionHandlerTest {
     void handleUnprocessableEntity_returns422() {
         UnprocessableEntityException ex = new UnprocessableEntityException("Unprocessable");
         ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
-        assertThat(response.getBody()).containsEntry("code", "UNPROCESSABLE_ENTITY");
+        assertThat(response.getBody()).containsEntry("code", "UNPROCESSABLE_CONTENT");
         assertThat(response.getStatusCode().value()).isEqualTo(422);
         assertThat(response.getBody()).containsEntry("message", "Unprocessable");
     }

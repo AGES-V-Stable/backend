@@ -1,5 +1,7 @@
 package ages.vstable.backend.service.quote;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.quote.*;
 import ages.vstable.backend.entity.*;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
@@ -49,6 +51,7 @@ public class QuoteOrchestratorService {
     }
 
     public QuoteResponse quote(UserEntity currentUser, QuoteRequest request) {
+        long startedAt = System.nanoTime();
         CompanyEntity company = companyRepository.findById(currentUser.getCompanyId())
                 .orElseThrow(() -> new NotFoundException("Company not found"));
         BeneficiaryEntity beneficiary = beneficiaryRepository
@@ -113,6 +116,9 @@ public class QuoteOrchestratorService {
                 .orElse(null);
         quoteRequest.setStatus(bestOffer == null ? "FAILED" : failures == 0 ? "COMPLETED" : "PARTIAL");
         quoteRequestRepository.save(quoteRequest);
+        long timeouts = results.stream().filter(call -> "TIMEOUT".equals(call.failureCode())).count();
+        OperationalLog.quoteAggregation(bestOffer == null ? "failure" : failures == 0 ? "success" : "partial",
+                startedAt, timeouts);
         if (bestOffer == null) {
             throw new UnprocessableEntityException("No quote is available for the requested operation");
         }

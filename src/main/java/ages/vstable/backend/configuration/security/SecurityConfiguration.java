@@ -113,10 +113,10 @@ public class SecurityConfiguration {
                 .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-                HttpHeaders.ACCEPT, "X-Requested-With"));
+                HttpHeaders.ACCEPT, "X-Requested-With", "X-Request-ID"));
         // The login token is returned in the Authorization response header; the receipt download
         // name comes from Content-Disposition, which a cross-origin frontend can only read if exposed
-        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION));
+        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION, "X-Request-ID"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

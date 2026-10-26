@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.dto.compliance.KycSubmitResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
@@ -14,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,11 +40,15 @@ public class ComplianceKycService {
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
 
     public Optional<KycSubmitResponse> finalizar(UUID kycVerificationId, UUID currentUserId, KycSubmitRequest request) {
-        return aveniaKycVerificationRepository.findById(kycVerificationId)
+        Optional<KycSubmitResponse> result = aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
                     KycOwnership.verify(kyc, currentUserId);
                     return processar(kyc, request);
                 });
+        OperationalLog.milestone("kyc.submission.completed", result
+                .map(value -> value.getStatus().name().toLowerCase(Locale.ROOT))
+                .orElse("unavailable"));
+        return result;
     }
 
     private KycSubmitResponse processar(AveniaKycVerificationEntity kyc, KycSubmitRequest request) {

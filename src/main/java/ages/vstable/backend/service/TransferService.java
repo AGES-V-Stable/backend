@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
@@ -154,7 +156,9 @@ public class TransferService {
 
         persistTransaction(beneficiary, request, result, status, currentUserId);
 
-        return new CreateTransferResponse(status);
+        CreateTransferResponse response = new CreateTransferResponse(status);
+        OperationalLog.milestone("transfer.creation.completed", "success");
+        return response;
     }
 
     /**
@@ -236,9 +240,8 @@ public class TransferService {
      * cotação de confirmação. Toda combinação é validada antes de qualquer chamada
      * à Avenia,
      * inclusive o provisionamento sob demanda da subconta.
-     *
-     * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem
-     * saldo
+
+     * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
      * registrado ({@code CompanyEntity.availableBalanceBrl}), e é dela que depende
      * {@code settlement_amount_brl} ao persistir a transação. Ver
      * docs/transfers-persist-transaction.md seção 5.
@@ -569,18 +572,23 @@ public class TransferService {
     }
 
     private String feeCurrency(AveniaQuoteResponse response, String sourceCurrency) {
-        if (response.appliedFees() == null || response.appliedFees().isEmpty()) {
-            if (response.markupAmount() != null && response.markupAmount().signum() != 0) {
-                if (isBlank(response.markupCurrency())) {
-                    throw incompleteFinancialQuote();
-                }
-                if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
-                    throw differentFeeCurrency();
-                }
-            }
-            return sourceCurrency;
+        List<AveniaAppliedFee> appliedFees = response.appliedFees();
+        if (appliedFees != null && !appliedFees.isEmpty()) {
+            validateAppliedFees(appliedFees, sourceCurrency);
+            return appliedFees.getFirst().currency();
         }
-        validateAppliedFees(response.appliedFees(), sourceCurrency);
+
+        BigDecimal markupAmount = response.markupAmount();
+        if (markupAmount != null && markupAmount.signum() != 0) {
+            if (isBlank(response.markupCurrency())) {
+                throw incompleteFinancialQuote();
+            }
+            if (!response.markupCurrency().equalsIgnoreCase(sourceCurrency)) {
+                throw differentFeeCurrency();
+            }
+            return response.markupCurrency();
+        }
+
         return sourceCurrency;
     }
 
