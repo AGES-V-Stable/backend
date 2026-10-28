@@ -76,6 +76,9 @@ public class TwoFactorAuthService {
         } else {
             throw new IllegalArgumentException("Unsupported principal type");
         }
+        failedAttemptsByAccount.remove(principal.getUsername());
+        lockedUntilByAccount.remove(principal.getUsername());
+        lastUsedCodeByAccount.remove(principal.getUsername());
         String otpauthUri = totpService.buildOtpAuthUri(principal.getUsername(), secret);
         return TwoFactorSetupResponseDTO.builder()
                 .otpauthUri(otpauthUri)

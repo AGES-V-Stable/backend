@@ -76,6 +76,15 @@ blindpay:
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
 
+ai:
+  support:
+    provider: ${AI_SUPPORT_PROVIDER:auto}
+    api-key: ${AI_SUPPORT_API_KEY:}
+    gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-2.5-flash}
+    gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    deepseek-model: ${AI_SUPPORT_DEEPSEEK_MODEL:deepseek-chat}
+    deepseek-base-url: ${AI_SUPPORT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+
 ---
 spring:
   config:

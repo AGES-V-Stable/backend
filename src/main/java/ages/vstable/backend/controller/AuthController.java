@@ -147,6 +147,9 @@ public class AuthController {
           "success", true,
           "twoFactorEnabled", true,
           "message", "2FA activated successfully"));
+    } catch (LockedException ex) {
+      return ResponseEntity.status(HttpStatus.LOCKED)
+          .body(Map.of("code", "ACCOUNT_LOCKED", "message", ex.getMessage()));
     } catch (AuthenticationException ex) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
           .body(Map.of("code", "INVALID_2FA_CODE", "message", "Invalid 2FA verification code"));
