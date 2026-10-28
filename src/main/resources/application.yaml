@@ -102,7 +102,7 @@ transfers:
 
 ai:
   support:
-    provider: ${AI_SUPPORT_PROVIDER:auto}
+    provider: ${AI_SUPPORT_PROVIDER:gemini}
     api-key: ${AI_SUPPORT_API_KEY:}
     gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-2.5-flash}
     gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
