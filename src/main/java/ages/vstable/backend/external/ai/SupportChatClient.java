@@ -4,8 +4,10 @@ import ages.vstable.backend.dto.support.SupportChatMessageDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,7 +34,10 @@ public class SupportChatClient implements SupportChatGateway {
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        this.restClient = restClientBuilder.build();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(java.time.Duration.ofSeconds(5));
+        requestFactory.setReadTimeout(java.time.Duration.ofSeconds(20));
+        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
     }
 
     @Override
@@ -82,8 +87,6 @@ public class SupportChatClient implements SupportChatGateway {
             String userMessage
     ) {
         String baseUrl = trimTrailingSlash(properties.getGeminiBaseUrl());
-        String model = properties.getGeminiModel();
-        URI uri = URI.create(baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + apiKey);
 
         List<Map<String, Object>> contents = new ArrayList<>();
         boolean hasUserStarted = false;
@@ -135,24 +138,57 @@ public class SupportChatClient implements SupportChatGateway {
         ));
         payload.put("contents", contents);
         payload.put("generationConfig", Map.of(
-                "temperature", 0.25,
-                "maxOutputTokens", 2048
+                "temperature", 0.2,
+                "maxOutputTokens", 500
         ));
 
-        String rawResponse = restClient.post()
-                .uri(uri)
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.APPLICATION_JSON)
-                .body(objectMapper.writeValueAsString(payload))
-                .retrieve()
-                .body(String.class);
-
-        if (rawResponse == null || rawResponse.isBlank()) {
-            return null;
+        List<String> candidateModels = new ArrayList<>();
+        if (properties.getGeminiModel() != null && !properties.getGeminiModel().isBlank()) {
+            candidateModels.add(properties.getGeminiModel().trim());
         }
-        JsonNode root = objectMapper.readTree(rawResponse);
-        JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-        return textNode.isMissingNode() ? null : textNode.asText();
+        for (String fallback : List.of("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash")) {
+            if (!candidateModels.contains(fallback)) {
+                candidateModels.add(fallback);
+            }
+        }
+
+        for (String model : candidateModels) {
+            try {
+                String cleanModel = model.startsWith("models/") ? model.substring(7) : model;
+                URI uri = URI.create(baseUrl + "/v1beta/models/" + cleanModel + ":generateContent?key=" + apiKey);
+                log.info("Tentando chamada ao modelo: {}", cleanModel);
+                byte[] responseBytes = restClient.post()
+                        .uri(uri)
+                        .header("x-goog-api-key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON, MediaType.ALL)
+                        .body(objectMapper.writeValueAsString(payload))
+                        .retrieve()
+                        .body(byte[].class);
+
+                if (responseBytes == null || responseBytes.length == 0) {
+                    continue;
+                }
+                String rawResponse = new String(responseBytes, java.nio.charset.StandardCharsets.UTF_8);
+                JsonNode root = objectMapper.readTree(rawResponse);
+                JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+                if (!textNode.isMissingNode() && !textNode.asText().isBlank()) {
+                    return textNode.asText();
+                }
+            } catch (RestClientResponseException ex) {
+                int status = ex.getStatusCode().value();
+                if (status == 503 || status == 404 || status == 429) {
+                    log.warn("Modelo Gemini '{}' indisponível ({}); tentando próximo modelo...",
+                            model, status);
+                    continue;
+                }
+                throw ex;
+            } catch (org.springframework.web.client.RestClientException ex) {
+                log.warn("Falha de rede com modelo Gemini '{}' ({}); tentando próximo...",
+                        model, ex.getClass().getSimpleName());
+            }
+        }
+        return null;
     }
 
     private String callDeepSeekCompatible(
