@@ -93,9 +93,9 @@ O perfil `lambda` falha na inicialização se o ARN ou as três chaves obrigató
 (`DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`) estiverem ausentes. O Flyway aplica as
 migrations no startup e o Hibernate valida o schema. A conexão JDBC do perfil
 `lambda` exige TLS com validação do certificado e do hostname do RDS Proxy usando
-o truststore da JVM. Publique primeiro em staging e teste login, JWT válido/inválido,
-CORS e o download de comprovante PDF pela URL
-do API Gateway antes de encaminhar tráfego de produção.
+o bundle global de CA do RDS incluído na imagem. Publique primeiro em staging e
+teste login, JWT válido/inválido, CORS e o download de comprovante PDF pela URL do
+API Gateway antes de encaminhar tráfego de produção.
 
 ## 3. Dados de teste (perfil dev)
 

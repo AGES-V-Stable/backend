@@ -90,6 +90,6 @@ spring:
     activate:
       on-profile: lambda
   datasource:
-    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_SCHEMA}?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_SCHEMA}?sslmode=verify-full&sslrootcert=/usr/local/share/ca-certificates/rds-global-bundle.pem
     hikari:
       maximum-pool-size: 2
