@@ -19,6 +19,6 @@ public class SupportChatMessageDTO {
     private String role;
 
     @NotBlank(message = "Content is required")
-    @Size(max = 1000, message = "Message content must have at most 1000 characters")
+    @Size(max = 4000, message = "Message content must have at most 4000 characters")
     private String content;
 }

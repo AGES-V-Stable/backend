@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "ai.support")
 public class SupportChatProperties {
 
-    private String provider = "auto";
+    private String provider = "gemini";
     private String apiKey = "";
     private String geminiModel = "gemini-2.5-flash";
     private String geminiBaseUrl = "https://generativelanguage.googleapis.com";
