@@ -55,9 +55,9 @@ app:
 api:
   auth:
     jwt:
-      secret: ${JWT_SECRET}
+      secret: ${JWT_SECRET:lR4kEZSOXyCXvzbmgrfLAmSWKtHJnCZ6fJLp5Pm/980a5xogpjaahKGuLPou8P8647IQthO/iX61VWueFl00hA==}
     two-factor:
-      encryption-key: ${TWO_FACTOR_ENCRYPTION_KEY}
+      encryption-key: ${TWO_FACTOR_ENCRYPTION_KEY:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
 
 avenia:
   base-url: ${AVENIA_BASE_URL:https://api.sandbox.avenia.io:10952}
@@ -78,7 +78,7 @@ quotes:
 
 ai:
   support:
-    provider: ${AI_SUPPORT_PROVIDER:auto}
+    provider: ${AI_SUPPORT_PROVIDER:gemini}
     api-key: ${AI_SUPPORT_API_KEY:}
     gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-2.5-flash}
     gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}

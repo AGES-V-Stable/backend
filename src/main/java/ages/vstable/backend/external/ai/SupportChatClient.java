@@ -42,27 +42,30 @@ public class SupportChatClient implements SupportChatGateway {
             String userMessage,
             String userContextSummary
     ) {
-        String apiKey = properties.getApiKey() != null ? properties.getApiKey().trim() : "";
+        String rawKey = properties.getApiKey() != null ? properties.getApiKey().trim() : "";
+        String apiKey = rawKey.replaceAll("^[\"']+|[\"']+$", "").trim();
         String provider = properties.getProvider() != null
                 ? properties.getProvider().trim().toLowerCase(Locale.ROOT)
-                : "auto";
+                : "gemini";
 
+        if (apiKey.isEmpty()) {
+            log.warn("AI_SUPPORT_API_KEY não configurada; usando assistente local da V-Stable");
+        }
         if (!apiKey.isEmpty() && !"local".equals(provider)) {
+            boolean useDeepSeek = "deepseek".equals(provider) || ("auto".equals(provider) && apiKey.startsWith("sk-"));
+            String activeProvider = useDeepSeek ? "deepseek" : "gemini";
             try {
-                if ("deepseek".equals(provider) || ("auto".equals(provider) && !apiKey.startsWith("AIza"))) {
-                    String reply = callDeepSeekCompatible(apiKey, systemPrompt, history, userMessage);
-                    if (reply != null && !reply.isBlank()) {
-                        return new SupportChatGatewayResult(reply.trim(), "deepseek");
-                    }
-                } else {
-                    String reply = callGemini(apiKey, systemPrompt, history, userMessage);
-                    if (reply != null && !reply.isBlank()) {
-                        return new SupportChatGatewayResult(reply.trim(), "gemini");
-                    }
+                log.info("Chamando provedor de IA '{}'...", activeProvider);
+                String reply = useDeepSeek
+                        ? callDeepSeekCompatible(apiKey, systemPrompt, history, userMessage)
+                        : callGemini(apiKey, systemPrompt, history, userMessage);
+
+                if (reply != null && !reply.isBlank()) {
+                    return new SupportChatGatewayResult(reply.trim(), activeProvider);
                 }
             } catch (Exception ex) {
-                log.warn("External AI provider '{}' unavailable ({}); falling back to built-in V-Stable assistant",
-                        provider, ex.getClass().getSimpleName());
+                log.warn("External AI provider '{}' unavailable ({}): {}",
+                        activeProvider, ex.getClass().getSimpleName(), ex.getMessage());
             }
         }
 
@@ -83,22 +86,48 @@ public class SupportChatClient implements SupportChatGateway {
         URI uri = URI.create(baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + apiKey);
 
         List<Map<String, Object>> contents = new ArrayList<>();
+        boolean hasUserStarted = false;
+        String lastRole = null;
         if (history != null) {
             for (SupportChatMessageDTO msg : history) {
                 if (msg == null || msg.getContent() == null || msg.getContent().isBlank()) {
                     continue;
                 }
-                String geminiRole = "assistant".equalsIgnoreCase(msg.getRole()) ? "model" : "user";
+                String role = "assistant".equalsIgnoreCase(msg.getRole()) ? "model" : "user";
+                // Gemini requires the conversation history to start with a "user" turn
+                if (!hasUserStarted) {
+                    if (!"user".equals(role)) {
+                        continue;
+                    }
+                    hasUserStarted = true;
+                }
+                // Gemini requires roles to alternate
+                if (role.equals(lastRole)) {
+                    continue;
+                }
                 contents.add(Map.of(
-                        "role", geminiRole,
+                        "role", role,
                         "parts", List.of(Map.of("text", msg.getContent().trim()))
                 ));
+                lastRole = role;
             }
         }
-        contents.add(Map.of(
-                "role", "user",
-                "parts", List.of(Map.of("text", userMessage))
-        ));
+        if (!"user".equals(lastRole)) {
+            contents.add(Map.of(
+                    "role", "user",
+                    "parts", List.of(Map.of("text", userMessage))
+            ));
+        } else {
+            // If the last history turn was already "user", combine or replace to maintain alternation
+            contents.add(Map.of(
+                    "role", "model",
+                    "parts", List.of(Map.of("text", "Entendido."))
+            ));
+            contents.add(Map.of(
+                    "role", "user",
+                    "parts", List.of(Map.of("text", userMessage))
+            ));
+        }
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("systemInstruction", Map.of(
@@ -107,7 +136,7 @@ public class SupportChatClient implements SupportChatGateway {
         payload.put("contents", contents);
         payload.put("generationConfig", Map.of(
                 "temperature", 0.25,
-                "maxOutputTokens", 600
+                "maxOutputTokens", 2048
         ));
 
         String rawResponse = restClient.post()
@@ -174,15 +203,77 @@ public class SupportChatClient implements SupportChatGateway {
     private String generateBuiltInKnowledgeReply(String userMessage, String userContextSummary) {
         String normalized = normalize(userMessage);
 
-        if (containsAny(normalized, "colombia", "cop", "bloquead", "pais", "moeda", "corredor", "swift")) {
+        if (containsAny(normalized, "avenia", "blindpay", "provedor", "provedores", "orquestrador", "parceiro")) {
+            return """
+                    A V-Stable opera com uma arquitetura **multi-provedor de liquidez institucional** combinando **Avenia** e **BlindPay**:
+
+                    1. **Avenia (On-ramp e Liquidação Cripto):**
+                       - Entrada de recursos via **PIX em BRL** no Brasil;
+                       - Emissão e trânsito em stablecoins: **USDC, USDT, BRLA e EURC**;
+                       - Suporte a transferências on-chain diretas para **Wallet Cripto** em múltiplas blockchains (*Polygon, Celo, Ethereum, Gnosis, Moonbeam, Tron e Base*) e liquidação bancária via SWIFT.
+                    2. **BlindPay (Off-ramp Bancário em Moeda Local):**
+                       - Liquidação em moeda fiduciária direto na conta bancária do beneficiário em parceiros de primeira linha (JPMorgan, Citi, Bitso):
+                       - **EUA (USD):** Trilhos ACH, Wire e RTP (tempo real);
+                       - **Europa (EUR):** Trilho SEPA e SEPA Instant;
+                       - **Reino Unido (GBP):** Trilho Faster Payments;
+                       - **América Latina:** México (**SPEI / MXN**) e Argentina (**CVU/CBU/ALIAS / ARS**);
+                       - **Global:** SWIFT para mais de 16 moedas globais.
+                    3. **Orquestrador de Melhores Cotações (`QuoteOrchestratorService`):**
+                       - Ao solicitar uma cotação, a plataforma consulta ambos os provedores em paralelo e entrega automaticamente a **Melhor Cotação (Best Execution)** com menores taxas e spread.
+
+                    %s""".formatted(userContextSummary).trim();
+        }
+
+        if (containsAny(normalized, "moeda", "moedas", "pais", "paises", "mexico", "spei", "argentina", "ars", "cbu", "cvu", "dolar", "euro", "libra", "gbp")) {
+            return """
+                    A V-Stable conecta sua empresa a dezenas de corredores internacionais via Conta Bancária e Carteira Cripto:
+
+                    1. **América do Norte e Europa (Trilhos Locais de Baixo Custo):**
+                       - **Estados Unidos (USD):** Trilhos `ACH` (1-2 dias úteis), `Wire` (mesmo dia) e `RTP` (em minutos);
+                       - **Zona do Euro (EUR):** Trilho `SEPA` e `SEPA Instant` para todos os países da União Europeia;
+                       - **Reino Unido (GBP):** Trilho `Faster Payments`.
+                    2. **América Latina (via BlindPay / Bitso):**
+                       - **México (MXN):** Liquidação instantânea via trilho `SPEI` utilizando a chave CLABE do fornecedor;
+                       - **Argentina (ARS):** Transferências locais para contas bancárias argentinas com `CVU`, `CBU` ou `ALIAS`;
+                       - **Brasil (BRL):** Depósitos e retiradas via `PIX`.
+                    3. **Grade Global SWIFT (16+ Moedas Internacionais):**
+                       - `USD`, `EUR`, `GBP`, `CAD` (Canadá), `AUD` (Austrália), `CHF` (Suíça), `JPY` (Japão), `CNY` (China), `HKD` (Hong Kong), `SGD` (Cingapura), `NZD` (Nova Zelândia), `THB` (Tailândia), `PHP` (Filipinas), `INR` (Índia), `KRW` (Coreia do Sul) e `IDR` (Indonésia).
+                    4. **Qualquer outro país via Wallet Cripto:**
+                       - Se o fornecedor estiver em jurisdição sem trilho bancário direto (como Colômbia), é possível enviar em **USDC** ou **USDT** diretamente para uma carteira Web3.
+
+                    %s""".formatted(userContextSummary).trim();
+        }
+
+        if (containsAny(normalized, "colombia", "cop", "bloquead", "corredor")) {
             return """
                     As transações bancárias diretas em **COP (Peso Colombiano)** estão indisponíveis no momento por regras de corredor de liquidação e compliance da V-Stable:
 
-                    1. **Moedas habilitadas via Conta Bancária (SWIFT / Wire / SEPA):** No momento, o trilho bancário internacional suporta **USD, EUR, GBP, CAD, AUD, CHF, JPY, CNY, HKD, SGD, NZD, THB, PHP, INR, KRW e IDR** (além de **BRL** via PIX). O Peso Colombiano (`COP`) ainda não faz parte da grade SWIFT local.
-                    2. **Políticas de Compliance e PLD-FT (GAFI/OFAC):** Corredores ou instituições financeiras fora da grade homologada com nossos parceiros liquidantes (Avenia e BlindPay) são bloqueados preventivamente.
-                    3. **Como enviar para um fornecedor na Colômbia hoje:**
-                       - **Opção 1 (Wallet Cripto):** Cadastre o beneficiário na aba **Beneficiários > Novo Beneficiário** escolhendo o método **Wallet Cripto** (redes *Polygon, Celo, Ethereum, Gnosis, Moonbeam ou Tron*) para liquidar em stablecoin (USDC/USDT).
-                       - **Opção 2 (Conta Internacional em USD/EUR):** Caso o fornecedor colombiano possua conta bancária internacional que receba em **USD** ou **EUR** via SWIFT/ACH, basta cadastrá-lo com a moeda `USD` ou `EUR`.
+                    1. **Por que o trilho bancário local em COP está indisponível?**
+                       - O conector de liquidação local `ACH COP` (via Bitso/BlindPay) está em fase final de homologação técnica e regulatória.
+                       - O trilho SWIFT padrão da V-Stable (`BeneficiaryValidator`) atende a lista oficial de 16 moedas globais (onde o COP não faz parte da grade direta).
+                    2. **Como enviar dinheiro para um fornecedor ou parceiro na Colômbia hoje:**
+                       - **Opção 1 (Wallet Cripto - Recomendada):** Cadastre o beneficiário em **Beneficiários > Cadastrar beneficiário** com o método **Wallet Cripto** em redes como **Polygon, Celo, Ethereum, Gnosis, Moonbeam ou Tron** para liquidar em **USDC** ou **USDT** sem barreiras bancárias locais.
+                       - **Opção 2 (Conta Internacional em USD/EUR):** Se o fornecedor colombiano possuir conta internacional capaz de receber em **USD** (ACH/Wire/SWIFT) ou **EUR** (SEPA/SWIFT), cadastre-o informando a moeda `USD` ou `EUR`.
+
+                    %s""".formatted(userContextSummary).trim();
+        }
+
+        if (containsAny(normalized, "rede", "blockchain", "polygon", "celo", "ethereum", "tron", "gnosis", "moonbeam", "base", "token", "usdc", "usdt", "brla", "eurc")) {
+            return """
+                    A V-Stable suporta emissão, trânsito e pagamento nas seguintes **redes blockchain e stablecoins**:
+
+                    1. **Stablecoins Suportadas:**
+                       - **USDC** (USD Coin - dólar digital auditado);
+                       - **USDT** (Tether USD);
+                       - **BRLA** (Real brasileiro tokenizado);
+                       - **EURC** (Euro digital).
+                    2. **Redes Blockchain Homologadas:**
+                       - **Polygon (PoS):** Baixíssimo custo de gás e liquidação em segundos (ideal para transferências comerciais frequentes);
+                       - **Celo:** Foco em pagamentos ágeis para dispositivos móveis e taxas mínimas;
+                       - **Base (Layer 2 Coinbase):** Alta performance e segurança ancorada na Ethereum;
+                       - **Ethereum (Mainnet):** Camada de liquidação institucional de alta segurança;
+                       - **Tron:** Ampla liquidação de USDT;
+                       - **Gnosis & Moonbeam:** Interoperabilidade e contratos inteligentes EVM.
 
                     %s""".formatted(userContextSummary).trim();
         }
