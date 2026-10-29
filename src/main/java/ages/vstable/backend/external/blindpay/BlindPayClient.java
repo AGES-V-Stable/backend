@@ -11,15 +11,27 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerCreatedRespons
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayErrorResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayEvmPayoutRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinQuoteResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiSubmitResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayUpdateCustomerRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayUploadResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -46,9 +58,13 @@ public class BlindPayClient implements BlindPayGateway {
     private static final String INSTANCE_PATH = "/v1/instances/{instanceId}";
     private static final String CUSTOMERS_PATH = INSTANCE_PATH + "/customers";
     private static final String CUSTOMER_PATH = CUSTOMERS_PATH + "/{customerId}";
+    private static final String CUSTOMER_RFI_PATH = CUSTOMER_PATH + "/rfi";
+    private static final String TOS_PATH = "/v1/e/instances/{instanceId}/tos";
+    private static final String UPLOAD_PATH = "/v1/upload";
     private static final String BANK_ACCOUNTS_PATH = CUSTOMER_PATH + "/bank-accounts";
     private static final String BANK_ACCOUNT_PATH = BANK_ACCOUNTS_PATH + "/{bankAccountId}";
     private static final String WALLETS_PATH = CUSTOMER_PATH + "/wallets";
+    private static final String WALLET_PATH = WALLETS_PATH + "/{walletId}";
     private static final String QUOTES_PATH = INSTANCE_PATH + "/quotes";
     private static final String EVM_PAYOUTS_PATH = INSTANCE_PATH + "/payouts/evm";
     private static final String PAYOUT_PATH = INSTANCE_PATH + "/payouts/{payoutId}";
@@ -88,6 +104,91 @@ public class BlindPayClient implements BlindPayGateway {
     }
 
     @Override
+    public void updateCustomer(String customerId, BlindPayUpdateCustomerRequest request, String idempotencyKey) {
+        requireId(customerId, "customerId");
+        requireRequest(request, "customer update request");
+        Success response = post(HttpMethod.PUT, "Could not update the BlindPay customer", request, idempotencyKey,
+                Success.class, CUSTOMER_PATH, customerId);
+        if (!Boolean.TRUE.equals(response.success())) {
+            throw BlindPayIntegrationException.invalidResponse(
+                    "Could not update the BlindPay customer: BlindPay did not confirm the update");
+        }
+    }
+
+    @Override
+    public BlindPayInitiateTosResponse initiateTermsOfService(BlindPayInitiateTosRequest request) {
+        requireRequest(request, "terms of service request");
+        return post("Could not initiate the BlindPay terms of service", request, null,
+                BlindPayInitiateTosResponse.class, TOS_PATH);
+    }
+
+    @Override
+    public BlindPayUploadResponse uploadFile(
+            BlindPayApi.Upload.Bucket bucket, String filename, String contentType, byte[] content) {
+        requireRequest(bucket, "bucket");
+        requireId(filename, "filename");
+        requireId(contentType, "contentType");
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("content must be provided");
+        }
+        String operation = "Could not upload the file to BlindPay";
+        URI uri = UriComponentsBuilder.fromUriString(baseUrl())
+                .path(UPLOAD_PATH)
+                .queryParam("instance_id", "{instanceId}")
+                .encode()
+                .buildAndExpand(instanceId())
+                .toUri();
+        String authorization = bearerToken();
+
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.parseMediaType(contentType));
+        fileHeaders.setContentDisposition(ContentDisposition.formData()
+                .name(BlindPayApi.Upload.FILE)
+                .filename(filename)
+                .build());
+        MultiValueMap<String, Object> multipart = new LinkedMultiValueMap<>();
+        multipart.add(BlindPayApi.Upload.FILE, new HttpEntity<>(content, fileHeaders));
+        multipart.add(BlindPayApi.Upload.BUCKET, bucket.name());
+
+        try {
+            String body = restClient.post()
+                    .uri(uri)
+                    .header(HttpHeaders.AUTHORIZATION, authorization)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(multipart)
+                    .retrieve()
+                    .body(String.class);
+            BlindPayUploadResponse response = deserialize(body, BlindPayUploadResponse.class, operation);
+            if (response == null || response.fileUrl() == null || response.fileUrl().isBlank()) {
+                throw BlindPayIntegrationException.invalidResponse(operation + ": BlindPay returned no file URL");
+            }
+            return response;
+        } catch (RestClientResponseException ex) {
+            throw providerError(operation, ex);
+        } catch (RestClientException ex) {
+            throw communicationError(operation, ex);
+        }
+    }
+
+    /** A BlindPay responde o literal {@code null} quando o cliente não tem RFI pendente. */
+    @Override
+    public BlindPayRfiResponse getCustomerRfi(String customerId) {
+        requireId(customerId, "customerId");
+        return get("Could not fetch the BlindPay customer RFI",
+                BlindPayRfiResponse.class, CUSTOMER_RFI_PATH, customerId);
+    }
+
+    @Override
+    public BlindPayRfiSubmitResponse submitCustomerRfi(
+            String customerId, Map<String, Object> response, String idempotencyKey) {
+        requireId(customerId, "customerId");
+        requireRequest(response, "RFI response");
+        return post("Could not submit the BlindPay customer RFI", response, idempotencyKey,
+                BlindPayRfiSubmitResponse.class, CUSTOMER_RFI_PATH, customerId);
+    }
+
+    @Override
     public BlindPayBankAccountResponse createBankAccount(
             String customerId, BlindPayCreateBankAccountRequest request, String idempotencyKey) {
         requireId(customerId, "customerId");
@@ -111,6 +212,14 @@ public class BlindPayClient implements BlindPayGateway {
         requireRequest(request, "wallet request");
         return post("Could not create the BlindPay wallet", request, idempotencyKey,
                 BlindPayWalletResponse.class, WALLETS_PATH, customerId);
+    }
+
+    @Override
+    public BlindPayWalletResponse getWallet(String customerId, String walletId) {
+        requireId(customerId, "customerId");
+        requireId(walletId, "walletId");
+        return get("Could not fetch the BlindPay wallet",
+                BlindPayWalletResponse.class, WALLET_PATH, customerId, walletId);
     }
 
     @Override
@@ -194,6 +303,19 @@ public class BlindPayClient implements BlindPayGateway {
             String path,
             Object... pathVariables
     ) {
+        return post(HttpMethod.POST, operation, requestBody, idempotencyKey, responseType, path, pathVariables);
+    }
+
+    /** Escrita com corpo JSON (POST ou PUT); a resposta nunca pode ser vazia ou {@code null}. */
+    private <T> T post(
+            HttpMethod method,
+            String operation,
+            Object requestBody,
+            String idempotencyKey,
+            Class<T> responseType,
+            String path,
+            Object... pathVariables
+    ) {
         validateIdempotencyKey(idempotencyKey);
         URI uri = uri(path, pathVariables);
         String authorization = bearerToken();
@@ -203,7 +325,7 @@ public class BlindPayClient implements BlindPayGateway {
         Integer status = null;
         String outcome = "failure";
         try {
-            var response = restClient.post()
+            var response = restClient.method(method)
                     .uri(uri)
                     .header(HttpHeaders.AUTHORIZATION, authorization)
                     .headers(headers -> {
@@ -218,6 +340,10 @@ public class BlindPayClient implements BlindPayGateway {
                     .toEntity(String.class);
             status = response.getStatusCode().value();
             T result = deserialize(response.getBody(), responseType, operation);
+            if (result == null) {
+                throw BlindPayIntegrationException.invalidResponse(
+                        operation + ": BlindPay returned an empty response");
+            }
             outcome = "success";
             return result;
         } catch (RestClientResponseException ex) {
@@ -228,7 +354,8 @@ public class BlindPayClient implements BlindPayGateway {
             outcome = OperationalLog.communicationOutcome(ex);
             throw communicationError(operation, ex);
         } finally {
-            OperationalLog.provider("blindpay", "post." + responseType.getSimpleName(), outcome, status, startedAt);
+            OperationalLog.provider("blindpay", method.name().toLowerCase(java.util.Locale.ROOT) + "."
+                    + responseType.getSimpleName(), outcome, status, startedAt);
         }
     }
 
@@ -346,5 +473,9 @@ public class BlindPayClient implements BlindPayGateway {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record Success(Boolean success) {
     }
 }

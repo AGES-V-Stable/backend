@@ -66,6 +66,36 @@ class AveniaTransferServiceTest {
     }
 
     @Test
+    void doesNotCreateTicketWhenPriceGuardRejectsFreshQuote() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("fresh-token");
+
+        assertThrows(IllegalStateException.class, () -> service.createTransfer(
+                quoteRequest(), AveniaTicketRequest.builder().build(),
+                quote -> {
+                    throw new IllegalStateException("price changed");
+                }));
+
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    @Test
+    void priceGuardReceivesValidatedFreshQuoteBeforeTicket() {
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("fresh-token");
+        gateway.ticketResponse = new AveniaTicketResponse(UUID.randomUUID(), null, null, "UNPAID", null, null);
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        service.createTransfer(quoteRequest(), AveniaTicketRequest.builder().build(),
+                quote -> seen.add(quote.quoteToken() + ":tickets=" + gateway.ticketCalls));
+
+        assertEquals(java.util.List.of("fresh-token:tickets=0"), seen);
+        assertEquals(1, gateway.ticketCalls);
+    }
+
+    @Test
     void doesNotCreateTicketWhenQuoteFails() {
         FakeAveniaGateway gateway = new FakeAveniaGateway();
         AveniaTransferService service = new AveniaTransferService(gateway);

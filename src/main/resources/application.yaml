@@ -41,6 +41,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  # Documentos de compliance da BlindPay têm no máximo 3MB.
+  servlet:
+    multipart:
+      max-file-size: 3MB
+      max-request-size: 4MB
+
   # Timeouts dos clientes HTTP de saída (Avenia e BlindPay). Sem eles, um provedor
   # lento prende a thread da requisição indefinidamente.
   http:
@@ -70,9 +76,22 @@ blindpay:
   api-key: ${BLINDPAY_API_KEY:}
   instance-id: ${BLINDPAY_INSTANCE_ID:}
   webhook-secret: ${BLINDPAY_WEBHOOK_SECRET:}
+  tos-redirect-url: ${BLINDPAY_TOS_REDIRECT_URL:}
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
+  avenia:
+    # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
+    confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
+
+# Conciliação das transferências BlindPay: retoma execuções paradas (webhook perdido,
+# chamada sem resposta) repetindo cada etapa com a mesma chave de idempotência.
+transfers:
+  reconciliation:
+    enabled: ${TRANSFERS_RECONCILIATION_ENABLED:true}
+    interval: ${TRANSFERS_RECONCILIATION_INTERVAL:30s}
+    stale-after: ${TRANSFERS_RECONCILIATION_STALE_AFTER:30s}
+    batch-size: ${TRANSFERS_RECONCILIATION_BATCH_SIZE:50}
 
 ---
 spring:

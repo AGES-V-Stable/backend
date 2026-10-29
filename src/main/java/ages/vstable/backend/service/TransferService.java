@@ -55,6 +55,7 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -146,13 +147,42 @@ public class TransferService {
         return response;
     }
 
+    /** Transferência criada na Avenia a partir de uma oferta confirmada. */
+    public record ExecutedTransfer(UUID transactionId, TransactionStatus status, UUID ticketId) {
+    }
+
+    /**
+     * Cria a transferência de uma oferta já confirmada pelo usuário. Como em
+     * {@link #create}, gera uma cotação nova; {@code priceGuard} a recebe antes da criação
+     * do ticket e deve lançar exceção quando o preço piorou em relação ao confirmado —
+     * nesse caso nenhum ticket é criado e nada é persistido.
+     */
+    @Transactional
+    public ExecutedTransfer createConfirmedOffer(
+            CreateTransferRequest request, UUID currentUserId, UUID currentCompanyId,
+            Consumer<TransferQuoteResponse> priceGuard) {
+        BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
+        TransferRoute route = resolveRoute(
+                request.getSourceCurrency(), request.getDestinationCurrency(),
+                request.getPaymentMethod(), beneficiary, currentUserId);
+
+        AveniaTransferResult result = aveniaTransferService.createTransfer(
+                buildAveniaQuoteRequest(request.getAmount(), request.getAmountType(), route),
+                buildAveniaTicketRequest(beneficiary, request.getPaymentMethod(), request.getDescription()),
+                quote -> priceGuard.accept(toTransferQuoteResponse(quote)));
+        TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
+
+        ImportTransactionEntity transaction = persistTransaction(beneficiary, request, result, status, currentUserId);
+        return new ExecutedTransfer(transaction.getId(), status, result.ticket().id());
+    }
+
     /**
      * Grava o snapshot da transferência recém-criada na Avenia. Não acompanha mudanças de
      * status posteriores ao ticket (ex.: UNPAID -> PAID) nem o hash da liquidação on-chain —
      * nenhum dos dois tem mecanismo de atualização implementado ainda (ver
      * docs/transfers-persist-transaction.md seção 6).
      */
-    private void persistTransaction(
+    private ImportTransactionEntity persistTransaction(
             BeneficiaryEntity beneficiary, CreateTransferRequest request, AveniaTransferResult result,
             TransactionStatus status, UUID currentUserId) {
         AveniaQuoteResponse quote = result.quote();
@@ -180,6 +210,7 @@ public class TransferService {
                 .build();
         // JOINED inheritance persists the base snapshot and payment detail with one shared ID.
         importTransactionRepository.save(transaction);
+        return transaction;
     }
 
     /**

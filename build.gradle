@@ -86,12 +86,34 @@ abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	// Testes contra a instância de desenvolvimento da BlindPay só rodam em blindpaySandboxTest.
+	useJUnitPlatform {
+		excludeTags 'blindpay-sandbox'
+	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
 		agentJar.from(configurations.mockitoAgent)
 	})
 	finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.register('blindpaySandboxTest', Test) {
+	description = 'Executa transferências reais na instância de DESENVOLVIMENTO da BlindPay (requer credenciais e Docker).'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'blindpay-sandbox'
+	}
+	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'passed', 'failed', 'skipped'
+		exceptionFormat 'full'
+	}
 }
 
 tasks.named('jacocoTestReport') {
