@@ -61,6 +61,9 @@ public interface BlindPayGateway {
     BlindPayWalletResponse createWallet(
             String customerId, BlindPayCreateWalletRequest request, String idempotencyKey);
 
+    /** Carteira gerenciada pela BlindPay, com o endereço usado como origem dos payouts. */
+    BlindPayWalletResponse getWallet(String customerId, String walletId);
+
     BlindPayQuoteResponse createQuote(BlindPayQuoteRequest request, String idempotencyKey);
 
     BlindPayPayoutResponse createEvmPayout(BlindPayEvmPayoutRequest request, String idempotencyKey);

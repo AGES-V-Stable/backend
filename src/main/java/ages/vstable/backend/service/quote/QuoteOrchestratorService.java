@@ -81,7 +81,8 @@ public class QuoteOrchestratorService {
                 request.sourcePaymentMethod(), request.targetPaymentMethod(), request.amount(), request.amountSide(),
                 normalizeUpper(request.token()), normalizeLower(request.blockchainNetwork()),
                 request.coverFees(), request.description());
-        QuoteContext context = new QuoteContext(quoteRequest.getId(), company, beneficiary, normalized);
+        QuoteContext context = new QuoteContext(
+                quoteRequest.getId(), company, beneficiary, normalized, currentUser.getId());
 
         List<QuoteProvider> eligibleProviders = providers.stream()
                 .filter(provider -> provider.supports(context))
@@ -94,23 +95,26 @@ public class QuoteOrchestratorService {
                 .toList();
 
         List<ProviderCall> results = calls.stream().map(CompletableFuture::join).toList();
-        List<QuoteOfferResponse> offers = new ArrayList<>();
+        // Só a oferta vencedora fica SELECTED e pode ser confirmada: impede executar uma
+        // oferta pior ou de um provedor que não venceu a comparação.
+        ProviderCall best = results.stream()
+                .filter(call -> call.result() != null && isUsable(call.result(), request))
+                .min(Comparator.comparing(ProviderCall::result, bestOfferComparator(request.amountSide())))
+                .orElse(null);
+
+        QuoteOfferResponse bestOffer = null;
         int failures = 0;
         for (ProviderCall call : results) {
-            ProviderQuoteEntity saved = providerQuoteRepository.save(toEntity(quoteRequest, call, now));
-            if (call.result() != null) {
-                ProviderQuoteResult result = call.result();
-                offers.add(new QuoteOfferResponse(saved.getId(), result.sourceAmount(), result.targetAmount(),
-                        result.exchangeRate(), result.totalFee(), result.expiresAt()));
-            } else {
+            ProviderQuoteEntity saved = providerQuoteRepository.save(toEntity(quoteRequest, call, now, call == best));
+            if (call.result() == null) {
                 failures++;
+            } else if (call == best) {
+                ProviderQuoteResult result = call.result();
+                bestOffer = new QuoteOfferResponse(saved.getId(), result.sourceAmount(), result.targetAmount(),
+                        result.exchangeRate(), result.totalFee(), result.expiresAt(), call.provider().name());
             }
         }
 
-        QuoteOfferResponse bestOffer = offers.stream()
-                .filter(offer -> isUsable(offer, request))
-                .min(bestOfferComparator(request.amountSide()))
-                .orElse(null);
         quoteRequest.setStatus(bestOffer == null ? "FAILED" : failures == 0 ? "COMPLETED" : "PARTIAL");
         quoteRequestRepository.save(quoteRequest);
         if (bestOffer == null) {
@@ -119,29 +123,29 @@ public class QuoteOrchestratorService {
         return new QuoteResponse(quoteRequest.getId(), bestOffer);
     }
 
-    private Comparator<QuoteOfferResponse> bestOfferComparator(QuoteAmountSide amountSide) {
-        Comparator<QuoteOfferResponse> byEffectivePrice;
+    /**
+     * Valor de origem fixo: vence quem entrega mais ao destinatário. Valor de destino fixo:
+     * vence o menor valor de origem, que já inclui as taxas cobradas do usuário.
+     */
+    private Comparator<ProviderQuoteResult> bestOfferComparator(QuoteAmountSide amountSide) {
         if (amountSide == QuoteAmountSide.SOURCE) {
-            byEffectivePrice = Comparator.comparing(
-                    QuoteOfferResponse::targetAmount,
-                    Comparator.reverseOrder());
-        } else {
-            byEffectivePrice = Comparator.comparing(QuoteOfferResponse::sourceAmount);
+            return Comparator.comparing(ProviderQuoteResult::targetAmount, Comparator.reverseOrder());
         }
-        return byEffectivePrice;
+        return Comparator.comparing(ProviderQuoteResult::sourceAmount);
     }
 
-    private boolean isUsable(QuoteOfferResponse offer, QuoteRequest request) {
+    private boolean isUsable(ProviderQuoteResult offer, QuoteRequest request) {
         return offer.sourceAmount() != null
                 && offer.sourceAmount().signum() > 0
                 && offer.targetAmount() != null
                 && offer.targetAmount().signum() > 0
                 && matchesRequestedAmount(offer, request)
-                && (offer.expiresAt() == null
-                    || offer.expiresAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC)));
+                // Sem prazo de validade não há como garantir que o preço ainda vale na confirmação.
+                && offer.expiresAt() != null
+                && offer.expiresAt().isAfter(OffsetDateTime.now(ZoneOffset.UTC));
     }
 
-    private boolean matchesRequestedAmount(QuoteOfferResponse offer, QuoteRequest request) {
+    private boolean matchesRequestedAmount(ProviderQuoteResult offer, QuoteRequest request) {
         BigDecimal fixedAmount = request.amountSide() == QuoteAmountSide.SOURCE
                 ? offer.sourceAmount()
                 : offer.targetAmount();
@@ -160,14 +164,16 @@ public class QuoteOrchestratorService {
         }
     }
 
-    private ProviderQuoteEntity toEntity(QuoteRequestEntity request, ProviderCall call, OffsetDateTime createdAt) {
+    private ProviderQuoteEntity toEntity(
+            QuoteRequestEntity request, ProviderCall call, OffsetDateTime createdAt, boolean selected) {
         ProviderQuoteResult result = call.result();
         return ProviderQuoteEntity.builder()
                 .quoteRequest(request)
                 .provider(call.provider())
                 .externalQuoteId(result == null ? null : result.externalQuoteId())
                 .idempotencyKey("quote:" + request.getId() + ":" + call.provider().name().toLowerCase())
-                .status(result == null ? "FAILED" : "AVAILABLE")
+                .status(result == null ? ProviderQuoteStatus.FAILED
+                        : selected ? ProviderQuoteStatus.SELECTED : ProviderQuoteStatus.AVAILABLE)
                 .sourceAmount(result == null ? null : result.sourceAmount())
                 .targetAmount(result == null ? null : result.targetAmount())
                 .exchangeRate(result == null ? null : result.exchangeRate())

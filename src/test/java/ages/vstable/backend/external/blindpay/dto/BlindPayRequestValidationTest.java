@@ -77,18 +77,27 @@ class BlindPayRequestValidationTest {
     }
 
     @Test
-    void requiresExactlyOneFundingSourceForPayout() {
-        assertThatThrownBy(() -> new BlindPayEvmPayoutRequest("qu_000000000001", "0xabc", "bl_000000000001"))
+    void payoutAlwaysRequiresSenderWalletAddress() {
+        assertThatThrownBy(() -> new BlindPayEvmPayoutRequest("qu_000000000001", null, "bl_000000000001"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Exactly one of senderWalletAddress or walletId must be provided");
+                .hasMessage("senderWalletAddress must be provided");
 
-        assertThatThrownBy(() -> new BlindPayEvmPayoutRequest("qu_000000000001", null, " "))
+        assertThatThrownBy(() -> new BlindPayEvmPayoutRequest("qu_000000000001", "0xabc", " "))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Exactly one of senderWalletAddress or walletId must be provided");
+                .hasMessage("walletId must not be blank");
 
-        BlindPayEvmPayoutRequest managed = BlindPayEvmPayoutRequest.fromManagedWallet("qu_000000000001", "bl_1");
+        assertThatThrownBy(() -> BlindPayEvmPayoutRequest.fromManagedWallet("qu_000000000001", "0xabc", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("walletId must be provided");
+    }
+
+    @Test
+    void managedWalletPayoutSendsAddressAndWalletId() {
+        BlindPayEvmPayoutRequest managed =
+                BlindPayEvmPayoutRequest.fromManagedWallet("qu_000000000001", "0xabc", "bl_1");
+
         assertThat(managed.walletId()).isEqualTo("bl_1");
-        assertThat(managed.senderWalletAddress()).isNull();
+        assertThat(managed.senderWalletAddress()).isEqualTo("0xabc");
     }
 
     @Test

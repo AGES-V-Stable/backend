@@ -223,6 +223,58 @@ class QuoteOrchestratorServiceTest {
         assertThat(response.offer().targetAmount()).isEqualByComparingTo("20.00");
     }
 
+    @Test
+    void quote_persistsOnlyTheWinningOfferAsConfirmable() {
+        // Arrange
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "100.00", "18.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "19.00", "2.00"));
+
+        // Act
+        QuoteResponse response = service.quote(user, request());
+
+        // Assert
+        ArgumentCaptor<ProviderQuoteEntity> saved = ArgumentCaptor.forClass(ProviderQuoteEntity.class);
+        verify(providerQuoteRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(ProviderQuoteEntity::getProvider, ProviderQuoteEntity::getStatus)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(IntegrationProvider.AVENIA, ProviderQuoteStatus.AVAILABLE),
+                        org.assertj.core.groups.Tuple.tuple(IntegrationProvider.BLINDPAY, ProviderQuoteStatus.SELECTED));
+        assertThat(response.offer().provider()).isEqualTo("BLINDPAY");
+        assertThat(response.offer().offerId()).isEqualTo(saved.getAllValues().stream()
+                .filter(quote -> quote.getProvider() == IntegrationProvider.BLINDPAY)
+                .findFirst().orElseThrow().getId());
+    }
+
+    @Test
+    void quote_offerWithoutExpiration_isNotSelected() {
+        ProviderQuoteResult withoutExpiration = new ProviderQuoteResult(
+                IntegrationProvider.AVENIA, "no-expiry", new BigDecimal("100.00"), new BigDecimal("25.00"),
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO, null, "{}");
+        configureSuccessfulProviders(
+                withoutExpiration,
+                result(IntegrationProvider.BLINDPAY, "100.00", "20.00", "1.00"));
+
+        QuoteResponse response = service.quote(user, request());
+
+        assertThat(response.offer().targetAmount()).isEqualByComparingTo("20.00");
+        assertThat(response.offer().provider()).isEqualTo("BLINDPAY");
+    }
+
+    @Test
+    void quote_passesRequestingUserToProviders() {
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "100.00", "18.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "19.00", "2.00"));
+
+        service.quote(user, request());
+
+        ArgumentCaptor<QuoteContext> context = ArgumentCaptor.forClass(QuoteContext.class);
+        verify(avenia).quote(context.capture(), any());
+        assertThat(context.getValue().requestedBy()).isEqualTo(user.getId());
+    }
+
     private void configureSuccessfulProviders(ProviderQuoteResult aveniaResult, ProviderQuoteResult blindPayResult) {
         when(avenia.provider()).thenReturn(IntegrationProvider.AVENIA);
         when(blindPay.provider()).thenReturn(IntegrationProvider.BLINDPAY);

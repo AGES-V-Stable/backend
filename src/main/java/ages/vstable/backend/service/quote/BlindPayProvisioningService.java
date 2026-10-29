@@ -148,6 +148,7 @@ public class BlindPayProvisioningService {
                 throw BlindPayIntegrationException.invalidResponse("BlindPay wallet response has no id");
             }
             wallet.setExternalWalletId(response.id());
+            wallet.setAddress(hasText(response.address()) ? response.address() : null);
             wallet.setStatus("CREATED");
             wallet.setLastErrorCode(null);
             wallet.setSynchronizedAt(now);
@@ -169,6 +170,38 @@ public class BlindPayProvisioningService {
             providerWalletRepository.save(wallet);
             throw ex;
         }
+    }
+
+    /** Carteira gerenciada da empresa: o id debita o saldo e o endereço é a origem do payout. */
+    public record ManagedWallet(String id, String address) {
+    }
+
+    /**
+     * Garante a carteira gerenciada da rede e o seu endereço. Carteiras criadas antes do
+     * endereço ser persistido são completadas com uma consulta à BlindPay.
+     */
+    public ManagedWallet ensureManagedWallet(CompanyEntity company, String network) {
+        String walletId = ensureWallet(company, network);
+        ProviderAccountEntity providerAccount = approvedCustomer(company);
+        ProviderWalletEntity wallet = providerWalletRepository
+                .findByProviderAccountIdAndNetwork(providerAccount.getId(), network.toLowerCase())
+                .filter(found -> walletId.equals(found.getExternalWalletId()))
+                .orElseThrow(() -> BlindPayIntegrationException.invalidResponse(
+                        "BlindPay managed wallet is not registered"));
+        if (hasText(wallet.getAddress())) {
+            return new ManagedWallet(walletId, wallet.getAddress());
+        }
+
+        BlindPayWalletResponse current = blindPayGateway.getWallet(providerAccount.getExternalCustomerId(), walletId);
+        if (current == null || !walletId.equals(current.id()) || !hasText(current.address())) {
+            throw BlindPayIntegrationException.invalidResponse("BlindPay wallet response has no address");
+        }
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        wallet.setAddress(current.address());
+        wallet.setSynchronizedAt(now);
+        wallet.setUpdatedAt(now);
+        providerWalletRepository.save(wallet);
+        return new ManagedWallet(walletId, current.address());
     }
 
     /**

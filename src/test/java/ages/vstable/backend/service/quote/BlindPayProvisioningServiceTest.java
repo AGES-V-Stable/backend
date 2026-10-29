@@ -143,6 +143,73 @@ class BlindPayProvisioningServiceTest {
                 eq("company:" + companyId + ":blindpay:wallet:polygon"));
         assertThat(request.getValue().network()).isEqualTo(BlindPayApi.BlockchainWallet.Network.polygon);
         assertThat(request.getValue().externalId()).isEqualTo(companyId + ":polygon");
+        ArgumentCaptor<ProviderWalletEntity> saved = ArgumentCaptor.forClass(ProviderWalletEntity.class);
+        verify(providerWalletRepository).save(saved.capture());
+        assertThat(saved.getValue().getAddress()).isEqualTo("0x123");
+    }
+
+    @Test
+    void ensureManagedWallet_storedAddress_isReturnedWithoutCallingBlindPay() {
+        // Arrange
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        ProviderAccountEntity account = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account));
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(account.getId(), "base_sepolia"))
+                .thenReturn(Optional.of(wallet(account, "bl_1", "0xstored")));
+
+        // Act
+        BlindPayProvisioningService.ManagedWallet wallet = service.ensureManagedWallet(company, "base_sepolia");
+
+        // Assert
+        assertThat(wallet).isEqualTo(new BlindPayProvisioningService.ManagedWallet("bl_1", "0xstored"));
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void ensureManagedWallet_walletWithoutAddress_fetchesAndStoresAddress() {
+        // Arrange
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        ProviderAccountEntity account = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
+        ProviderWalletEntity stored = wallet(account, "bl_1", null);
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account));
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(account.getId(), "base_sepolia"))
+                .thenReturn(Optional.of(stored));
+        when(gateway.getWallet("customer-id", "bl_1")).thenReturn(new BlindPayWalletResponse(
+                "bl_1", "V-Stable", null, "0xfetched", BlindPayApi.BlockchainWallet.Network.base_sepolia,
+                OffsetDateTime.now()));
+
+        // Act
+        BlindPayProvisioningService.ManagedWallet wallet = service.ensureManagedWallet(company, "base_sepolia");
+
+        // Assert
+        assertThat(wallet.address()).isEqualTo("0xfetched");
+        assertThat(stored.getAddress()).isEqualTo("0xfetched");
+        verify(providerWalletRepository).save(stored);
+    }
+
+    @Test
+    void ensureManagedWallet_providerWithoutAddress_isRejected() {
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        ProviderAccountEntity account = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account));
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(account.getId(), "base_sepolia"))
+                .thenReturn(Optional.of(wallet(account, "bl_1", null)));
+        when(gateway.getWallet("customer-id", "bl_1")).thenReturn(new BlindPayWalletResponse(
+                "bl_1", "V-Stable", null, null, BlindPayApi.BlockchainWallet.Network.base_sepolia,
+                OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.ensureManagedWallet(company, "base_sepolia"))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class)
+                .hasMessage("BlindPay wallet response has no address");
+    }
+
+    private ProviderWalletEntity wallet(ProviderAccountEntity account, String walletId, String address) {
+        return ProviderWalletEntity.builder().id(UUID.randomUUID()).providerAccount(account)
+                .network("base_sepolia").externalWalletId(walletId).address(address).status("CREATED")
+                .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build();
     }
 
     @Test

@@ -62,6 +62,15 @@ blindpay:
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
 
+# Conciliação das transferências BlindPay: retoma execuções paradas (webhook perdido,
+# chamada sem resposta) repetindo cada etapa com a mesma chave de idempotência.
+transfers:
+  reconciliation:
+    enabled: ${TRANSFERS_RECONCILIATION_ENABLED:true}
+    interval: ${TRANSFERS_RECONCILIATION_INTERVAL:30s}
+    stale-after: ${TRANSFERS_RECONCILIATION_STALE_AFTER:30s}
+    batch-size: ${TRANSFERS_RECONCILIATION_BATCH_SIZE:50}
+
 ---
 spring:
   config:

@@ -13,6 +13,8 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -26,6 +28,16 @@ public class BlindPayQuoteProvider implements QuoteProvider {
 
     private static final BigDecimal CENTS = BigDecimal.valueOf(100);
     private static final String BRL = "BRL";
+    private static final JsonMapper METADATA_MAPPER = JsonMapper.builder().build();
+
+    public static final String METADATA_FUNDING_PROVIDER = "fundingProvider";
+    public static final String METADATA_FUNDING_QUOTE_ID = "fundingQuoteId";
+    public static final String METADATA_PAYOUT_PROVIDER = "payoutProvider";
+    public static final String METADATA_PAYOUT_QUOTE_ID = "payoutQuoteId";
+    public static final String METADATA_PAYOUT_SENDER_AMOUNT = "payoutSenderAmount";
+    public static final String METADATA_PAYOUT_RECEIVER_AMOUNT = "payoutReceiverAmount";
+    public static final String METADATA_PAYOUT_EXPIRES_AT = "payoutExpiresAt";
+    public static final String METADATA_WALLET_ID = "walletId";
 
     private final BlindPayGateway blindPayGateway;
     private final BlindPayProvisioningService provisioningService;
@@ -153,7 +165,7 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                 blindPayFees,
                 blindPayFees,
                 earliestExpiration(expiresAt(fundingQuote), expiresAt(payoutQuote)),
-                compositeMetadata(fundingQuote.id(), payoutQuote.id(), walletId));
+                compositeMetadata(fundingQuote, payoutQuote, walletId));
     }
 
     private BlindPayPayinQuoteResponse createPayinQuote(
@@ -215,13 +227,17 @@ public class BlindPayQuoteProvider implements QuoteProvider {
     }
 
     private OffsetDateTime expiresAt(BlindPayQuoteResponse response) {
-        return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
+        return fromEpochMillis(response.expiresAt());
     }
 
     private OffsetDateTime expiresAt(BlindPayPayinQuoteResponse response) {
-        return response.expiresAt() == null ? null
-                : OffsetDateTime.ofInstant(Instant.ofEpochSecond(response.expiresAt()), java.time.ZoneOffset.UTC);
+        return fromEpochMillis(response.expiresAt());
+    }
+
+    /** A BlindPay documenta {@code expires_at} das cotações como epoch em milissegundos. */
+    public static OffsetDateTime fromEpochMillis(Long epochMillis) {
+        return epochMillis == null ? null
+                : OffsetDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), java.time.ZoneOffset.UTC);
     }
 
     private BigDecimal payoutFees(BlindPayQuoteResponse response) {
@@ -239,14 +255,26 @@ public class BlindPayQuoteProvider implements QuoteProvider {
         return value;
     }
 
-    private String compositeMetadata(String fundingQuoteId, String payoutQuoteId, String walletId) {
-        return "{\"fundingProvider\":\"BLINDPAY\",\"fundingQuoteId\":\""
-                + fundingQuoteId
-                + "\",\"payoutProvider\":\"BLINDPAY\",\"payoutQuoteId\":\""
-                + payoutQuoteId
-                + "\",\"walletId\":\""
-                + walletId
-                + "\"}";
+    /**
+     * Dados da composição payin + payout usados na execução: o payout só é enviado depois
+     * do payin, então a execução precisa do valor em stablecoin e da validade da cotação de
+     * payout para decidir se ela ainda vale ou se é preciso recotar.
+     */
+    private String compositeMetadata(
+            BlindPayPayinQuoteResponse fundingQuote, BlindPayQuoteResponse payoutQuote, String walletId) {
+        ObjectNode metadata = METADATA_MAPPER.createObjectNode()
+                .put(METADATA_FUNDING_PROVIDER, provider().name())
+                .put(METADATA_FUNDING_QUOTE_ID, fundingQuote.id())
+                .put(METADATA_PAYOUT_PROVIDER, provider().name())
+                .put(METADATA_PAYOUT_QUOTE_ID, payoutQuote.id())
+                .put(METADATA_PAYOUT_SENDER_AMOUNT, requirePositive(
+                        fromCents(payoutQuote.senderAmount()), "BlindPay payout sender amount").toPlainString())
+                .put(METADATA_PAYOUT_RECEIVER_AMOUNT, fromCents(payoutQuote.receiverAmount()).toPlainString())
+                .put(METADATA_WALLET_ID, walletId);
+        if (payoutQuote.expiresAt() != null) {
+            metadata.put(METADATA_PAYOUT_EXPIRES_AT, payoutQuote.expiresAt());
+        }
+        return metadata.toString();
     }
 
     private long toCents(BigDecimal value) {

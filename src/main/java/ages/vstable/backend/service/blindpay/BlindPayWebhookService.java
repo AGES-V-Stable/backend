@@ -10,6 +10,7 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayWebhookEvent;
 import ages.vstable.backend.repository.BlindPayTosSessionRepository;
 import ages.vstable.backend.repository.BlindPayWebhookEventRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
+import ages.vstable.backend.service.transfer.BlindPayExecutionProcessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,9 @@ import java.util.UUID;
 
 /**
  * Processa os webhooks de compliance da BlindPay ({@code customer.new},
- * {@code customer.update} e {@code tos.accept}). A assinatura Svix é conferida sobre o
+ * {@code customer.update} e {@code tos.accept}) e os financeiros ({@code payin.*} e
+ * {@code payout.*}). Os financeiros só identificam o payin/payout: o estado é sempre
+ * consultado na BlindPay antes de avançar a transferência. A assinatura Svix é conferida sobre o
  * corpo bruto antes de qualquer leitura; mensagens repetidas (mesmo {@code svix-id})
  * são ignoradas. Registro e processamento estão na mesma transação: se o
  * processamento falhar, a retentativa da BlindPay é processada de novo.
@@ -43,6 +46,7 @@ public class BlindPayWebhookService {
     private final ProviderAccountRepository providerAccountRepository;
     private final BlindPayTosSessionRepository tosSessionRepository;
     private final ObjectMapper objectMapper;
+    private final BlindPayExecutionProcessor executionProcessor;
 
     public enum Result {
         PROCESSED,
@@ -80,6 +84,10 @@ public class BlindPayWebhookService {
         Result result = switch (eventType) {
             case BlindPayWebhookEvent.CUSTOMER_NEW, BlindPayWebhookEvent.CUSTOMER_UPDATE -> customerChanged(event, now);
             case BlindPayWebhookEvent.TOS_ACCEPT -> termsAccepted(event, now);
+            case BlindPayWebhookEvent.PAYIN_NEW, BlindPayWebhookEvent.PAYIN_UPDATE, BlindPayWebhookEvent.PAYIN_COMPLETE ->
+                    event.id() != null && executionProcessor.onPayinEvent(event.id()) ? Result.PROCESSED : Result.IGNORED;
+            case BlindPayWebhookEvent.PAYOUT_NEW, BlindPayWebhookEvent.PAYOUT_UPDATE, BlindPayWebhookEvent.PAYOUT_COMPLETE ->
+                    event.id() != null && executionProcessor.onPayoutEvent(event.id()) ? Result.PROCESSED : Result.IGNORED;
             default -> Result.IGNORED;
         };
         if (result == Result.IGNORED) {

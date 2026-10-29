@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +31,20 @@ public class AveniaTransferService {
             AveniaQuoteRequest quoteRequest,
             AveniaTicketRequest ticketRequest
     ) {
+        return createTransfer(quoteRequest, ticketRequest, quote -> { });
+    }
+
+    /**
+     * Igual a {@link #createTransfer(AveniaQuoteRequest, AveniaTicketRequest)}, mas chama
+     * {@code beforeTicket} com a cotação nova já validada e antes de criar o ticket. Se
+     * {@code beforeTicket} lançar exceção, nenhum ticket é criado — é o ponto para recusar
+     * uma cotação cujo preço mudou em relação ao que o usuário confirmou.
+     */
+    public AveniaTransferResult createTransfer(
+            AveniaQuoteRequest quoteRequest,
+            AveniaTicketRequest ticketRequest,
+            Consumer<AveniaQuoteResponse> beforeTicket
+    ) {
         if (quoteRequest == null) {
             throw new IllegalArgumentException("quote request must be provided");
         }
@@ -39,6 +54,7 @@ public class AveniaTransferService {
         validateExternalId(ticketRequest);
         validateCustomDuration(quoteRequest, ticketRequest);
         AveniaQuoteResponse quote = requireValidQuote(aveniaGateway.createQuote(quoteRequest), quoteRequest);
+        beforeTicket.accept(quote);
 
         AveniaTicketRequest requestWithCurrentQuote = ticketRequest
                 .withQuoteTokenAndSubAccount(quote.quoteToken(), quoteRequest.subAccountId());

@@ -108,6 +108,31 @@ class BlindPayQuoteProviderTest {
     }
 
     @Test
+    void quote_brlSource_recordsPayoutQuoteDataNeededToExecuteAfterFunding() throws Exception {
+        // Arrange
+        when(provisioningService.ensureBankAccount(company, beneficiary)).thenReturn("bank-account-id");
+        when(provisioningService.ensureWallet(company, "polygon")).thenReturn("wallet-id");
+        when(blindPayGateway.createPayinQuote(any(), anyString())).thenReturn(blindPayPayinQuote(
+                new BigDecimal("100000"), new BigDecimal("18012")));
+        long payoutExpiresAt = Instant.parse("2026-10-28T12:05:00Z").toEpochMilli();
+        when(blindPayGateway.createQuote(any(), anyString())).thenReturn(blindPayQuote(
+                new BigDecimal("18012"), new BigDecimal("99000"), payoutExpiresAt));
+
+        // Act
+        ProviderQuoteResult result = provider.quote(
+                context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00")), "idempotency-key");
+
+        // Assert
+        var metadata = tools.jackson.databind.json.JsonMapper.builder().build().readTree(result.metadata());
+        assertThat(metadata.get(BlindPayQuoteProvider.METADATA_FUNDING_QUOTE_ID).asString())
+                .isEqualTo("blindpay-payin-quote");
+        assertThat(metadata.get(BlindPayQuoteProvider.METADATA_PAYOUT_QUOTE_ID).asString()).isEqualTo("blindpay-quote");
+        assertThat(metadata.get(BlindPayQuoteProvider.METADATA_PAYOUT_SENDER_AMOUNT).asString()).isEqualTo("180.12");
+        assertThat(metadata.get(BlindPayQuoteProvider.METADATA_PAYOUT_EXPIRES_AT).asLong()).isEqualTo(payoutExpiresAt);
+        assertThat(metadata.get(BlindPayQuoteProvider.METADATA_WALLET_ID).asString()).isEqualTo("wallet-id");
+    }
+
+    @Test
     void quote_brlTargetAmount_quotesPayoutBeforeFunding() {
         when(provisioningService.ensureBankAccount(company, beneficiary)).thenReturn("bank-account-id");
         when(provisioningService.ensureWallet(company, "polygon")).thenReturn("wallet-id");
@@ -145,7 +170,7 @@ class BlindPayQuoteProviderTest {
                 beneficiary.getId(), QuoteDirection.PAYOUT,
                 "USDC", "BRL", "BLOCKCHAIN", "pix", new BigDecimal("10.10"),
                 QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
-        QuoteContext quoteContext = new QuoteContext(UUID.randomUUID(), company, beneficiary, request);
+        QuoteContext quoteContext = new QuoteContext(UUID.randomUUID(), company, beneficiary, request, UUID.randomUUID());
 
         assertThat(provider.supports(quoteContext)).isTrue();
         ProviderQuoteResult result = provider.quote(quoteContext, "idempotency-key");
@@ -165,18 +190,18 @@ class BlindPayQuoteProviderTest {
                 "BRL", "USD", "pix", "pix", new BigDecimal("1000.00"),
                 QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
 
-        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, request)))
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, request, UUID.randomUUID())))
                 .isFalse();
     }
 
     @Test
-    void quote_convertsBlindPayExpirationFromEpochSeconds() {
+    void quote_convertsBlindPayExpirationFromEpochMilliseconds() {
         beneficiary.setCurrency("BRL");
         beneficiary.setPaymentRail("pix");
         when(provisioningService.ensureBankAccount(company, beneficiary)).thenReturn("bank-account-id");
-        Instant expiration = Instant.parse("2026-10-08T15:30:00Z");
+        Instant expiration = Instant.parse("2026-10-08T15:30:00.250Z");
         when(blindPayGateway.createQuote(any(), anyString())).thenReturn(blindPayQuote(
-                new BigDecimal("10000"), new BigDecimal("52000"), expiration.getEpochSecond()));
+                new BigDecimal("10000"), new BigDecimal("52000"), expiration.toEpochMilli()));
 
         QuoteRequest request = new QuoteRequest(
                 beneficiary.getId(), QuoteDirection.PAYOUT,
@@ -184,7 +209,7 @@ class BlindPayQuoteProviderTest {
                 QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
 
         ProviderQuoteResult result = provider.quote(
-                new QuoteContext(UUID.randomUUID(), company, beneficiary, request), "idempotency-key");
+                new QuoteContext(UUID.randomUUID(), company, beneficiary, request, UUID.randomUUID()), "idempotency-key");
 
         assertThat(result.expiresAt()).isEqualTo(OffsetDateTime.ofInstant(expiration, ZoneOffset.UTC));
     }
@@ -282,7 +307,7 @@ class BlindPayQuoteProviderTest {
                 beneficiary.getId(), QuoteDirection.PAYOUT,
                 "USDC", "BRL", "BLOCKCHAIN", "pix", new BigDecimal("100.00"),
                 QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
-        return new QuoteContext(UUID.randomUUID(), company, beneficiary, request);
+        return new QuoteContext(UUID.randomUUID(), company, beneficiary, request, UUID.randomUUID());
     }
 
     private static Stream<BigDecimal> invalidProviderAmounts() {
@@ -303,14 +328,14 @@ class BlindPayQuoteProviderTest {
                 "polygon",
                 false,
                 "Invoice");
-        return new QuoteContext(UUID.randomUUID(), company, beneficiary, request);
+        return new QuoteContext(UUID.randomUUID(), company, beneficiary, request, UUID.randomUUID());
     }
 
     private BlindPayPayinQuoteResponse blindPayPayinQuote(
             BigDecimal senderAmount, BigDecimal receiverAmount) {
         return new BlindPayPayinQuoteResponse(
                 "blindpay-payin-quote",
-                Instant.now().plusSeconds(50).getEpochSecond(),
+                Instant.now().plusSeconds(50).toEpochMilli(),
                 new BigDecimal("5.50"),
                 new BigDecimal("5.55"),
                 receiverAmount,
@@ -321,7 +346,7 @@ class BlindPayQuoteProviderTest {
     }
 
     private BlindPayQuoteResponse blindPayQuote(BigDecimal senderAmount, BigDecimal receiverAmount) {
-        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).getEpochSecond());
+        return blindPayQuote(senderAmount, receiverAmount, Instant.now().plusSeconds(60).toEpochMilli());
     }
 
     private BlindPayQuoteResponse blindPayQuote(

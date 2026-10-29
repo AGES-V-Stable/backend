@@ -94,7 +94,8 @@ class BlindPayOnboardingFlowTest {
         complianceService = new BlindPayComplianceService(gateway, properties, companyRepository,
                 providerAccountRepository, tosSessionRepository, mapper);
         webhookService = new BlindPayWebhookService(new BlindPayWebhookVerifier(properties), properties,
-                webhookEventRepository, providerAccountRepository, tosSessionRepository, mapper);
+                webhookEventRepository, providerAccountRepository, tosSessionRepository, mapper,
+                org.mockito.Mockito.mock(ages.vstable.backend.service.transfer.BlindPayExecutionProcessor.class));
         provisioningService = new BlindPayProvisioningService(gateway, providerAccountRepository,
                 beneficiaryProviderAccountRepository, providerWalletRepository);
 

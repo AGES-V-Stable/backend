@@ -10,6 +10,7 @@ import ages.vstable.backend.external.blindpay.BlindPayWebhookVerifier;
 import ages.vstable.backend.repository.BlindPayTosSessionRepository;
 import ages.vstable.backend.repository.BlindPayWebhookEventRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
+import ages.vstable.backend.service.transfer.BlindPayExecutionProcessor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,7 @@ class BlindPayWebhookServiceTest {
     @Mock private BlindPayWebhookEventRepository webhookEventRepository;
     @Mock private ProviderAccountRepository providerAccountRepository;
     @Mock private BlindPayTosSessionRepository tosSessionRepository;
+    @Mock private BlindPayExecutionProcessor executionProcessor;
 
     private BlindPayWebhookService service;
     private CompanyEntity company;
@@ -61,7 +63,7 @@ class BlindPayWebhookServiceTest {
         properties.setWebhookSecret(SECRET);
         service = new BlindPayWebhookService(new BlindPayWebhookVerifier(properties), properties,
                 webhookEventRepository, providerAccountRepository, tosSessionRepository,
-                JsonMapper.builder().build());
+                JsonMapper.builder().build(), executionProcessor);
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         when(webhookEventRepository.insertIfAbsent(anyString(), any(), any())).thenReturn(1);
     }
@@ -279,6 +281,50 @@ class BlindPayWebhookServiceTest {
         assertThatThrownBy(() -> deliver("msg_1", "{not json"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Malformed BlindPay webhook payload");
+    }
+
+    @Test
+    void handle_payinComplete_isRoutedToTransferExecutionByPayinId() {
+        when(executionProcessor.onPayinEvent("pi_000000000001")).thenReturn(true);
+
+        BlindPayWebhookService.Result result = deliver("msg_payin",
+                "{\"webhook_event\":\"payin.complete\",\"id\":\"pi_000000000001\",\"status\":\"completed\"}");
+
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        verify(executionProcessor).onPayinEvent("pi_000000000001");
+        verifyNoInteractions(providerAccountRepository, tosSessionRepository);
+    }
+
+    @Test
+    void handle_payoutUpdate_isRoutedToTransferExecutionByPayoutId() {
+        when(executionProcessor.onPayoutEvent("po_000000000001")).thenReturn(true);
+
+        BlindPayWebhookService.Result result = deliver("msg_payout",
+                "{\"webhook_event\":\"payout.update\",\"id\":\"po_000000000001\",\"status\":\"failed\"}");
+
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        verify(executionProcessor).onPayoutEvent("po_000000000001");
+    }
+
+    @Test
+    void handle_payoutOfUnknownTransfer_isIgnored() {
+        when(executionProcessor.onPayoutEvent("po_unknown")).thenReturn(false);
+
+        BlindPayWebhookService.Result result = deliver("msg_unknown",
+                "{\"webhook_event\":\"payout.complete\",\"id\":\"po_unknown\",\"status\":\"completed\"}");
+
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.IGNORED);
+    }
+
+    @Test
+    void handle_repeatedFinancialMessage_isNotProcessedTwice() {
+        when(webhookEventRepository.insertIfAbsent(eq("msg_repeat"), any(), any())).thenReturn(0);
+
+        BlindPayWebhookService.Result result = deliver("msg_repeat",
+                "{\"webhook_event\":\"payin.complete\",\"id\":\"pi_000000000001\",\"status\":\"completed\"}");
+
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.DUPLICATE);
+        verifyNoInteractions(executionProcessor);
     }
 
     // ---------------------------------------------------------------------

@@ -33,4 +33,11 @@ public record BlindPayWebhookEvent(
     public static final String CUSTOMER_NEW = "customer.new";
     public static final String CUSTOMER_UPDATE = "customer.update";
     public static final String TOS_ACCEPT = "tos.accept";
+    /** Eventos financeiros: {@code id} é o payin ({@code pi_}) ou o payout ({@code po_}). */
+    public static final String PAYIN_NEW = "payin.new";
+    public static final String PAYIN_UPDATE = "payin.update";
+    public static final String PAYIN_COMPLETE = "payin.complete";
+    public static final String PAYOUT_NEW = "payout.new";
+    public static final String PAYOUT_UPDATE = "payout.update";
+    public static final String PAYOUT_COMPLETE = "payout.complete";
 }

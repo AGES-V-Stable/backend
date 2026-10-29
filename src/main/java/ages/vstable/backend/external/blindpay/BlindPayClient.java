@@ -64,6 +64,7 @@ public class BlindPayClient implements BlindPayGateway {
     private static final String BANK_ACCOUNTS_PATH = CUSTOMER_PATH + "/bank-accounts";
     private static final String BANK_ACCOUNT_PATH = BANK_ACCOUNTS_PATH + "/{bankAccountId}";
     private static final String WALLETS_PATH = CUSTOMER_PATH + "/wallets";
+    private static final String WALLET_PATH = WALLETS_PATH + "/{walletId}";
     private static final String QUOTES_PATH = INSTANCE_PATH + "/quotes";
     private static final String EVM_PAYOUTS_PATH = INSTANCE_PATH + "/payouts/evm";
     private static final String PAYOUT_PATH = INSTANCE_PATH + "/payouts/{payoutId}";
@@ -211,6 +212,14 @@ public class BlindPayClient implements BlindPayGateway {
         requireRequest(request, "wallet request");
         return post("Could not create the BlindPay wallet", request, idempotencyKey,
                 BlindPayWalletResponse.class, WALLETS_PATH, customerId);
+    }
+
+    @Override
+    public BlindPayWalletResponse getWallet(String customerId, String walletId) {
+        requireId(customerId, "customerId");
+        requireId(walletId, "walletId");
+        return get("Could not fetch the BlindPay wallet",
+                BlindPayWalletResponse.class, WALLET_PATH, customerId, walletId);
     }
 
     @Override

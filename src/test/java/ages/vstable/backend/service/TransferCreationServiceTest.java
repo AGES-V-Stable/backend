@@ -927,6 +927,59 @@ class TransferCreationServiceTest {
     }
 
     @Test
+    void createConfirmedOffer_repassaCotacaoNovaAoGuardEVinculaTicketETransacao() {
+        // Arrange
+        setUpService();
+        stubSubAccount();
+        stubTransactionPersistence();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        stubBeneficiary(beneficiary);
+        UUID ticketId = UUID.randomUUID();
+        when(aveniaTransferService.createTransfer(any(), any(), any())).thenAnswer(call -> {
+            java.util.function.Consumer<AveniaQuoteResponse> beforeTicket = call.getArgument(2);
+            beforeTicket.accept(aveniaResponse());
+            return new AveniaTransferResult(
+                    aveniaResponse(), new AveniaTicketResponse(ticketId, null, null, "UNPAID", null, null));
+        });
+        java.util.List<ages.vstable.backend.dto.transfer.TransferQuoteResponse> seen = new java.util.ArrayList<>();
+
+        // Act
+        TransferService.ExecutedTransfer result = transferService.createConfirmedOffer(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID, seen::add);
+
+        // Assert
+        assertThat(seen).singleElement().satisfies(quote -> {
+            assertThat(quote.source().amount()).isEqualByComparingTo("125000.00");
+            assertThat(quote.destination().amount()).isEqualByComparingTo("24235.14");
+        });
+        assertThat(result.status()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
+        assertThat(result.ticketId()).isEqualTo(ticketId);
+        assertThat(result.transactionId()).isNotNull();
+        verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void createConfirmedOffer_guardRecusaPreco_naoPersisteTransacao() {
+        setUpService();
+        stubSubAccount();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        stubBeneficiary(beneficiary);
+        when(aveniaTransferService.createTransfer(any(), any(), any())).thenAnswer(call -> {
+            java.util.function.Consumer<AveniaQuoteResponse> beforeTicket = call.getArgument(2);
+            beforeTicket.accept(aveniaResponse());
+            throw new AssertionError("ticket must not be created");
+        });
+
+        assertThatThrownBy(() -> transferService.createConfirmedOffer(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID,
+                quote -> {
+                    throw new ages.vstable.backend.exception.QuotePriceChangedException("price changed");
+                }))
+                .isInstanceOf(ages.vstable.backend.exception.QuotePriceChangedException.class);
+        verify(importTransactionRepository, never()).save(any());
+    }
+
+    @Test
     void create_semDescricao_naoEnviaExternalIdEMantemStatusAusenteComoProcessando() {
         setUpService();
         stubSubAccount();

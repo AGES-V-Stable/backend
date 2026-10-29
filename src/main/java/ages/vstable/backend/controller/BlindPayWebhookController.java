@@ -24,7 +24,7 @@ public class BlindPayWebhookController {
     private final BlindPayWebhookService webhookService;
 
     @PostMapping
-    @Operation(summary = "Recebe webhooks de compliance da BlindPay (customer.new, customer.update, tos.accept)")
+    @Operation(summary = "Recebe webhooks da BlindPay: compliance (customer.new, customer.update, tos.accept) e transferências (payin.*, payout.*)")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "Evento processado, repetido ou ignorado"),
             @ApiResponse(responseCode = "400", description = "Corpo malformado"),
