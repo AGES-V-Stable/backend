@@ -97,6 +97,8 @@ class BlindPayQuoteProviderTest {
         assertThat(fundingRequest.getValue().paymentMethod()).isEqualTo(BlindPayApi.Payin.PaymentMethod.pix);
         assertThat(fundingRequest.getValue().currencyType()).isEqualTo(BlindPayApi.Quote.CurrencyType.sender);
         assertThat(fundingRequest.getValue().requestAmount()).isEqualTo(100000L);
+        // Origem fixa: as taxas saem de quem recebe para o valor enviado ser o exato.
+        assertThat(fundingRequest.getValue().coverFees()).isFalse();
 
         ArgumentCaptor<BlindPayQuoteRequest> payoutRequest = ArgumentCaptor.forClass(BlindPayQuoteRequest.class);
         verify(blindPayGateway).createQuote(payoutRequest.capture(), anyString());
@@ -148,12 +150,15 @@ class BlindPayQuoteProviderTest {
         verify(blindPayGateway).createQuote(payoutRequest.capture(), anyString());
         assertThat(payoutRequest.getValue().currencyType()).isEqualTo(BlindPayApi.Quote.CurrencyType.receiver);
         assertThat(payoutRequest.getValue().requestAmount()).isEqualTo(100000L);
+        // Destino fixo: as taxas somam a quem envia para o destinatário receber o valor exato.
+        assertThat(payoutRequest.getValue().coverFees()).isTrue();
 
         ArgumentCaptor<BlindPayPayinQuoteRequest> fundingRequest =
                 ArgumentCaptor.forClass(BlindPayPayinQuoteRequest.class);
         verify(blindPayGateway).createPayinQuote(fundingRequest.capture(), anyString());
         assertThat(fundingRequest.getValue().currencyType()).isEqualTo(BlindPayApi.Quote.CurrencyType.receiver);
         assertThat(fundingRequest.getValue().requestAmount()).isEqualTo(18234L);
+        assertThat(fundingRequest.getValue().coverFees()).isTrue();
         assertThat(result.sourceAmount()).isEqualByComparingTo("1010.00");
         assertThat(result.targetAmount()).isEqualByComparingTo("1000.00");
     }

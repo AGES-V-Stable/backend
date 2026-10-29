@@ -195,7 +195,7 @@ class BlindPayExecutionProcessorTest {
         verify(blindPayGateway).createEvmPayout(request.capture(), eq(key(execution, "payout:0")));
         assertThat(request.getValue().quoteId()).isEqualTo("qu_000000000001");
         assertThat(request.getValue().senderWalletAddress()).isEqualTo("0xmanaged");
-        assertThat(request.getValue().walletId()).isEqualTo("bl_000000000001");
+        assertThat(request.getValue().walletId()).isNull();
         assertThat(execution.getFundedAmount()).isEqualByComparingTo("180.12");
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
         assertThat(execution.getExternalPayoutId()).isEqualTo("po_000000000001");

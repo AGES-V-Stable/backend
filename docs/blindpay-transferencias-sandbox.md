@@ -70,6 +70,22 @@ Em desenvolvimento, a BlindPay só aceita redes de teste (`base_sepolia`, `sepol
 `polygon_amoy`, ...) e o token `USDB`. Payins e payouts completam sozinhos em segundos. O código PIX
 devolvido é um placeholder e não é pagável.
 
+A instância de desenvolvimento do projeto já vem com clientes de demonstração aprovados (por exemplo,
+`re_DHY8cIww3Dr6`), cada um com contas aprovadas em vários rails (ach, wire, rtp, pix, ted, sepa,
+international_swift).
+
+Comportamentos observados na API real (instância de desenvolvimento, 28/10/2026):
+- `POST /payouts/evm` aceita **exatamente um** entre `sender_wallet_address` e `wallet_id`. Para a carteira
+  gerenciada, o backend envia só o endereço dela. A página pública de referência sugeria os dois juntos.
+- O payout por wire tem taxa fixa de US$ 15, e o valor enviado precisa ser maior que ela (15 USDB foi
+  recusado com `FEES_PARTNER_FEE_EXCEEDED`; 18 USDB foi aceito). BRL 100,00 vira cerca de 18,5 USDB no
+  payin e cerca de US$ 3 no wire.
+- O payin BRL/PIX completa sozinho em cerca de 35 s.
+- `cover_fees` decide qual lado fica exato: `false` desconta as taxas de quem recebe (o valor enviado é
+  o pedido); `true` soma as taxas a quem envia (o valor recebido é o pedido). O backend usa `false` para
+  origem fixa e `true` para destino fixo; sem isso, a cotação com destino fixo nunca entregava o valor pedido.
+- Os 8 cenários de `BlindPaySandboxTransferTest` passaram nessa instância em 28/10/2026.
+
 ### Variáveis de ambiente
 
 | Variável | Obrigatória | Padrão |

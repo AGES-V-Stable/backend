@@ -128,7 +128,7 @@ class BlindPaySandboxTransferTest {
         assertThat(confirmed.status()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
         assertThat(confirmed.fundingInstructions()).isNotBlank();
         TransferExecutionEntity finished = awaitTerminal(confirmed.executionId());
-        assertThat(finished.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
+        assertThat(finished.getStatus()).as(describe(finished)).isEqualTo(TransferExecutionStatus.COMPLETED);
         assertThat(finished.getExternalPayoutId()).startsWith("po_");
         assertThat(finished.getFundedAmount()).isPositive();
     }
@@ -274,6 +274,11 @@ class BlindPaySandboxTransferTest {
                 .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY).externalBankAccountId(BANK_ACCOUNT_ID)
                 .status("APPROVED").createdAt(now).updatedAt(now).build());
         return new Fixture(user, beneficiary);
+    }
+
+    private static String describe(TransferExecutionEntity execution) {
+        return "execution " + execution.getId() + " " + execution.getStatus()
+                + " (" + execution.getFailureCode() + ": " + execution.getFailureMessage() + ")";
     }
 
     private static void sleep() {

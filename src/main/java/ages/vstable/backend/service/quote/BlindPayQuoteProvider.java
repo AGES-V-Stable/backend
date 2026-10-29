@@ -165,7 +165,7 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                 blindPayFees,
                 blindPayFees,
                 earliestExpiration(expiresAt(fundingQuote), expiresAt(payoutQuote)),
-                compositeMetadata(fundingQuote, payoutQuote, walletId));
+                compositeMetadata(fundingQuote, payoutQuote, targetAmount, walletId));
     }
 
     private BlindPayPayinQuoteResponse createPayinQuote(
@@ -192,7 +192,7 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                                 ? BlindPayApi.Quote.CurrencyType.sender
                                 : BlindPayApi.Quote.CurrencyType.receiver)
                         .requestAmount(toCents(amount))
-                        .coverFees(context.request().coverFees())
+                        .coverFees(coverFees(amountSide))
                         .build(),
                 idempotencyKey);
     }
@@ -213,10 +213,20 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                                 ? BlindPayApi.Quote.CurrencyType.sender
                                 : BlindPayApi.Quote.CurrencyType.receiver)
                         .requestAmount(toCents(amount))
-                        .coverFees(context.request().coverFees())
+                        .coverFees(coverFees(amountSide))
                         .description(context.request().description())
                         .build(),
                 idempotencyKey);
+    }
+
+    /**
+     * Na BlindPay, {@code cover_fees} decide qual lado fica exato: {@code false} desconta as
+     * taxas de quem recebe (o valor enviado é o pedido); {@code true} soma as taxas a quem
+     * envia (o valor recebido é o pedido). Conferido na instância de desenvolvimento. Por isso
+     * ele vem do lado fixo da cotação: só assim a oferta preserva o valor que o usuário fixou.
+     */
+    static boolean coverFees(QuoteAmountSide amountSide) {
+        return amountSide == QuoteAmountSide.TARGET;
     }
 
     private OffsetDateTime earliestExpiration(OffsetDateTime first, OffsetDateTime second) {
@@ -261,7 +271,8 @@ public class BlindPayQuoteProvider implements QuoteProvider {
      * payout para decidir se ela ainda vale ou se é preciso recotar.
      */
     private String compositeMetadata(
-            BlindPayPayinQuoteResponse fundingQuote, BlindPayQuoteResponse payoutQuote, String walletId) {
+            BlindPayPayinQuoteResponse fundingQuote, BlindPayQuoteResponse payoutQuote,
+            BigDecimal payoutReceiverAmount, String walletId) {
         ObjectNode metadata = METADATA_MAPPER.createObjectNode()
                 .put(METADATA_FUNDING_PROVIDER, provider().name())
                 .put(METADATA_FUNDING_QUOTE_ID, fundingQuote.id())
@@ -269,7 +280,7 @@ public class BlindPayQuoteProvider implements QuoteProvider {
                 .put(METADATA_PAYOUT_QUOTE_ID, payoutQuote.id())
                 .put(METADATA_PAYOUT_SENDER_AMOUNT, requirePositive(
                         fromCents(payoutQuote.senderAmount()), "BlindPay payout sender amount").toPlainString())
-                .put(METADATA_PAYOUT_RECEIVER_AMOUNT, fromCents(payoutQuote.receiverAmount()).toPlainString())
+                .put(METADATA_PAYOUT_RECEIVER_AMOUNT, payoutReceiverAmount.toPlainString())
                 .put(METADATA_WALLET_ID, walletId);
         if (payoutQuote.expiresAt() != null) {
             metadata.put(METADATA_PAYOUT_EXPIRES_AT, payoutQuote.expiresAt());

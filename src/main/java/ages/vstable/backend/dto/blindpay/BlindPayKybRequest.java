@@ -30,7 +30,7 @@ public record BlindPayKybRequest(
         @Size(max = 255) String addressLine2,
         @NotBlank @Size(max = 100) String city,
         @NotBlank @Size(max = 100) String stateProvinceRegion,
-        @NotBlank @Pattern(regexp = COUNTRY, message = COUNTRY_MESSAGE) String country,
+        @NotBlank @Pattern(regexp = COUNTRY_CODE, message = COUNTRY_MESSAGE) String country,
         @NotBlank @Size(max = 20) String postalCode,
         @Pattern(regexp = PHONE, message = "must use the E.164 format, e.g. +5551999999999") String phoneNumber,
         @NotNull @PastOrPresent LocalDate formationDate,
@@ -57,7 +57,7 @@ public record BlindPayKybRequest(
         @NotEmpty @Size(max = 10) List<@NotNull @Valid Owner> owners
 ) {
 
-    static final String COUNTRY = "[A-Z]{2}";
+    static final String COUNTRY_CODE = "[A-Z]{2}";
     static final String COUNTRY_MESSAGE = "must be an ISO 3166-1 alpha-2 code, e.g. BR";
     static final String PHONE = "\\+[1-9]\\d{7,14}";
     static final String HTTPS_URL = "https://\\S+";
@@ -101,9 +101,9 @@ public record BlindPayKybRequest(
             @Size(max = 255) String addressLine2,
             @NotBlank @Size(max = 100) String city,
             @NotBlank @Size(max = 100) String stateProvinceRegion,
-            @NotBlank @Pattern(regexp = COUNTRY, message = COUNTRY_MESSAGE) String country,
+            @NotBlank @Pattern(regexp = COUNTRY_CODE, message = COUNTRY_MESSAGE) String country,
             @NotBlank @Size(max = 20) String postalCode,
-            @NotBlank @Pattern(regexp = COUNTRY, message = COUNTRY_MESSAGE) String idDocCountry,
+            @NotBlank @Pattern(regexp = COUNTRY_CODE, message = COUNTRY_MESSAGE) String idDocCountry,
             @NotNull BlindPayApi.Customer.IdDocType idDocType,
             @NotBlank @Pattern(regexp = HTTPS_URL, message = HTTPS_URL_MESSAGE) @Size(max = 2048)
             String idDocFrontFile,

@@ -5,10 +5,11 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
 /**
- * Corpo de POST /v1/instances/{instance_id}/payouts/evm. {@code senderWalletAddress}
- * é sempre obrigatório: é o endereço da carteira de origem, seja ela externa (que já
- * aprovou o contrato da cotação) ou gerenciada pela BlindPay. Para a carteira
- * gerenciada, {@code walletId} identifica a carteira cujo saldo será debitado.
+ * Corpo de POST /v1/instances/{instance_id}/payouts/evm. A origem dos fundos é
+ * informada por exatamente um campo: {@code senderWalletAddress} ou {@code walletId}.
+ * A API recusa os dois juntos ("Provide exactly one of sender_wallet_address or
+ * wallet_id"), conferido na instância de desenvolvimento. Para a carteira gerenciada
+ * pela BlindPay, o payout é enviado com o endereço dela.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -20,18 +21,16 @@ public record BlindPayEvmPayoutRequest(
 
     public BlindPayEvmPayoutRequest {
         RequestValidation.requireText(quoteId, "quoteId");
-        RequestValidation.requireText(senderWalletAddress, "senderWalletAddress");
-        if (walletId != null && walletId.isBlank()) {
-            throw new IllegalArgumentException("walletId must not be blank");
-        }
+        RequestValidation.requireExactlyOne(
+                senderWalletAddress, "senderWalletAddress", walletId, "walletId");
     }
 
     public static BlindPayEvmPayoutRequest fromExternalWallet(String quoteId, String senderWalletAddress) {
         return new BlindPayEvmPayoutRequest(quoteId, senderWalletAddress, null);
     }
 
-    public static BlindPayEvmPayoutRequest fromManagedWallet(String quoteId, String walletAddress, String walletId) {
-        RequestValidation.requireText(walletId, "walletId");
-        return new BlindPayEvmPayoutRequest(quoteId, walletAddress, walletId);
+    /** Carteira gerenciada pela BlindPay: a origem é o endereço dela. */
+    public static BlindPayEvmPayoutRequest fromManagedWallet(String quoteId, String walletAddress) {
+        return new BlindPayEvmPayoutRequest(quoteId, walletAddress, null);
     }
 }

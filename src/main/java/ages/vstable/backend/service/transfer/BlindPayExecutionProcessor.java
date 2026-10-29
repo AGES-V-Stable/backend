@@ -375,7 +375,7 @@ public class BlindPayExecutionProcessor {
                     provisioningService.ensureManagedWallet(context.company(), context.network());
             payout = blindPayGateway.createEvmPayout(
                     BlindPayEvmPayoutRequest.fromManagedWallet(
-                            execution.getExternalPayoutQuoteId(), wallet.address(), wallet.id()),
+                            execution.getExternalPayoutQuoteId(), wallet.address()),
                     idempotencyKey(execution, "payout:" + execution.getPayoutQuoteAttempts()));
             if (payout == null || !hasText(payout.id())) {
                 throw BlindPayIntegrationException.invalidResponse("BlindPay payout response has no id");

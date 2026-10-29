@@ -277,19 +277,19 @@ class BlindPayClientTest {
     }
 
     @Test
-    void sendsManagedWalletPayoutWithSenderAddressAndWalletId() {
+    void sendsManagedWalletPayoutWithOnlyTheWalletAddress() {
         server.expect(once(), requestTo(INSTANCE_URL + "/payouts/evm"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Idempotency-Key", "transfer-execution:1:payout:0"))
                 .andExpect(content().json("""
-                        {"quote_id":"qu_000000000001","sender_wallet_address":"0xabc","wallet_id":"bl_000000000001"}
+                        {"quote_id":"qu_000000000001","sender_wallet_address":"0xabc"}
                         """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess("""
                         {"id":"po_000000000001","status":"processing"}
                         """, MediaType.APPLICATION_JSON));
 
         BlindPayPayoutResponse payout = client.createEvmPayout(BlindPayEvmPayoutRequest.fromManagedWallet(
-                "qu_000000000001", "0xabc", "bl_000000000001"), "transfer-execution:1:payout:0");
+                "qu_000000000001", "0xabc"), "transfer-execution:1:payout:0");
 
         assertThat(payout.status()).isEqualTo("processing");
         server.verify();
@@ -581,7 +581,7 @@ class BlindPayClientTest {
 
         assertThatThrownBy(() -> client.createEvmPayout(
                 BlindPayEvmPayoutRequest.fromManagedWallet(
-                        "qu_000000000001", "0xDD6a3aD0949396e57C7738ba8FC1A46A5a1C372C", "bl_000000000001"), "tx-1"))
+                        "qu_000000000001", "0xDD6a3aD0949396e57C7738ba8FC1A46A5a1C372C"), "tx-1"))
                 .isInstanceOfSatisfying(BlindPayIntegrationException.class, ex -> {
                     assertThat(ex.getMessage()).isEqualTo("Could not create the BlindPay payout: HTTP 400"
                             + " - PAYOUTS_INSUFFICIENT_BALANCE: There is not enough balance to complete this payout.");
