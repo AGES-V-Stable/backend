@@ -267,6 +267,25 @@ class TransferExecutionServiceTest {
     }
 
     @Test
+    void confirm_aveniaOfferAfterProviderTokenExpired_stillExecutesWithFreshQuote() {
+        // Arrange: 30 s depois da cotação o quoteToken (15 s) já expirou, mas a oferta não.
+        aveniaOffer();
+        offer.setExpiresAt(NOW_UTC.plusSeconds(30));
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            return new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.AWAITING_PAYMENT,
+                    UUID.randomUUID());
+        });
+
+        // Act
+        TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
+
+        // Assert
+        assertThat(response.status()).isEqualTo(TransferExecutionStatus.SUBMITTED);
+    }
+
+    @Test
     void confirm_aveniaPriceGotWorse_failsWithConflictBeforeCreatingTicket() {
         // Arrange
         aveniaOffer();

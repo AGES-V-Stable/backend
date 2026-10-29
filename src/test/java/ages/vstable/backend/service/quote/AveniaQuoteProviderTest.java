@@ -22,7 +22,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -45,6 +48,7 @@ class AveniaQuoteProviderTest {
     @BeforeEach
     void setUp() {
         provider = new AveniaQuoteProvider(transferService);
+        ReflectionTestUtils.setField(provider, "confirmationWindow", Duration.ofSeconds(60));
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         wallet = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
                 .receivingMethod(ReceivingMethod.CRYPTO_WALLET).build();
@@ -89,7 +93,10 @@ class AveniaQuoteProviderTest {
         assertThat(result.sourceAmount()).isEqualByComparingTo("1000.00");
         assertThat(result.targetAmount()).isEqualByComparingTo("180.50");
         assertThat(result.totalFee()).isEqualByComparingTo("5.00");
-        assertThat(result.expiresAt()).isAfter(OffsetDateTime.now());
+        // O quoteToken da Avenia vale 15 s; a oferta precisa ficar confirmável por mais tempo,
+        // pois a execução recota e recusa preço pior.
+        assertThat(result.expiresAt()).isAfter(OffsetDateTime.now().plusSeconds(45));
+        assertThat(result.expiresAt()).isBefore(OffsetDateTime.now().plusSeconds(61));
     }
 
     private QuoteContext context(BeneficiaryEntity beneficiary, String sourceCurrency, String sourceMethod) {

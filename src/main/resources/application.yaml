@@ -61,6 +61,9 @@ blindpay:
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
+  avenia:
+    # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
+    confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
 
 # Conciliação das transferências BlindPay: retoma execuções paradas (webhook perdido,
 # chamada sem resposta) repetindo cada etapa com a mesma chave de idempotência.
