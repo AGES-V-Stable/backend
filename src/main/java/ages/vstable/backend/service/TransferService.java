@@ -94,6 +94,7 @@ public class TransferService {
     private final ImportTransactionRepository importTransactionRepository;
     private final ExportTransactionRepository exportTransactionRepository;
     private final CompanyRepository companyRepository;
+    private final TwoFactorAuthService twoFactorAuthService;
 
     /**
      * Cotação de exibição. Usa a mesma composição de moedas e métodos da confirmação
@@ -127,6 +128,8 @@ public class TransferService {
     @Transactional
     public CreateTransferResponse create(
             CreateTransferRequest request, UUID currentUserId, UUID currentCompanyId) {
+        twoFactorAuthService.validateTransferTotp(currentUserId, request.getTotpCode());
+
         BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
         TransferRoute route = resolveRoute(
                 request.getSourceCurrency(), request.getDestinationCurrency(),
@@ -141,6 +144,7 @@ public class TransferService {
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
         persistTransaction(beneficiary, request, result, status, currentUserId);
+        twoFactorAuthService.consumeTransferTotp(currentUserId, request.getTotpCode());
 
         CreateTransferResponse response = new CreateTransferResponse(status);
         OperationalLog.milestone("transfer.creation.completed", "success");

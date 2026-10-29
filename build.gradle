@@ -91,6 +91,7 @@ tasks.named('test') {
 		excludeTags 'blindpay-sandbox'
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
+	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
 	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
 		agentJar.from(configurations.mockitoAgent)
 	})

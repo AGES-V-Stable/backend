@@ -11,6 +11,8 @@ import lombok.ToString;
 @Schema(description = "Representative and company data for the full onboarding (single step, before facial KYC)")
 public class OnboardingRequestDTO {
 
+    private Boolean enableTwoFactor;
+    
     @NotBlank
     private String fullName;
 

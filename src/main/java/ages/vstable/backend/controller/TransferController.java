@@ -58,12 +58,14 @@ public class TransferController {
     }
 
     @PostMapping
-    @Operation(summary = "Gera uma cotação nova e cria a transferência correspondente na Avenia")
+    @Operation(summary = "Valida o código TOTP do usuário, gera uma cotação nova e cria a transferência correspondente na Avenia")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transferência criada; retorna o status atual"),
             @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente ou inválido"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado ou código TOTP inválido/já utilizado"),
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
-            @ApiResponse(responseCode = "422", description = "Moeda não informada e não determinável, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
+            @ApiResponse(responseCode = "422", description = "Código TOTP ausente, usuário sem 2FA ativo, moeda não determinável, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
+            @ApiResponse(responseCode = "423", description = "Conta temporariamente bloqueada por excesso de tentativas incorretas de TOTP"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
             @ApiResponse(responseCode = "503", description = "Falha temporária ao comunicar com a Avenia; pode tentar novamente"),
     })

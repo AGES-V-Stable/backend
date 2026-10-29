@@ -24,222 +24,233 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class JwtTokenUtilsTest {
 
-    private static final String SECRET =
-            "my-test-secret-key-that-is-at-least-64-bytes-long-for-hs512-signing-key";
+        private static final String SECRET = "my-test-secret-key-that-is-at-least-64-bytes-long-for-hs512-signing-key";
 
-    private static final String EMAIL =
-            "user@example.com";
+        private static final String EMAIL = "user@example.com";
 
-    private JwtTokenUtils jwtTokenUtils;
+        private JwtTokenUtils jwtTokenUtils;
 
-    @Mock
-    private UserEntity user;
+        @Mock
+        private UserEntity user;
 
-    @Mock
-    private UserDetails userDetails;
+        @Mock
+        private UserDetails userDetails;
 
-    @BeforeEach
-    void setUp() {
-        jwtTokenUtils = new JwtTokenUtils();
+        @BeforeEach
+        void setUp() {
+                jwtTokenUtils = new JwtTokenUtils();
 
-        ReflectionTestUtils.setField(
-                jwtTokenUtils,
-                "secret",
-                SECRET
-        );
-    }
+                ReflectionTestUtils.setField(
+                                jwtTokenUtils,
+                                "secret",
+                                SECRET);
+        }
 
-    // ---------------------------------------------------------
-    // Generate token
-    // ---------------------------------------------------------
+        // ---------------------------------------------------------
+        // Generate token
+        // ---------------------------------------------------------
 
-    @Test
-    void shouldGenerateTokenWithCorrectUsername() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+        @Test
+        void shouldGenerateTokenWithCorrectUsername() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
-        String token = jwtTokenUtils.generateToken(user);
+                String token = jwtTokenUtils.generateToken(user);
 
-        assertThat(jwtTokenUtils.getUsernameFromToken(token))
-                .isEqualTo(EMAIL);
-    }
+                assertThat(jwtTokenUtils.getUsernameFromToken(token))
+                                .isEqualTo(EMAIL);
+        }
 
+        @Test
+        void shouldGenerateTokenWithExpirationDateInFuture() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
-    @Test
-    void shouldGenerateTokenWithExpirationDateInFuture() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+                String token = jwtTokenUtils.generateToken(user);
 
-        String token = jwtTokenUtils.generateToken(user);
+                Date expiration = jwtTokenUtils.getExpirationDateFromToken(token);
 
-        Date expiration = jwtTokenUtils.getExpirationDateFromToken(token);
+                assertThat(expiration)
+                                .isAfter(new Date());
+        }
 
-        assertThat(expiration)
-                .isAfter(new Date());
-    }
+        // ---------------------------------------------------------
+        // Username
+        // ---------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // Username
-    // ---------------------------------------------------------
+        @Test
+        void shouldReturnUsernameFromToken() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
-    @Test
-    void shouldReturnUsernameFromToken() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+                String token = jwtTokenUtils.generateToken(user);
 
-        String token = jwtTokenUtils.generateToken(user);
+                assertThat(jwtTokenUtils.getUsernameFromToken(token))
+                                .isEqualTo(EMAIL);
+        }
 
-        assertThat(jwtTokenUtils.getUsernameFromToken(token))
-                .isEqualTo(EMAIL);
-    }
+        // ---------------------------------------------------------
+        // Claims
+        // ---------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // Claims
-    // ---------------------------------------------------------
+        @Test
+        void shouldRetrieveCustomClaim() {
+                String token = createTokenWithClaims();
 
-    @Test
-    void shouldRetrieveCustomClaim() {
-        String token = createTokenWithClaims(
-        );
+                String value = jwtTokenUtils.getClaimFromToken(
+                                token,
+                                claims -> claims.get("custom", String.class));
 
-        String value = jwtTokenUtils.getClaimFromToken(
-                token,
-                claims -> claims.get("custom", String.class)
-        );
+                assertThat(value)
+                                .isEqualTo("test-value");
+        }
 
-        assertThat(value)
-                .isEqualTo("test-value");
-    }
+        // ---------------------------------------------------------
+        // Validate token
+        // ---------------------------------------------------------
 
-    // ---------------------------------------------------------
-    // Validate token
-    // ---------------------------------------------------------
+        @Test
+        void shouldValidateTokenForMatchingUser() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
-    @Test
-    void shouldValidateTokenForMatchingUser() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+                when(userDetails.getUsername()).thenReturn(EMAIL);
 
-        when(userDetails.getUsername()).thenReturn(EMAIL);
+                String token = jwtTokenUtils.generateToken(user);
 
-        String token = jwtTokenUtils.generateToken(user);
+                assertThat(jwtTokenUtils.validateToken(token, userDetails))
+                                .isTrue();
+        }
 
-        assertThat(jwtTokenUtils.validateToken(token, userDetails))
-                .isTrue();
-    }
+        @Test
+        void shouldRejectTokenForDifferentUser() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
-    @Test
-    void shouldRejectTokenForDifferentUser() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+                when(userDetails.getUsername())
+                                .thenReturn("other@example.com");
 
-        when(userDetails.getUsername())
-                .thenReturn("other@example.com");
+                String token = jwtTokenUtils.generateToken(user);
 
-        String token = jwtTokenUtils.generateToken(user);
+                assertThat(jwtTokenUtils.validateToken(token, userDetails))
+                                .isFalse();
+        }
 
-        assertThat(jwtTokenUtils.validateToken(token, userDetails))
-                .isFalse();
-    }
+        // ---------------------------------------------------------
+        // Invalid tokens
+        // ---------------------------------------------------------
 
+        @Test
+        void shouldRejectTokenSignedWithDifferentSecret() {
+                when(user.getUsername()).thenReturn(EMAIL);
+                when(user.getAuthorities()).thenReturn(List.of());
 
+                String token = jwtTokenUtils.generateToken(user);
 
-    // ---------------------------------------------------------
-    // Invalid tokens
-    // ---------------------------------------------------------
+                JwtTokenUtils anotherUtils = new JwtTokenUtils();
 
-    @Test
-    void shouldRejectTokenSignedWithDifferentSecret() {
-        when(user.getUsername()).thenReturn(EMAIL);
-        when(user.getAuthorities()).thenReturn(List.of());
+                ReflectionTestUtils.setField(
+                                anotherUtils,
+                                "secret",
+                                "another-secret-key-that-is-also-at-least-64-bytes-long");
 
-        String token = jwtTokenUtils.generateToken(user);
+                assertThatThrownBy(() -> anotherUtils.getUsernameFromToken(token))
+                                .isInstanceOf(Exception.class);
+        }
 
-        JwtTokenUtils anotherUtils = new JwtTokenUtils();
+        @Test
+        void shouldRejectMalformedToken() {
+                assertThatThrownBy(() -> jwtTokenUtils.getUsernameFromToken("invalid.jwt.token"))
+                                .isInstanceOf(Exception.class);
+        }
 
-        ReflectionTestUtils.setField(
-                anotherUtils,
-                "secret",
-                "another-secret-key-that-is-also-at-least-64-bytes-long"
-        );
+        @Test
+        void shouldRejectEmptyToken() {
+                assertThatThrownBy(() -> jwtTokenUtils.getUsernameFromToken(""))
+                                .isInstanceOf(Exception.class);
+        }
 
-        assertThatThrownBy(() ->
-                anotherUtils.getUsernameFromToken(token)
-        )
-                .isInstanceOf(Exception.class);
-    }
+        // ---------------------------------------------------------
+        // Helpers
+        // ---------------------------------------------------------
 
-    @Test
-    void shouldRejectMalformedToken() {
-        assertThatThrownBy(() ->
-                jwtTokenUtils.getUsernameFromToken("invalid.jwt.token")
-        )
-                .isInstanceOf(Exception.class);
-    }
+        private String createTokenWithClaims() {
+                SecretKey key = Keys.hmacShaKeyFor(
+                                SECRET.getBytes(StandardCharsets.UTF_8));
 
-    @Test
-    void shouldRejectEmptyToken() {
-        assertThatThrownBy(() ->
-                jwtTokenUtils.getUsernameFromToken("")
-        )
-                .isInstanceOf(Exception.class);
-    }
+                return Jwts.builder()
+                                .claim("custom", "test-value")
+                                .subject(EMAIL)
+                                .issuedAt(new Date())
+                                .expiration(new Date(
+                                                System.currentTimeMillis() + 3600000))
+                                .signWith(key, Jwts.SIG.HS512)
+                                .compact();
+        }
 
-    // ---------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------
+        // ---------------------------------------------------------
+        // Account type claim
+        // ---------------------------------------------------------
 
-    private String createTokenWithClaims(
-            ) {
-        SecretKey key = Keys.hmacShaKeyFor(
-                SECRET.getBytes(StandardCharsets.UTF_8)
-        );
+        @Test
+        void shouldMarkCompanyUserTokensAsUserAccounts() {
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
 
-        return Jwts.builder()
-                .claim("custom", "test-value")
-                .subject(EMAIL)
-                .issuedAt(new Date())
-                .expiration(new Date(
-                        System.currentTimeMillis() + 3600000
-                ))
-                .signWith(key, Jwts.SIG.HS512)
-                .compact();
-    }
+                String token = jwtTokenUtils.generateToken(companyUser);
 
-    // ---------------------------------------------------------
-    // Account type claim
-    // ---------------------------------------------------------
+                assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        }
 
-    @Test
-    void shouldMarkCompanyUserTokensAsUserAccounts() {
-        UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+        @Test
+        void shouldMarkAdministratorTokensAsAdminAccountsWithAdminRole() {
+                AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
 
-        String token = jwtTokenUtils.generateToken(companyUser);
+                String token = jwtTokenUtils.generateToken(admin);
 
-        assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
-    }
+                assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+                assertThat(jwtTokenUtils.getUsernameFromToken(token)).isEqualTo("admin@vstable.com");
+                assertThat(jwtTokenUtils.<Object>getClaimFromToken(token, claims -> claims.get("role")))
+                                .isEqualTo(List.of("ROLE_ADMIN"));
+        }
 
-    @Test
-    void shouldMarkAdministratorTokensAsAdminAccountsWithAdminRole() {
-        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
+        @Test
+        void shouldTreatTokensWithoutAccountTypeAsUserAccounts() {
+                SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+                String legacyToken = Jwts.builder()
+                                .subject(EMAIL)
+                                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                                .signWith(key, Jwts.SIG.HS512)
+                                .compact();
 
-        String token = jwtTokenUtils.generateToken(admin);
+                assertThat(jwtTokenUtils.getAccountTypeFromToken(legacyToken))
+                                .isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        }
 
-        assertThat(jwtTokenUtils.getAccountTypeFromToken(token)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
-        assertThat(jwtTokenUtils.getUsernameFromToken(token)).isEqualTo("admin@vstable.com");
-        assertThat(jwtTokenUtils.<Object>getClaimFromToken(token, claims -> claims.get("role")))
-                .isEqualTo(List.of("ROLE_ADMIN"));
-    }
+        // ---------------------------------------------------------
+        // 2FA Challenge Token Tests
+        // ---------------------------------------------------------
+        @Test
+        void shouldGenerateAndValidateChallengeToken() {
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+                String challengeToken = jwtTokenUtils.generateChallengeToken(companyUser);
+                assertThat(jwtTokenUtils.validateChallengeToken(challengeToken)).isTrue();
+                assertThat(jwtTokenUtils.getUsernameFromToken(challengeToken)).isEqualTo(EMAIL);
+                assertThat(jwtTokenUtils.getAccountTypeFromToken(challengeToken))
+                                .isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        }
 
-    @Test
-    void shouldTreatTokensWithoutAccountTypeAsUserAccounts() {
-        SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
-        String legacyToken = Jwts.builder()
-                .subject(EMAIL)
-                .expiration(new Date(System.currentTimeMillis() + 60_000))
-                .signWith(key, Jwts.SIG.HS512)
-                .compact();
+        @Test
+        void shouldRejectChallengeTokenWhenUsedAsRegularSessionToken() {
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+                String challengeToken = jwtTokenUtils.generateChallengeToken(companyUser);
+                // Um challengeToken NUNCA pode autenticar rotas normais no validateToken!
+                assertThat(jwtTokenUtils.validateToken(challengeToken, companyUser)).isFalse();
+        }
 
-        assertThat(jwtTokenUtils.getAccountTypeFromToken(legacyToken)).isEqualTo(JwtTokenUtils.ACCOUNT_TYPE_USER);
-    }
+        @Test
+        void shouldRejectRegularSessionTokenWhenValidatedAsChallengeToken() {
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+                String sessionToken = jwtTokenUtils.generateToken(companyUser);
+                assertThat(jwtTokenUtils.validateChallengeToken(sessionToken)).isFalse();
+        }
 }
