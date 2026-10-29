@@ -104,6 +104,15 @@ ai:
     deepseek-model: ${AI_SUPPORT_DEEPSEEK_MODEL:deepseek-chat}
     deepseek-base-url: ${AI_SUPPORT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
 
+ai:
+  support:
+    provider: ${AI_SUPPORT_PROVIDER:gemini}
+    api-key: ${AI_SUPPORT_API_KEY:}
+    gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-flash-lite-latest}
+    gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    deepseek-model: ${AI_SUPPORT_DEEPSEEK_MODEL:deepseek-chat}
+    deepseek-base-url: ${AI_SUPPORT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+
 ---
 spring:
   config:
