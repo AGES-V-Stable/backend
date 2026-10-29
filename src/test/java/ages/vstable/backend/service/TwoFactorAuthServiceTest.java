@@ -4,7 +4,6 @@ import ages.vstable.backend.dto.authentication.LoginResponseDTO;
 import ages.vstable.backend.dto.authentication.TwoFactorSetupResponseDTO;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
@@ -73,6 +72,21 @@ class TwoFactorAuthServiceTest {
         }
 
         @Test
+        void setupTwoFactor_paraAdmin_deveSalvarSegredoTemporarioNoRepositorioDeAdmins() {
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorEnabled(false)
+                                .build();
+
+                TwoFactorSetupResponseDTO response = twoFactorAuthService.setupTwoFactor(admin);
+
+                assertThat(response.isTwoFactorEnabled()).isFalse();
+                assertThat(response.getOtpauthUri()).startsWith("otpauth://totp/V-Stable:admin%40vstable.com?secret=");
+                assertThat(admin.getTwoFactorSecret()).isNotBlank();
+                verify(administratorRepository).save(admin);
+        }
+
+        @Test
         void setupTwoFactor_quando2faJaAtivoESemCodigoAtual_deveLancarBadCredentialsException() {
                 UserEntity user = UserEntity.builder()
                                 .email("user@vstable.com")
@@ -102,6 +116,31 @@ class TwoFactorAuthServiceTest {
                 assertThat(user.getTwoFactorSecret()).isNotEqualTo(oldSecret);
                 assertThat(user.getTwoFactorEnabled()).isFalse();
                 verify(userRepository).save(user);
+        }
+
+        @Test
+        void activateTwoFactor_quandoCodigoValidoParaUsuarioEAdmin_deveAtivar2fa() {
+                String secret = totpService.generateSecret();
+                long window = FIXED_INSTANT.getEpochSecond() / 30L;
+                String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+
+                UserEntity user = UserEntity.builder()
+                                .email("user@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(false)
+                                .build();
+                twoFactorAuthService.activateTwoFactor(user, validCode);
+                assertThat(user.getTwoFactorEnabled()).isTrue();
+                verify(userRepository).save(user);
+
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(false)
+                                .build();
+                twoFactorAuthService.activateTwoFactor(admin, validCode);
+                assertThat(admin.getTwoFactorEnabled()).isTrue();
+                verify(administratorRepository).save(admin);
         }
 
         @Test
@@ -194,6 +233,32 @@ class TwoFactorAuthServiceTest {
         }
 
         @Test
+        void verifyLoginChallenge_primeiroAcessoDeAdmin_deveMarcarTwoFactorEnabledComoTrue() {
+                String secret = totpService.generateSecret();
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(false)
+                                .require2fa(true)
+                                .active(true)
+                                .build();
+
+                long window = FIXED_INSTANT.getEpochSecond() / 30L;
+                String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+
+                when(jwtTokenUtils.validateChallengeToken("admin-challenge")).thenReturn(true);
+                when(jwtTokenUtils.getUsernameFromToken("admin-challenge")).thenReturn("admin@vstable.com");
+                when(jwtTokenUtils.getAccountTypeFromToken("admin-challenge"))
+                                .thenReturn(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+                when(userService.loadPrincipal("admin@vstable.com", JwtTokenUtils.ACCOUNT_TYPE_ADMIN)).thenReturn(admin);
+
+                UserDetails result = twoFactorAuthService.verifyLoginChallenge("admin-challenge", validCode);
+                assertThat(result).isSameAs(admin);
+                assertThat(admin.getTwoFactorEnabled()).isTrue();
+                verify(administratorRepository).save(admin);
+        }
+
+        @Test
         void verifyLoginChallenge_apos5TentativasIncorretas_deveBloquearContaTemporariamente() {
                 String secret = totpService.generateSecret();
                 UserEntity user = UserEntity.builder()
@@ -213,14 +278,13 @@ class TwoFactorAuthServiceTest {
                                         .isInstanceOf(BadCredentialsException.class);
                 }
 
-                // Na 6ª tentativa, mesmo antes de validar o TOTP, a conta está bloqueada com
-                // LockedException
+                // Na 6ª tentativa, mesmo antes de validar o TOTP, a conta está bloqueada com LockedException
                 assertThatThrownBy(() -> twoFactorAuthService.verifyLoginChallenge("challenge", "000000"))
                                 .isInstanceOf(LockedException.class);
         }
 
         @Test
-        void validateTransferTotp_quandoCodigoValido_autorizaEBloqueiaReplaySeguinte() {
+        void validateEConsumeTransferTotp_naoConsomeNaValidacaoEBloqueiaReplayAposConsumo() {
                 UUID userId = UUID.randomUUID();
                 String secret = totpService.generateSecret();
                 UserEntity user = UserEntity.builder()
@@ -234,10 +298,13 @@ class TwoFactorAuthServiceTest {
                 long window = FIXED_INSTANT.getEpochSecond() / 30L;
                 String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
 
+                // Validação não deve gastar o TOTP caso a transferência falhe antes do fim
+                twoFactorAuthService.validateTransferTotp(userId, validCode);
                 twoFactorAuthService.validateTransferTotp(userId, validCode);
 
-                // Se tentar reutilizar o mesmo código na mesma janela (ex: 2ª transferência ou
-                // código capturado no login), bloqueia!
+                // Após consumir no final da operação, uma nova tentativa com o mesmo código é bloqueada
+                twoFactorAuthService.consumeTransferTotp(userId, validCode);
+
                 assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, validCode))
                                 .isInstanceOf(BadCredentialsException.class)
                                 .hasMessageContaining("already been used");

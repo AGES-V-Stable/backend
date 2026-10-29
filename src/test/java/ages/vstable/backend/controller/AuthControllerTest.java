@@ -3,6 +3,8 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.authentication.AuthRequestDTO;
 import ages.vstable.backend.dto.authentication.LoginResponseDTO;
 import ages.vstable.backend.dto.authentication.LoginVerify2faRequestDTO;
+import ages.vstable.backend.dto.authentication.TwoFactorActivateRequestDTO;
+import ages.vstable.backend.dto.authentication.TwoFactorSetupResponseDTO;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.TwoFactorAuthService;
@@ -64,7 +66,7 @@ class AuthControllerTest {
         when(twoFactorAuthService.requiresTwoFactorOnLogin(user)).thenReturn(false);
         when(jwtTokenUtil.generateToken(user)).thenReturn("jwt-token");
 
-        ResponseEntity<?> response = authController.getPermissions(request);
+        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Bearer jwt-token", response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
@@ -88,7 +90,7 @@ class AuthControllerTest {
         when(twoFactorAuthService.requiresTwoFactorOnLogin(admin)).thenReturn(true);
         when(twoFactorAuthService.createLoginChallenge(admin)).thenReturn(challengeDto);
 
-        ResponseEntity<?> response = authController.getPermissions(request);
+        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNull(response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
@@ -102,11 +104,11 @@ class AuthControllerTest {
         when(twoFactorAuthService.verifyLoginChallenge("temp-challenge", "123456")).thenReturn(user);
         when(jwtTokenUtil.generateToken(user)).thenReturn("final-session-jwt");
 
-        ResponseEntity<?> response = authController.verifyLogin2fa(verifyRequest);
+        ResponseEntity<LoginResponseDTO> response = authController.verifyLogin2fa(verifyRequest);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Bearer final-session-jwt", response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
-        LoginResponseDTO body = (LoginResponseDTO) response.getBody();
+        LoginResponseDTO body = response.getBody();
         assertNotNull(body);
         assertEquals("final-session-jwt", body.getToken());
     }
@@ -117,10 +119,25 @@ class AuthControllerTest {
         when(twoFactorAuthService.verifyLoginChallenge("temp-challenge", "000000"))
                 .thenThrow(new BadCredentialsException("Invalid 2FA verification code"));
 
-        ResponseEntity<?> response = authController.verifyLogin2fa(verifyRequest);
+        ResponseEntity<LoginResponseDTO> response = authController.verifyLogin2fa(verifyRequest);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertEquals("INVALID_2FA_CODE", ((Map<?, ?>) response.getBody()).get("code"));
+        assertNotNull(response.getBody());
+        assertEquals("INVALID_2FA_CODE", response.getBody().getCode());
+        verifyNoInteractions(jwtTokenUtil);
+    }
+
+    @Test
+    void shouldReturnLockedWhenVerify2faIsLocked() {
+        LoginVerify2faRequestDTO verifyRequest = new LoginVerify2faRequestDTO("temp-challenge", "000000");
+        when(twoFactorAuthService.verifyLoginChallenge("temp-challenge", "000000"))
+                .thenThrow(new LockedException("Too many failed 2FA attempts"));
+
+        ResponseEntity<LoginResponseDTO> response = authController.verifyLogin2fa(verifyRequest);
+
+        assertEquals(HttpStatus.LOCKED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("ACCOUNT_LOCKED", response.getBody().getCode());
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -129,11 +146,12 @@ class AuthControllerTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new UsernameNotFoundException("User not found"));
 
-        ResponseEntity<?> response = authController.getPermissions(request);
+        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertEquals("INVALID_CREDENTIALS", ((Map<?, ?>) response.getBody()).get("code"));
-        assertEquals("Invalid credentials", ((Map<?, ?>) response.getBody()).get("message"));
+        assertNotNull(response.getBody());
+        assertEquals("INVALID_CREDENTIALS", response.getBody().getCode());
+        assertEquals("Invalid credentials", response.getBody().getMessage());
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -142,11 +160,12 @@ class AuthControllerTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new BadCredentialsException("Invalid credentials"));
 
-        ResponseEntity<?> response = authController.getPermissions(request);
+        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
-        assertEquals("INVALID_CREDENTIALS", ((Map<?, ?>) response.getBody()).get("code"));
-        assertEquals("Invalid credentials", ((Map<?, ?>) response.getBody()).get("message"));
+        assertNotNull(response.getBody());
+        assertEquals("INVALID_CREDENTIALS", response.getBody().getCode());
+        assertEquals("Invalid credentials", response.getBody().getMessage());
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -155,11 +174,12 @@ class AuthControllerTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new LockedException("User is locked"));
 
-        ResponseEntity<?> response = authController.getPermissions(request);
+        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
-        assertEquals("ACCOUNT_LOCKED", ((Map<?, ?>) response.getBody()).get("code"));
-        assertEquals(Map.of("code", "ACCOUNT_LOCKED", "message", "User is locked"), response.getBody());
+        assertNotNull(response.getBody());
+        assertEquals("ACCOUNT_LOCKED", response.getBody().getCode());
+        assertEquals("User is locked", response.getBody().getMessage());
         verifyNoInteractions(jwtTokenUtil);
     }
 
@@ -178,5 +198,48 @@ class AuthControllerTest {
 
         assertEquals("user@email.com", captor.getValue().getPrincipal());
         assertEquals("password", captor.getValue().getCredentials());
+    }
+
+    @Test
+    void shouldSetupTwoFactorWhenAuthenticated() {
+        TwoFactorSetupResponseDTO setupDto = TwoFactorSetupResponseDTO.builder()
+                .otpauthUri("otpauth://totp/V-Stable:user%40email.com?secret=ABC")
+                .twoFactorEnabled(false)
+                .build();
+        when(twoFactorAuthService.setupTwoFactor(user, "123456")).thenReturn(setupDto);
+
+        ResponseEntity<TwoFactorSetupResponseDTO> response = authController.setupTwoFactor("123456", user);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(setupDto, response.getBody());
+    }
+
+    @Test
+    void shouldReturnUnauthorizedOnSetupWhenNotAuthenticated() {
+        ResponseEntity<TwoFactorSetupResponseDTO> response = authController.setupTwoFactor(null, null);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+    }
+
+    @Test
+    void shouldActivateTwoFactorSuccessfully() {
+        TwoFactorActivateRequestDTO activateReq = new TwoFactorActivateRequestDTO("123456");
+
+        ResponseEntity<Map<String, Object>> response = authController.activateTwoFactor(user, activateReq);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(Boolean.TRUE, response.getBody().get("success"));
+        verify(twoFactorAuthService).activateTwoFactor(user, "123456");
+    }
+
+    @Test
+    void shouldReturnUnauthorizedOnActivateWhenCodeIsInvalid() {
+        TwoFactorActivateRequestDTO activateReq = new TwoFactorActivateRequestDTO("000000");
+        doThrow(new BadCredentialsException("Invalid code"))
+                .when(twoFactorAuthService).activateTwoFactor(user, "000000");
+
+        ResponseEntity<Map<String, Object>> response = authController.activateTwoFactor(user, activateReq);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertEquals("INVALID_2FA_CODE", response.getBody().get("code"));
     }
 }

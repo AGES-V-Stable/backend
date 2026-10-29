@@ -12,5 +12,6 @@ public class LoginResponseDTO {
     String challengeToken;
     String otpauthUri;
     String token;
-
+    String code;
+    String message;
 }

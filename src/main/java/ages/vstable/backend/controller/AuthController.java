@@ -47,7 +47,7 @@ public class AuthController {
       @ApiResponse(responseCode = "401", description = "User not found or invalid credentials"),
       @ApiResponse(responseCode = "423", description = "User is locked"),
   })
-  public ResponseEntity<?> getPermissions(@RequestBody AuthRequestDTO request) {
+  public ResponseEntity<LoginResponseDTO> getPermissions(@RequestBody AuthRequestDTO request) {
     try {
       Authentication authenticate = authenticationManager.authenticate(
           new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
@@ -67,11 +67,11 @@ public class AuthController {
     } catch (LockedException | DisabledException le) {
       OperationalLog.authentication("account_unavailable");
       return ResponseEntity.status(HttpStatus.LOCKED)
-          .body(Map.of("code", "ACCOUNT_LOCKED", "message", le.getMessage()));
+          .body(LoginResponseDTO.builder().code("ACCOUNT_LOCKED").message(le.getMessage()).build());
     } catch (AuthenticationException ex) {
       OperationalLog.authentication("invalid_credentials");
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-          .body(Map.of("code", "INVALID_CREDENTIALS", "message", "Invalid credentials"));
+          .body(LoginResponseDTO.builder().code("INVALID_CREDENTIALS").message("Invalid credentials").build());
     }
   }
 
@@ -83,7 +83,7 @@ public class AuthController {
       @ApiResponse(responseCode = "401", description = "Invalid/expired challenge token or invalid TOTP code"),
       @ApiResponse(responseCode = "423", description = "Account locked due to too many failed attempts"),
   })
-  public ResponseEntity<?> verifyLogin2fa(@Valid @RequestBody LoginVerify2faRequestDTO request) {
+  public ResponseEntity<LoginResponseDTO> verifyLogin2fa(@Valid @RequestBody LoginVerify2faRequestDTO request) {
     try {
       UserDetails principal = twoFactorAuthService.verifyLoginChallenge(
           request.getChallengeToken(), request.getCode());
@@ -93,10 +93,10 @@ public class AuthController {
           .body(LoginResponseDTO.builder().token(jwt).build());
     } catch (LockedException | DisabledException le) {
       return ResponseEntity.status(HttpStatus.LOCKED)
-          .body(Map.of("code", "ACCOUNT_LOCKED", "message", le.getMessage()));
+          .body(LoginResponseDTO.builder().code("ACCOUNT_LOCKED").message(le.getMessage()).build());
     } catch (AuthenticationException ex) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-          .body(Map.of("code", "INVALID_2FA_CODE", "message", ex.getMessage()));
+          .body(LoginResponseDTO.builder().code("INVALID_2FA_CODE").message(ex.getMessage()).build());
     }
   }
 
@@ -108,22 +108,11 @@ public class AuthController {
   })
   public ResponseEntity<TwoFactorSetupResponseDTO> setupTwoFactor(
       @RequestHeader(value = "X-Current-Totp", required = false) String currentTotpHeader,
-      @RequestBody(required = false) Map<String, String> body,
-      @RequestParam(required = false) String currentCode,
       @AuthenticationPrincipal UserDetails principal) {
     if (principal == null) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    // Resolve o código caso venha pelo Header X-Current-Totp, pelo Body JSON ou por
-    // Query Param
-    String effectiveCode = currentTotpHeader;
-    if (effectiveCode == null || effectiveCode.isBlank()) {
-      effectiveCode = body != null ? body.get("currentTotpCode") : null;
-    }
-    if (effectiveCode == null || effectiveCode.isBlank()) {
-      effectiveCode = currentCode;
-    }
-    return ResponseEntity.ok(twoFactorAuthService.setupTwoFactor(principal, effectiveCode));
+    return ResponseEntity.ok(twoFactorAuthService.setupTwoFactor(principal, currentTotpHeader));
   }
 
   @PostMapping(path = "2fa/activate")

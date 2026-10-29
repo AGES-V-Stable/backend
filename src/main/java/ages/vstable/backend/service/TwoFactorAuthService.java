@@ -4,7 +4,6 @@ import ages.vstable.backend.dto.authentication.LoginResponseDTO;
 import ages.vstable.backend.dto.authentication.TwoFactorSetupResponseDTO;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
@@ -49,8 +48,7 @@ public class TwoFactorAuthService {
     /**
      * Inicia a configuração do 2FA.
      * Se o 2FA já estiver ativo, exige o código TOTP atual (currentCode) para
-     * autorizar a geração
-     * de um novo QR Code (troca de aparelho).
+     * autorizar a geração de um novo QR Code (troca de aparelho).
      */
     @Transactional
     public TwoFactorSetupResponseDTO setupTwoFactor(UserDetails principal, String currentCode) {
@@ -135,8 +133,7 @@ public class TwoFactorAuthService {
         String challengeToken = jwtTokenUtils.generateChallengeToken(principal);
         String otpauthUri = null;
         if (!isTwoFactorAlreadyEnabled(principal)) {
-            // Conta obrigada a usar 2FA (ex: Admin com require_2fa = true), mas ainda no 1º
-            // acesso
+            // Conta obrigada a usar 2FA (ex: Admin com require_2fa = true), mas ainda no 1º acesso
             String secret = getSecret(principal);
             if (secret == null || secret.isBlank()) {
                 secret = totpService.generateSecret();
@@ -153,8 +150,7 @@ public class TwoFactorAuthService {
 
     /**
      * Etapa 2 do Login (/v1/auth/login/verify-2fa): valida o challengeToken e o
-     * código TOTP,
-     * e retorna o UserDetails autenticado para emissão do JWT definitivo.
+     * código TOTP, e retorna o UserDetails autenticado para emissão do JWT definitivo.
      */
     @Transactional
     public UserDetails verifyLoginChallenge(String challengeToken, String code) {
@@ -173,8 +169,7 @@ public class TwoFactorAuthService {
             throw new BadCredentialsException("2FA is not configured for this account");
         }
         verifyTotpWithSecurityChecks(email, secret, code);
-        // Se era o 1º acesso de um Admin (twoFactorEnabled ainda era false), marca como
-        // true após validar!
+        // Se era o 1º acesso de um Admin (twoFactorEnabled ainda era false), marca como true após validar!
         if (!isTwoFactorAlreadyEnabled(principal) && principal instanceof AdministratorEntity admin) {
             admin.setTwoFactorEnabled(true);
             admin.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -185,18 +180,12 @@ public class TwoFactorAuthService {
 
     /**
      * Valida o código TOTP do usuário autenticado antes de autorizar operações
-     * críticas
-     * (como criação de transferência na Avenia).
-     * Reutiliza o controle de Anti-Replay e Lockout por força bruta da conta.
+     * críticas (como criação de transferência na Avenia), sem consumir o código.
+     * O consumo definitivo deve ser realizado ao final da operação via
+     * {@link #consumeTransferTotp(UUID, String)}.
      */
-
     public void validateTransferTotp(UUID userId, String code) {
-        if (userId == null) {
-            throw new BadCredentialsException("User not authenticated");
-        }
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new BadCredentialsException("Authenticated user not found"));
-
+        UserEntity user = loadAuthenticatedUserForTotp(userId);
         assertNotLocked(user.getEmail());
 
         if (!Boolean.TRUE.equals(user.getTwoFactorEnabled())
@@ -209,20 +198,46 @@ public class TwoFactorAuthService {
             throw new UnprocessableEntityException(
                     "O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
         }
-        verifyTotpWithSecurityChecks(user.getEmail(), user.getTwoFactorSecret(), code);
+        validateTotpWithoutConsuming(user.getEmail(), user.getTwoFactorSecret(), code);
+    }
+
+    /**
+     * Consome o código TOTP após a conclusão bem-sucedida da operação crítica,
+     * garantindo que o token não seja gasto caso a operação falhe em estado de erro.
+     */
+    public void consumeTransferTotp(UUID userId, String code) {
+        UserEntity user = loadAuthenticatedUserForTotp(userId);
+        consumeTotpCode(user.getEmail(), code);
+    }
+
+    private UserEntity loadAuthenticatedUserForTotp(UUID userId) {
+        if (userId == null) {
+            throw new BadCredentialsException("User not authenticated");
+        }
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new BadCredentialsException("Authenticated user not found"));
     }
 
     private void verifyTotpWithSecurityChecks(String email, String secret, String code) {
+        validateTotpWithoutConsuming(email, secret, code);
+        consumeTotpCode(email, code);
+    }
+
+    private void validateTotpWithoutConsuming(String email, String secret, String code) {
         String normalizedCode = code == null ? "" : code.trim();
         if (!totpService.verifyCode(secret, normalizedCode)) {
             recordFailedAttempt(email);
             throw new BadCredentialsException("Invalid 2FA verification code");
         }
-        // Anti-Replay: impede reutilizar exatamente o mesmo código de 6 dígitos seguido
+        // Anti-Replay: impede reutilizar exatamente o mesmo código de 6 dígitos já consumido
         String previousCode = lastUsedCodeByAccount.get(email);
         if (normalizedCode.equals(previousCode)) {
             throw new BadCredentialsException("TOTP code has already been used");
         }
+    }
+
+    private void consumeTotpCode(String email, String code) {
+        String normalizedCode = code == null ? "" : code.trim();
         lastUsedCodeByAccount.put(email, normalizedCode);
         failedAttemptsByAccount.remove(email);
         lockedUntilByAccount.remove(email);

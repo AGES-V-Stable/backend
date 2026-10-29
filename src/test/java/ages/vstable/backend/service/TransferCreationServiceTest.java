@@ -935,6 +935,7 @@ class TransferCreationServiceTest {
         assertThat(persistedBase.getBeneficiary()).isEqualTo(beneficiary);
         assertThat(persistedBase.getTransferMethod()).isEqualTo(TransferMethod.PIX);
         verify(baseTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService).consumeTransferTotp(CURRENT_USER_ID, "123456");
     }
 
     @Test
@@ -1153,6 +1154,7 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService, never()).createTransfer(any(), any());
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
     }
 
     @Test
@@ -1170,6 +1172,7 @@ class TransferCreationServiceTest {
 
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
     }
 
     @Test

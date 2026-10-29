@@ -59,35 +59,27 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Fronteira entre o contrato público de transferências (dto/transfer, sem
- * nenhum
- * identificador da Avenia) e a integração de baixo nível
- * ({@link AveniaTransferService},
- * dto/external/avenia). Nenhum tipo de external/avenia deve escapar desta
- * classe.
+ * Fronteira entre o contrato público de transferências (dto/transfer, sem nenhum
+ * identificador da Avenia) e a integração de baixo nível ({@link AveniaTransferService},
+ * dto/external/avenia). Nenhum tipo de external/avenia deve escapar desta classe.
  */
 @Service
 @RequiredArgsConstructor
 public class TransferService {
 
-    // Nenhuma entidade hoje guarda a moeda de operação da empresa; BRL é a única
-    // moeda
+    // Nenhuma entidade hoje guarda a moeda de operação da empresa; BRL é a única moeda
     // que aparece explicitamente hoje (CompanyEntity.availableBalanceBrl). Ver
     // docs/task-29-avenia-final-review.md — decisão a revisitar com o time.
     private static final String DEFAULT_SOURCE_CURRENCY = "BRL";
     private static final String FEE_SETTLEMENT = AveniaApi.Quote.FeeSettlement.IMMEDIATE.name();
 
     // Destinos documentados pela Avenia para entrada BRL/PIX
-    // (integration-guide.avenia.io/docs/Operations/combinations): BRL só compra
-    // tokens ou
-    // financia SWIFT. Não existem BRL->BRL PIX, BRL->USD ACH/WIRE nem BRL->EUR
-    // SEPA; esses
-    // destinos são pagos a partir de saldo em token (INTERNAL). Redes por token
-    // conforme a
-    // tabela "Supported Assets" (EURC só existe em INTERNAL, logo não vai para
-    // carteira).
-    private static final Set<String> BRLA_USDC_NETWORKS = Set.of("BASE", "CELO", "ETHEREUM", "GNOSIS", "MOONBEAM",
-            "POLYGON");
+    // (integration-guide.avenia.io/docs/Operations/combinations): BRL só compra tokens ou
+    // financia SWIFT. Não existem BRL->BRL PIX, BRL->USD ACH/WIRE nem BRL->EUR SEPA; esses
+    // destinos são pagos a partir de saldo em token (INTERNAL). Redes por token conforme a
+    // tabela "Supported Assets" (EURC só existe em INTERNAL, logo não vai para carteira).
+    private static final Set<String> BRLA_USDC_NETWORKS =
+            Set.of("BASE", "CELO", "ETHEREUM", "GNOSIS", "MOONBEAM", "POLYGON");
     private static final Map<String, Set<String>> PIX_INPUT_TOKEN_NETWORKS = Map.of(
             "BRLA", BRLA_USDC_NETWORKS,
             "USDC", BRLA_USDC_NETWORKS,
@@ -104,10 +96,8 @@ public class TransferService {
     private final TwoFactorAuthService twoFactorAuthService;
 
     /**
-     * Cotação de exibição. Usa a mesma composição de moedas e métodos da
-     * confirmação
-     * ({@link #resolveRoute}); por isso exige o beneficiário e o método de
-     * pagamento que
+     * Cotação de exibição. Usa a mesma composição de moedas e métodos da confirmação
+     * ({@link #resolveRoute}); por isso exige o beneficiário e o método de pagamento que
      * serão confirmados — sem eles não há como saber a rota real, e uma cotação com
      * métodos arbitrários não poderia ser usada na operação.
      */
@@ -130,10 +120,8 @@ public class TransferService {
 
     /**
      * Cria a transferência: gera uma cotação nova na Avenia (nunca reaproveita a de
-     * exibição — é {@link AveniaTransferService#createTransfer} que garante isso)
-     * e, com o
-     * quoteToken dela, cria o ticket. Se a cotação falhar, a exceção sobe antes de
-     * chegar
+     * exibição — é {@link AveniaTransferService#createTransfer} que garante isso) e, com o
+     * quoteToken dela, cria o ticket. Se a cotação falhar, a exceção sobe antes de chegar
      * a criar qualquer ticket — e, portanto, antes de persistir qualquer coisa.
      */
     @Transactional
@@ -155,6 +143,7 @@ public class TransferService {
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
         persistTransaction(beneficiary, request, result, status, currentUserId);
+        twoFactorAuthService.consumeTransferTotp(currentUserId, request.getTotpCode());
 
         CreateTransferResponse response = new CreateTransferResponse(status);
         OperationalLog.milestone("transfer.creation.completed", "success");
@@ -162,10 +151,8 @@ public class TransferService {
     }
 
     /**
-     * Grava o snapshot da transferência recém-criada na Avenia. Não acompanha
-     * mudanças de
-     * status posteriores ao ticket (ex.: UNPAID -> PAID) nem o hash da liquidação
-     * on-chain —
+     * Grava o snapshot da transferência recém-criada na Avenia. Não acompanha mudanças de
+     * status posteriores ao ticket (ex.: UNPAID -> PAID) nem o hash da liquidação on-chain —
      * nenhum dos dois tem mecanismo de atualização implementado ainda (ver
      * docs/transfers-persist-transaction.md seção 6).
      */
@@ -195,25 +182,19 @@ public class TransferService {
                 .beneficiary(beneficiary)
                 .transferMethod(request.getPaymentMethod())
                 .build();
-        // JOINED inheritance persists the base snapshot and payment detail with one
-        // shared ID.
+        // JOINED inheritance persists the base snapshot and payment detail with one shared ID.
         importTransactionRepository.save(transaction);
     }
 
     /**
      * Toda quote/ticket na Avenia precisa rodar na subconta INDIVIDUAL do usuário —
-     * a mesma usada pelo KYC
-     * ({@link AveniaKycVerificationEntity#getAveniaSubAccountId()}).
-     * Sem isso, a chamada cairia na conta principal da API key, misturando
-     * saldo/operações
-     * de usuários diferentes. Reaproveita
-     * {@link AveniaSubAccountProvisioningService} para
-     * criar a subconta sob demanda caso o KYC exista mas ainda não tenha uma
-     * provisionada.
+     * a mesma usada pelo KYC ({@link AveniaKycVerificationEntity#getAveniaSubAccountId()}).
+     * Sem isso, a chamada cairia na conta principal da API key, misturando saldo/operações
+     * de usuários diferentes. Reaproveita {@link AveniaSubAccountProvisioningService} para
+     * criar a subconta sob demanda caso o KYC exista mas ainda não tenha uma provisionada.
      */
     private String resolveSubAccountId(UUID currentUserId) {
-        AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository
-                .findFirstByUserIdOrderByCreatedAtDesc(currentUserId)
+        AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId)
                 .orElseThrow(() -> new UnprocessableEntityException(
                         "Usuário não possui verificação KYC associada; conclua o KYC antes de realizar transferências"));
         return subAccountProvisioningService.ensureSubAccountId(kyc);
@@ -235,10 +216,8 @@ public class TransferService {
     }
 
     /**
-     * Regra única de composição da operação, compartilhada pela cotação de exibição
-     * e pela
-     * cotação de confirmação. Toda combinação é validada antes de qualquer chamada
-     * à Avenia,
+     * Regra única de composição da operação, compartilhada pela cotação de exibição e pela
+     * cotação de confirmação. Toda combinação é validada antes de qualquer chamada à Avenia,
      * inclusive o provisionamento sob demanda da subconta.
 
      * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
@@ -267,8 +246,7 @@ public class TransferService {
     }
 
     /**
-     * Com origem BRL, o único método de entrada é PIX; a Avenia só aceita como
-     * saída
+     * Com origem BRL, o único método de entrada é PIX; a Avenia só aceita como saída
      * tokens em carteira numa rede suportada (SWIFT já foi bloqueado antes).
      */
     private void validatePixInputDestination(
@@ -309,10 +287,8 @@ public class TransferService {
     }
 
     /**
-     * Monta somente a variante de destino compatível com o cadastro feito na
-     * Avenia.
-     * Beneficiários registrados são referenciados apenas pelo ID: misturar o ID com
-     * dados
+     * Monta somente a variante de destino compatível com o cadastro feito na Avenia.
+     * Beneficiários registrados são referenciados apenas pelo ID: misturar o ID com dados
      * inline no mesmo bloco faz a Avenia rejeitar o ticket.
      */
     private AveniaTicketRequest buildAveniaTicketRequest(
@@ -363,14 +339,10 @@ public class TransferService {
     }
 
     /**
-     * Na Avenia, BRL só entra via PIX; INTERNAL é saldo em token (BRLA, USDC, USDT,
-     * EURC)
-     * e não existe para BRL. Como a origem é sempre BRL, ACCOUNT_BALANCE não tem
-     * método de
-     * entrada válido até o domínio registrar o saldo em token da subconta — não se
-     * assume
-     * que o saldo local em BRL esteja disponível na Avenia nem se converte BRL em
-     * BRLA.
+     * Na Avenia, BRL só entra via PIX; INTERNAL é saldo em token (BRLA, USDC, USDT, EURC)
+     * e não existe para BRL. Como a origem é sempre BRL, ACCOUNT_BALANCE não tem método de
+     * entrada válido até o domínio registrar o saldo em token da subconta — não se assume
+     * que o saldo local em BRL esteja disponível na Avenia nem se converte BRL em BRLA.
      */
     private String inputPaymentMethod(TransferMethod paymentMethod) {
         return switch (paymentMethod) {
@@ -435,10 +407,8 @@ public class TransferService {
     }
 
     /**
-     * Avenia (UNPAID/PROCESSING/ON_HOLD/PAID/FAILED/PARTIAL_FAILED/CANCELED) usa
-     * nomes
-     * diferentes do nosso transaction_status_enum — sem mapeamento, status
-     * desconhecidos
+     * Avenia (UNPAID/PROCESSING/ON_HOLD/PAID/FAILED/PARTIAL_FAILED/CANCELED) usa nomes
+     * diferentes do nosso transaction_status_enum — sem mapeamento, status desconhecidos
      * viram FAILED em vez de propagar um valor inválido para o frontend.
      */
     private TransactionStatus mapAveniaTicketStatus(String aveniaStatus) {
@@ -469,11 +439,9 @@ public class TransferService {
     }
 
     /**
-     * No fluxo de criação já existe um beneficiário cadastrado, que carrega sua
-     * própria
+     * No fluxo de criação já existe um beneficiário cadastrado, que carrega sua própria
      * moeda de recebimento ({@code beneficiaries.currency}) — essa é a "informação
-     * disponível para a operação" que a card pede para usar antes de exigir do
-     * frontend.
+     * disponível para a operação" que a card pede para usar antes de exigir do frontend.
      * PIX é sempre BRL mesmo quando o beneficiário não tiver moeda cadastrada.
      */
     private String resolveDestinationCurrency(String destinationCurrency, BeneficiaryEntity beneficiary) {
@@ -508,12 +476,9 @@ public class TransferService {
     }
 
     /**
-     * Mapeamento do shape da Avenia
-     * (inputAmount/outputAmount/markupAmount/appliedFees/
-     * basePrice) para os campos separados que o frontend consome, sem devolver
-     * quoteToken
-     * nem qualquer outro identificador interno. Shape NÃO confirmado contra o
-     * sandbox real.
+     * Mapeamento do shape da Avenia (inputAmount/outputAmount/markupAmount/appliedFees/
+     * basePrice) para os campos separados que o frontend consome, sem devolver quoteToken
+     * nem qualquer outro identificador interno. Shape NÃO confirmado contra o sandbox real.
      */
     private TransferQuoteResponse toTransferQuoteResponse(AveniaQuoteResponse response) {
         MoneyAmount source = new MoneyAmount(response.inputAmount(), response.inputCurrency());
@@ -622,8 +587,8 @@ public class TransferService {
     public Page<TransferResponse> findTransfers(TransferFilter filter, Pageable pageable) {
         validate(filter);
 
-        Page<BaseTransactionEntity> page = baseTransactionRepository.findAll(TransferSpecification.filterBy(filter),
-                pageable);
+        Page<BaseTransactionEntity> page =
+                baseTransactionRepository.findAll(TransferSpecification.filterBy(filter), pageable);
 
         return new PageImpl<>(toResponses(page.getContent()), pageable, page.getTotalElements());
     }
@@ -677,10 +642,10 @@ public class TransferService {
     }
 
     private TransferResponse toResponse(BaseTransactionEntity transaction,
-            ImportTransactionEntity importDetail,
-            ExportTransactionEntity exportDetail,
-            Map<UUID, BeneficiaryEntity> beneficiaries,
-            CompanyEntity company) {
+                                        ImportTransactionEntity importDetail,
+                                        ExportTransactionEntity exportDetail,
+                                        Map<UUID, BeneficiaryEntity> beneficiaries,
+                                        CompanyEntity company) {
         TransferResponse response = new TransferResponse();
         response.setId(transaction.getId());
         response.setCompanyId(transaction.getCompanyId());

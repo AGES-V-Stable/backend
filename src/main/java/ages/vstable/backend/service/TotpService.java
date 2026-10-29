@@ -97,7 +97,9 @@ public class TotpService {
 
     /**
      * Gera o código de 6 dígitos para uma janela de tempo específica (útil também em testes).
+     * HmacSHA1 é exigido pela especificação RFC 6238 / RFC 4226 para compatibilidade com apps autenticadores.
      */
+    @SuppressWarnings("java:S4790")
     String generateCodeForWindow(byte[] keyBytes, long timeWindow) {
         try {
             byte[] counterBytes = ByteBuffer.allocate(8).putLong(timeWindow).array();
