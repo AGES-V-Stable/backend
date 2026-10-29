@@ -530,7 +530,7 @@ class TransferCreationServiceTest {
         when(aveniaTransferService.createQuote(any())).thenReturn(aveniaResponseWithFees(
                 new BigDecimal("1.00"),
                 List.of(
-                        new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("1.00"), "BRL"),
+                        new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("1.00"), "brl"),
                         new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("2.00"), "BRL"))));
 
         TransferQuoteResponse result = transferService.quote(
@@ -539,6 +539,7 @@ class TransferCreationServiceTest {
 
         assertThat(result.fee().amount()).isEqualByComparingTo("3.00");
         assertThat(result.fee().percentage()).isEqualByComparingTo("3.00");
+        assertThat(result.fee().currency()).isEqualTo("brl");
         assertThat(result.total().amount()).isEqualByComparingTo("100.00");
     }
 
@@ -591,6 +592,7 @@ class TransferCreationServiceTest {
 
         assertThat(result.fee().amount()).isEqualByComparingTo("1.50");
         assertThat(result.fee().percentage()).isEqualByComparingTo("1.50");
+        assertThat(result.fee().currency()).isEqualTo("BRL");
         assertThat(result.total().amount()).isEqualByComparingTo("100.00");
     }
 

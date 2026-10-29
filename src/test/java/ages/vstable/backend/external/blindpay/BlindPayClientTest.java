@@ -21,10 +21,14 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayRfiSubmitResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayUpdateCustomerRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayUploadResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.MDC;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -947,4 +951,47 @@ class BlindPayClientTest {
                 .requestAmount(1_000L)
                 .build();
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"success", "http_failure", "timeout", "communication_failure"})
+    void providerLogsAreCorrelatedAndExcludePayloadsAndSecrets(String outcome) {
+        var expectation = server.expect(requestTo(INSTANCE_URL + "/customers/private-id"));
+        switch (outcome) {
+            case "success" -> expectation.andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+            case "http_failure" -> expectation.andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"message\":\"synthetic-private-payload\",\"code\":\"synthetic-secret\"}"));
+            case "timeout" -> expectation.andRespond(request -> {
+                throw new java.net.SocketTimeoutException("synthetic-private-payload");
+            });
+            default -> expectation.andRespond(request -> {
+                throw new IOException("synthetic-private-payload");
+            });
+        }
+        MDC.put("requestId", "provider-request");
+        try (var capture = new LogCapture(
+                OperationalLog.class)) {
+            if (outcome.equals("success")) {
+                client.getCustomer("private-id");
+            } else {
+                assertThatThrownBy(() -> client.getCustomer("private-id")).isInstanceOf(BlindPayIntegrationException.class);
+            }
+            assertThat(capture.events()).hasSize(1);
+            var event = capture.events().getFirst();
+            assertThat(event.getMDCPropertyMap()).containsEntry("requestId", "provider-request");
+            assertThat(LogCapture.fields(event))
+                    .containsEntry("provider", "blindpay").containsEntry("outcome", outcome).containsKey("durationMs");
+            assertThat(event.getLevel()).isEqualTo(outcome.equals("success")
+                    ? Level.INFO : Level.WARN);
+            assertThat(LogCapture.fields(event).toString())
+                    .doesNotContain("synthetic-private-payload", "synthetic-secret", "private-id", "minha-api-key", "test-api-key");
+            if (outcome.equals("success") || outcome.equals("http_failure")) {
+                assertThat(LogCapture.fields(event))
+                        .containsEntry("status", outcome.equals("success") ? 200 : 400);
+            }
+            server.verify();
+        } finally {
+            MDC.clear();
+        }
+    }
+
 }

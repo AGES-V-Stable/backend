@@ -1,0 +1,145 @@
+name: Deploy backend
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backend-deploy-${{ github.event_name == 'push' && 'staging' || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  avenia-mcp-server:
+    name: Avenia MCP Server
+    uses: ./.github/workflows/avenia-mcp-server.yml
+
+  deploy:
+    if: github.event_name == 'push' || (github.event.release.prerelease == false && github.event.release.draft == false)
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'staging' || 'production' }}
+    env:
+      AWS_REGION: us-east-2
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      BACKEND_LAMBDA_FUNCTION_NAME: ${{ vars.BACKEND_LAMBDA_FUNCTION_NAME }}
+      SEED_LAMBDA_FUNCTION_NAME: ${{ vars.SEED_LAMBDA_FUNCTION_NAME }}
+      API_URL: ${{ vars.API_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release commit is on main
+        if: github.event_name == 'release'
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Build and test
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon
+        env:
+          JWT_SECRET: test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes
+          AVENIA_EMAIL: test@example.com
+          AVENIA_PASSWORD: test-only-not-a-real-credential
+          AVENIA_WEBHOOK_URL: https://example.com/webhooks/avenia
+          BLINDPAY_BASE_URL: https://example.com
+          BLINDPAY_API_KEY: test-only-not-a-real-credential
+          BLINDPAY_INSTANCE_ID: in_000000000000
+          BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
+
+      - uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Build and push Lambda image
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="${ECR_REPOSITORY%%/*}"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+          tag="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker buildx build --platform linux/amd64 --provenance=false -f Dockerfile.lambda \
+            -t "${ECR_REPOSITORY}:${tag}" --metadata-file "$RUNNER_TEMP/image-metadata.json" --push .
+          digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$RUNNER_TEMP/image-metadata.json")"
+          echo "uri=${ECR_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Update private seed Lambda
+        run: |
+          aws lambda update-function-code --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
+            --image-uri '${{ steps.image.outputs.uri }}' > /dev/null
+          aws lambda wait function-updated --function-name "$SEED_LAMBDA_FUNCTION_NAME"
+
+      - name: Seed environment
+        shell: bash
+        env:
+          INITIAL_ADMIN_JSON: ${{ secrets.INITIAL_ADMIN_JSON }}
+          STAGING_DEMO_PASSWORD: ${{ secrets.STAGING_DEMO_PASSWORD }}
+          DEPLOY_ENVIRONMENT: ${{ github.event_name == 'push' && 'staging' || 'production' }}
+        run: |
+          set -euo pipefail
+          payload="$(mktemp)"
+          response="$(mktemp)"
+          metadata="$(mktemp)"
+          trap 'rm -f "$payload" "$response" "$metadata"' EXIT
+          chmod 600 "$payload" "$response" "$metadata"
+          python3 - "$payload" <<'PY'
+          import json, os, sys
+          try:
+              admin = json.loads(os.environ['INITIAL_ADMIN_JSON'])
+              if not isinstance(admin, dict):
+                  raise ValueError()
+              body = {'admin': admin}
+              if os.environ['DEPLOY_ENVIRONMENT'] == 'staging':
+                  body['stagingDemoPassword'] = os.environ['STAGING_DEMO_PASSWORD']
+              with open(sys.argv[1], 'w', encoding='utf-8') as file:
+                  json.dump(body, file)
+          except (KeyError, ValueError):
+              sys.exit('Configure INITIAL_ADMIN_JSON and STAGING_DEMO_PASSWORD for this environment')
+          PY
+          aws lambda invoke --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
+            --cli-binary-format raw-in-base64-out --payload "fileb://$payload" \
+            "$response" > "$metadata"
+          python3 - "$metadata" "$response" <<'PY'
+          import json, sys
+          try:
+              metadata = json.load(open(sys.argv[1], encoding='utf-8'))
+              response = json.load(open(sys.argv[2], encoding='utf-8'))
+              if metadata.get('StatusCode') != 200 or metadata.get('FunctionError') or response != {'seeded': True}:
+                  raise ValueError()
+          except (OSError, ValueError, TypeError):
+              sys.exit('Seed invocation failed; inspect the private seed Lambda logs')
+          PY
+
+      - name: Update public API Lambda
+        run: |
+          aws lambda update-function-code --function-name "$BACKEND_LAMBDA_FUNCTION_NAME" \
+            --image-uri '${{ steps.image.outputs.uri }}' > /dev/null
+          aws lambda wait function-updated --function-name "$BACKEND_LAMBDA_FUNCTION_NAME"
+
+      - name: Verify protected API route
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..6}; do
+            status="$(curl --silent --show-error --max-time 15 --output /dev/null --write-out '%{http_code}' \
+              "${API_URL%/}/v1/auth/login" || true)"
+            if [[ "$status" == 401 ]]; then exit 0; fi
+            sleep 5
+          done
+          echo 'Protected API route did not return 401' >&2
+          exit 1

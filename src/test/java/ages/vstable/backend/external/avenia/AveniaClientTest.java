@@ -3,25 +3,31 @@ package ages.vstable.backend.external.avenia;
 import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
-import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
-import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
-import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
-import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.MDC;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -893,4 +899,47 @@ class AveniaClientTest {
         assertThatThrownBy(() -> client.consultarTentativa("attempt-1", "sub-123"))
                 .isInstanceOf(AveniaIntegrationException.class);
     }
+    @ParameterizedTest
+    @ValueSource(strings = {"success", "http_failure", "timeout", "communication_failure"})
+    void providerLogsAreCorrelatedAndExcludePayloadsAndSecrets(String outcome) {
+        var expectation = server.expect(requestTo("https://avenia.test/v2/documents/private-id"));
+        switch (outcome) {
+            case "success" -> expectation.andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+            case "http_failure" -> expectation.andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body("{\"message\":\"synthetic-private-payload\",\"code\":\"synthetic-secret\"}"));
+            case "timeout" -> expectation.andRespond(request -> {
+                throw new java.net.SocketTimeoutException("synthetic-private-payload");
+            });
+            default -> expectation.andRespond(request -> {
+                throw new IOException("synthetic-private-payload");
+            });
+        }
+        MDC.put("requestId", "provider-request");
+        try (var capture = new LogCapture(
+                OperationalLog.class)) {
+            if (outcome.equals("success")) {
+                client.consultarStatusDocumento("private-id", null);
+            } else {
+                assertThatThrownBy(() -> client.consultarStatusDocumento("private-id", null)).isInstanceOf(AveniaIntegrationException.class);
+            }
+            assertThat(capture.events()).hasSize(1);
+            var event = capture.events().getFirst();
+            assertThat(event.getMDCPropertyMap()).containsEntry("requestId", "provider-request");
+            assertThat(LogCapture.fields(event))
+                    .containsEntry("provider", "avenia").containsEntry("outcome", outcome).containsKey("durationMs");
+            assertThat(event.getLevel()).isEqualTo(outcome.equals("success")
+                    ? Level.INFO : Level.WARN);
+            assertThat(LogCapture.fields(event).toString())
+                    .doesNotContain("synthetic-private-payload", "synthetic-secret", "private-id", "minha-api-key", "test-api-key");
+            if (outcome.equals("success") || outcome.equals("http_failure")) {
+                assertThat(LogCapture.fields(event))
+                        .containsEntry("status", outcome.equals("success") ? 200 : 400);
+            }
+            server.verify();
+        } finally {
+            MDC.clear();
+        }
+    }
+
 }

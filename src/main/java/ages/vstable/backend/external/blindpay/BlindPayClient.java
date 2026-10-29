@@ -1,5 +1,7 @@
 package ages.vstable.backend.external.blindpay;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.external.blindpay.dto.BlindPayBankAccountResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCreateBankAccountRequest;
@@ -23,7 +25,6 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayUpdateCustomerRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayUploadResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -51,7 +52,6 @@ import java.util.Map;
  * <p>Corpos são (de)serializados com o {@link ObjectMapper} da aplicação (Jackson 3),
  * garantindo que os {@code @JsonNaming} dos DTOs sejam respeitados.
  */
-@Slf4j
 @Component
 public class BlindPayClient implements BlindPayGateway {
 
@@ -269,18 +269,29 @@ public class BlindPayClient implements BlindPayGateway {
         URI uri = uri(path, pathVariables);
         String authorization = bearerToken();
 
+        long startedAt = System.nanoTime();
+        Integer status = null;
+        String outcome = "failure";
         try {
-            String body = restClient.get()
+            var response = restClient.get()
                     .uri(uri)
                     .header(HttpHeaders.AUTHORIZATION, authorization)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
-                    .body(String.class);
-            return deserialize(body, responseType, operation);
+                    .toEntity(String.class);
+            status = response.getStatusCode().value();
+            T result = deserialize(response.getBody(), responseType, operation);
+            outcome = "success";
+            return result;
         } catch (RestClientResponseException ex) {
+            status = ex.getStatusCode().value();
+            outcome = "http_failure";
             throw providerError(operation, ex);
         } catch (RestClientException ex) {
+            outcome = OperationalLog.communicationOutcome(ex);
             throw communicationError(operation, ex);
+        } finally {
+            OperationalLog.provider("blindpay", "get." + responseType.getSimpleName(), outcome, status, startedAt);
         }
     }
 
@@ -310,8 +321,11 @@ public class BlindPayClient implements BlindPayGateway {
         String authorization = bearerToken();
         String json = serialize(requestBody);
 
+        long startedAt = System.nanoTime();
+        Integer status = null;
+        String outcome = "failure";
         try {
-            String body = restClient.method(method)
+            var response = restClient.method(method)
                     .uri(uri)
                     .header(HttpHeaders.AUTHORIZATION, authorization)
                     .headers(headers -> {
@@ -323,17 +337,25 @@ public class BlindPayClient implements BlindPayGateway {
                     .accept(MediaType.APPLICATION_JSON)
                     .body(json)
                     .retrieve()
-                    .body(String.class);
-            T response = deserialize(body, responseType, operation);
-            if (response == null) {
+                    .toEntity(String.class);
+            status = response.getStatusCode().value();
+            T result = deserialize(response.getBody(), responseType, operation);
+            if (result == null) {
                 throw BlindPayIntegrationException.invalidResponse(
                         operation + ": BlindPay returned an empty response");
             }
-            return response;
+            outcome = "success";
+            return result;
         } catch (RestClientResponseException ex) {
+            status = ex.getStatusCode().value();
+            outcome = "http_failure";
             throw providerError(operation, ex);
         } catch (RestClientException ex) {
+            outcome = OperationalLog.communicationOutcome(ex);
             throw communicationError(operation, ex);
+        } finally {
+            OperationalLog.provider("blindpay", method.name().toLowerCase(java.util.Locale.ROOT) + "."
+                    + responseType.getSimpleName(), outcome, status, startedAt);
         }
     }
 
@@ -404,9 +426,6 @@ public class BlindPayClient implements BlindPayGateway {
         String description = error == null ? null : blankToNull(error.description());
         String traceId = error == null ? null : blankToNull(error.traceId());
 
-        log.warn("BlindPay request failed: operation='{}', status={}, code={}, traceId={}",
-                operation, status, code, traceId);
-
         StringBuilder message = new StringBuilder(operation).append(": HTTP ").append(status);
         if (code != null) {
             message.append(" - ").append(code);
@@ -430,8 +449,6 @@ public class BlindPayClient implements BlindPayGateway {
     }
 
     private BlindPayIntegrationException communicationError(String operation, RestClientException exception) {
-        log.warn("BlindPay request could not be completed: operation='{}', error={}",
-                operation, exception.getClass().getSimpleName());
         return BlindPayIntegrationException.communication(
                 operation + ": BlindPay is unreachable", exception);
     }

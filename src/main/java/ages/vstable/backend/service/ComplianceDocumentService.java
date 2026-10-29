@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.logging.OperationalLog;
+
 import ages.vstable.backend.dto.compliance.DocumentSubmitRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartRequest;
 import ages.vstable.backend.dto.compliance.DocumentUploadStartResponse;
@@ -22,7 +24,7 @@ public class ComplianceDocumentService {
 
     public Optional<DocumentUploadStartResponse> iniciar(UUID kycVerificationId, UUID currentUserId,
                                                         DocumentUploadStartRequest request) {
-        return aveniaKycVerificationRepository.findById(kycVerificationId)
+        Optional<DocumentUploadStartResponse> result = aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
                     KycOwnership.verify(kyc, currentUserId);
                     String subAccountId = subAccountProvisioningService.ensureSubAccountId(kyc);
@@ -35,10 +37,12 @@ public class ComplianceDocumentService {
                     response.setUploadUrlBack(aveniaResponse.getUploadUrlBack());
                     return response;
                 });
+        OperationalLog.milestone("document.upload.started", result.isPresent() ? "success" : "unavailable");
+        return result;
     }
 
     public boolean concluir(UUID kycVerificationId, UUID currentUserId, DocumentSubmitRequest request) {
-        return aveniaKycVerificationRepository.findById(kycVerificationId)
+        boolean result = aveniaKycVerificationRepository.findById(kycVerificationId)
                 .map(kyc -> {
                     KycOwnership.verify(kyc, currentUserId);
                     kyc.setDocumentId(request.getDocumentoId());
@@ -46,5 +50,7 @@ public class ComplianceDocumentService {
                     return true;
                 })
                 .orElse(false);
+        OperationalLog.milestone("document.submission.completed", result ? "success" : "unavailable");
+        return result;
     }
 }
