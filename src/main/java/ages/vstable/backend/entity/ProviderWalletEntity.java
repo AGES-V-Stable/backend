@@ -31,6 +31,10 @@ public class ProviderWalletEntity {
     @Column(name = "external_wallet_id", length = 255)
     private String externalWalletId;
 
+    /** Endereço on-chain da carteira gerenciada; origem obrigatória dos payouts EVM. */
+    @Column(length = 255)
+    private String address;
+
     @Column(length = 50, nullable = false)
     private String status;
 

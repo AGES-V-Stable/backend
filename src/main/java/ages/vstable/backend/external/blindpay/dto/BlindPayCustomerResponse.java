@@ -6,6 +6,7 @@ import tools.jackson.databind.annotation.JsonNaming;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * Recorte de GET /v1/instances/{instance_id}/customers/{id} com o que o backend
@@ -26,12 +27,27 @@ public record BlindPayCustomerResponse(
         String lastName,
         String legalName,
         String externalId,
+        String instanceId,
         String tosId,
         Boolean isTosAccepted,
+        List<KycWarning> kycWarnings,
+        List<Owner> owners,
         Limit limit,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {
+
+    /** Só o código do alerta; a mensagem pode repetir dados enviados. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record KycWarning(String code, String resolutionStatus) {
+    }
+
+    /** Identificação mínima de um sócio, necessária para atualizar o cadastro. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Owner(String id, String role, String firstName, String lastName) {
+    }
 
     /** Limites em centavos de USD. */
     @JsonIgnoreProperties(ignoreUnknown = true)

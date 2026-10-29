@@ -8,12 +8,18 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayCreateWalletRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerCreatedResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayEvmPayoutRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinQuoteResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayinResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayQuoteResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiSubmitResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayUpdateCustomerRequest;
+import ages.vstable.backend.external.blindpay.dto.BlindPayUploadResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayWalletResponse;
 import ages.vstable.backend.logging.LogCapture;
 import ages.vstable.backend.logging.OperationalLog;
@@ -36,6 +42,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -251,6 +259,39 @@ class BlindPayClientTest {
 
         assertThat(response.type()).isEqualTo("pix");
         assertThat(response.status()).isEqualTo("approved");
+        server.verify();
+    }
+
+    @Test
+    void fetchesManagedWalletAddressOfCustomer() {
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001/wallets/bl_000000000001"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":"bl_000000000001","name":"V-Stable","address":"0xabc","network":"base_sepolia"}
+                        """, MediaType.APPLICATION_JSON));
+
+        BlindPayWalletResponse wallet = client.getWallet("re_000000000001", "bl_000000000001");
+
+        assertThat(wallet.address()).isEqualTo("0xabc");
+        server.verify();
+    }
+
+    @Test
+    void sendsManagedWalletPayoutWithOnlyTheWalletAddress() {
+        server.expect(once(), requestTo(INSTANCE_URL + "/payouts/evm"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "transfer-execution:1:payout:0"))
+                .andExpect(content().json("""
+                        {"quote_id":"qu_000000000001","sender_wallet_address":"0xabc"}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"id":"po_000000000001","status":"processing"}
+                        """, MediaType.APPLICATION_JSON));
+
+        BlindPayPayoutResponse payout = client.createEvmPayout(BlindPayEvmPayoutRequest.fromManagedWallet(
+                "qu_000000000001", "0xabc"), "transfer-execution:1:payout:0");
+
+        assertThat(payout.status()).isEqualTo("processing");
         server.verify();
     }
 
@@ -539,7 +580,8 @@ class BlindPayClientTest {
                                 """));
 
         assertThatThrownBy(() -> client.createEvmPayout(
-                BlindPayEvmPayoutRequest.fromManagedWallet("qu_000000000001", "bl_000000000001"), "tx-1"))
+                BlindPayEvmPayoutRequest.fromManagedWallet(
+                        "qu_000000000001", "0xDD6a3aD0949396e57C7738ba8FC1A46A5a1C372C"), "tx-1"))
                 .isInstanceOfSatisfying(BlindPayIntegrationException.class, ex -> {
                     assertThat(ex.getMessage()).isEqualTo("Could not create the BlindPay payout: HTTP 400"
                             + " - PAYOUTS_INSUFFICIENT_BALANCE: There is not enough balance to complete this payout.");
@@ -630,6 +672,226 @@ class BlindPayClientTest {
                     assertThat(ex.isRetryable()).isFalse();
                     assertThat(ex.isRejectedByProvider()).isFalse();
                 });
+        server.verify();
+    }
+
+    // ---------------------------------------------------------------------
+    // Compliance: terms of service, upload, customer update and RFI
+    // ---------------------------------------------------------------------
+
+    @Test
+    void initiatesHostedTermsOfServiceOnEmbeddedInstancePath() {
+        // Arrange
+        server.expect(once(), requestTo(BASE_URL + "/v1/e/instances/" + INSTANCE_ID + "/tos"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer " + API_KEY))
+                .andExpect(headerDoesNotExist("Idempotency-Key"))
+                .andExpect(content().json("""
+                        {
+                          "idempotency_key": "123e4567-e89b-12d3-a456-426614174000",
+                          "redirect_url": "https://app.vstable.test/blindpay"
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"url":"https://app.blindpay.com/e/terms-of-service?session_token=abc"}
+                        """, MediaType.APPLICATION_JSON));
+
+        // Act
+        BlindPayInitiateTosResponse response = client.initiateTermsOfService(new BlindPayInitiateTosRequest(
+                UUID.fromString("123e4567-e89b-12d3-a456-426614174000"), null, "https://app.vstable.test/blindpay"));
+
+        // Assert
+        assertThat(response.url()).isEqualTo("https://app.blindpay.com/e/terms-of-service?session_token=abc");
+        server.verify();
+    }
+
+    @Test
+    void updatesCustomerWithPutSendingOwnerIdsAndIdempotencyKey() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(header("Idempotency-Key", "update-1"))
+                .andExpect(content().json("""
+                        {
+                          "email": "finance@acme.test",
+                          "country": "BR",
+                          "owners": [{"id": "ub_000000000001", "role": "controlling_person", "first_name": "Ana"}]
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("{\"success\":true}", MediaType.APPLICATION_JSON));
+
+        // Act
+        client.updateCustomer("re_000000000001", BlindPayUpdateCustomerRequest.builder()
+                .email("finance@acme.test")
+                .country("BR")
+                .owners(List.of(BlindPayCreateCustomerRequest.Owner.builder()
+                        .id("ub_000000000001")
+                        .role(BlindPayApi.Customer.OwnerRole.controlling_person)
+                        .firstName("Ana")
+                        .build()))
+                .build(), "update-1");
+
+        // Assert
+        server.verify();
+    }
+
+    @Test
+    void rejectsCustomerUpdateNotConfirmedByBlindPay() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001"))
+                .andRespond(withSuccess("{\"success\":false}", MediaType.APPLICATION_JSON));
+        BlindPayUpdateCustomerRequest request = BlindPayUpdateCustomerRequest.builder()
+                .email("finance@acme.test").country("BR").build();
+
+        // Act + Assert
+        assertThatThrownBy(() -> client.updateCustomer("re_000000000001", request, null))
+                .isInstanceOfSatisfying(BlindPayIntegrationException.class,
+                        ex -> assertThat(ex.isRetryable()).isFalse());
+        server.verify();
+    }
+
+    @Test
+    void uploadsFileAsMultipartWithBucketAndInstanceQuery() {
+        // Arrange
+        byte[] pdf = "%PDF-1.7 test".getBytes();
+        server.expect(once(), requestTo(BASE_URL + "/v1/upload?instance_id=" + INSTANCE_ID))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer " + API_KEY))
+                .andExpect(request -> assertThat(request.getHeaders().getContentType())
+                        .satisfies(type -> assertThat(type.isCompatibleWith(MediaType.MULTIPART_FORM_DATA)).isTrue()))
+                .andExpect(content().multipartDataContains(Map.of("bucket", "onboarding", "file", pdf)))
+                .andRespond(withSuccess("""
+                        {"file_url":"https://files.blindpay.test/onboarding/document.pdf"}
+                        """, MediaType.APPLICATION_JSON));
+
+        // Act
+        BlindPayUploadResponse response = client.uploadFile(
+                BlindPayApi.Upload.Bucket.onboarding, "document.pdf", "application/pdf", pdf);
+
+        // Assert
+        assertThat(response.fileUrl()).isEqualTo("https://files.blindpay.test/onboarding/document.pdf");
+        server.verify();
+    }
+
+    @Test
+    void rejectsUploadResponseWithoutFileUrl() {
+        // Arrange
+        server.expect(once(), requestTo(BASE_URL + "/v1/upload?instance_id=" + INSTANCE_ID))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        // Act + Assert
+        assertThatThrownBy(() -> client.uploadFile(
+                BlindPayApi.Upload.Bucket.onboarding, "document.pdf", "application/pdf", new byte[]{1}))
+                .isInstanceOf(BlindPayIntegrationException.class)
+                .hasMessageContaining("no file URL");
+        server.verify();
+    }
+
+    @Test
+    void fetchesOpenCustomerRfiWithRequestedFields() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001/rfi"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "id": "rf_000000000001",
+                          "customer_id": "re_000000000001",
+                          "instance_id": "in_000000000001",
+                          "status": "pending",
+                          "request": [{
+                            "title": "Source of funds",
+                            "description": "Explain the origin of the funds",
+                            "fields": [{"key": "sof_doc", "label": "Document", "required": true, "multiple": true,
+                                        "aiprise_document_type": "SOURCE_OF_FUNDS_DOCUMENT"}]
+                          }],
+                          "response": {"previous": "secret"},
+                          "expires_at": "2026-11-01T00:00:00Z",
+                          "submitted_at": null,
+                          "created_at": "2026-10-15T00:00:00Z"
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        // Act
+        BlindPayRfiResponse rfi = client.getCustomerRfi("re_000000000001");
+
+        // Assert
+        assertThat(rfi.status()).isEqualTo("pending");
+        assertThat(rfi.request()).singleElement().satisfies(section -> {
+            assertThat(section.title()).isEqualTo("Source of funds");
+            assertThat(section.fields()).singleElement().satisfies(field -> {
+                assertThat(field.key()).isEqualTo("sof_doc");
+                assertThat(field.required()).isTrue();
+                assertThat(field.multiple()).isTrue();
+                assertThat(field.aipriseDocumentType()).isEqualTo("SOURCE_OF_FUNDS_DOCUMENT");
+            });
+        });
+        assertThat(rfi.expiresAt()).isEqualTo(OffsetDateTime.parse("2026-11-01T00:00:00Z"));
+        server.verify();
+    }
+
+    @Test
+    void returnsNullWhenCustomerHasNoPendingRfi() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001/rfi"))
+                .andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
+
+        // Act + Assert
+        assertThat(client.getCustomerRfi("re_000000000001")).isNull();
+        server.verify();
+    }
+
+    @Test
+    void submitsRfiResponseAndMapsRejectionReason() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001/rfi"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "rfi-1"))
+                .andExpect(content().json("""
+                        {"sof_doc": ["https://files.blindpay.test/a.pdf"], "note": "Revenue from exports"}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess("""
+                        {"success": false, "reason": "already_resolved"}
+                        """, MediaType.APPLICATION_JSON));
+
+        // Act
+        BlindPayRfiSubmitResponse response = client.submitCustomerRfi("re_000000000001", Map.of(
+                "sof_doc", List.of("https://files.blindpay.test/a.pdf"),
+                "note", "Revenue from exports"), "rfi-1");
+
+        // Assert
+        assertThat(response.succeeded()).isFalse();
+        assertThat(response.reason()).isEqualTo("already_resolved");
+        server.verify();
+    }
+
+    @Test
+    void fetchesCustomerComplianceIdentityWarningsAndOwnerIds() {
+        // Arrange
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers/re_000000000001"))
+                .andRespond(withSuccess("""
+                        {
+                          "id": "re_000000000001",
+                          "instance_id": "in_000000000001",
+                          "external_id": "company-1",
+                          "kyc_status": "approved",
+                          "aml_status": "clear",
+                          "kyc_warnings": [{"code": "BIRTH_DATE_MISMATCH", "message": "pii", "resolution_status": "UNRESOLVED"}],
+                          "owners": [{"id": "ub_000000000001", "role": "controlling_person", "first_name": "Ana",
+                                      "last_name": "Souza", "tax_id": "123"}]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        // Act
+        BlindPayCustomerResponse customer = client.getCustomer("re_000000000001");
+
+        // Assert
+        assertThat(customer.instanceId()).isEqualTo(INSTANCE_ID);
+        assertThat(customer.kycWarnings()).extracting(BlindPayCustomerResponse.KycWarning::code)
+                .containsExactly("BIRTH_DATE_MISMATCH");
+        assertThat(customer.owners()).singleElement().satisfies(owner -> {
+            assertThat(owner.id()).isEqualTo("ub_000000000001");
+            assertThat(owner.role()).isEqualTo("controlling_person");
+        });
         server.verify();
     }
 

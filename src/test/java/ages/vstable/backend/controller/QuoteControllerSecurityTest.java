@@ -101,7 +101,8 @@ class QuoteControllerSecurityTest {
                         new BigDecimal("520.00"),
                         new BigDecimal("5.2000000000"),
                         new BigDecimal("1.50"),
-                        OffsetDateTime.parse("2026-10-08T15:30:00Z"))));
+                        OffsetDateTime.parse("2026-10-08T15:30:00Z"),
+                        "BLINDPAY")));
 
         mockMvc.perform(post("/v1/quotes")
                         .with(user(principal))
@@ -111,7 +112,8 @@ class QuoteControllerSecurityTest {
                 .andExpect(jsonPath("$.quoteRequestId").value(quoteRequestId.toString()))
                 .andExpect(jsonPath("$.offer.offerId").value(offerId.toString()))
                 .andExpect(jsonPath("$.offer.sourceAmount").value(100.00))
-                .andExpect(jsonPath("$.offer.targetAmount").value(520.00));
+                .andExpect(jsonPath("$.offer.targetAmount").value(520.00))
+                .andExpect(jsonPath("$.offer.provider").value("BLINDPAY"));
 
         verify(quoteOrchestratorService).quote(same(principal), any());
     }

@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 /**
  * Cotação de payout. Valores monetários vêm em centavos; {@code expiresAt} é epoch
- * em milissegundos. {@code contract} traz os dados do {@code approve} ERC-20 que a carteira
+ * em milissegundos (validade de 5 minutos; cada cotação é de uso único). {@code contract} traz os dados do {@code approve} ERC-20 que a carteira
  * de origem precisa assinar antes de POST /payouts/evm.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

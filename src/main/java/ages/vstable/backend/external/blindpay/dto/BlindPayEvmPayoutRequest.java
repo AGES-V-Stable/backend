@@ -6,8 +6,10 @@ import tools.jackson.databind.annotation.JsonNaming;
 
 /**
  * Corpo de POST /v1/instances/{instance_id}/payouts/evm. A origem dos fundos é
- * uma carteira externa ({@code senderWalletAddress}, que já aprovou o contrato da
- * cotação) ou uma carteira gerenciada pela BlindPay ({@code walletId}), nunca ambas.
+ * informada por exatamente um campo: {@code senderWalletAddress} ou {@code walletId}.
+ * A API recusa os dois juntos ("Provide exactly one of sender_wallet_address or
+ * wallet_id"), conferido na instância de desenvolvimento. Para a carteira gerenciada
+ * pela BlindPay, o payout é enviado com o endereço dela.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -27,7 +29,8 @@ public record BlindPayEvmPayoutRequest(
         return new BlindPayEvmPayoutRequest(quoteId, senderWalletAddress, null);
     }
 
-    public static BlindPayEvmPayoutRequest fromManagedWallet(String quoteId, String walletId) {
-        return new BlindPayEvmPayoutRequest(quoteId, null, walletId);
+    /** Carteira gerenciada pela BlindPay: a origem é o endereço dela. */
+    public static BlindPayEvmPayoutRequest fromManagedWallet(String quoteId, String walletAddress) {
+        return new BlindPayEvmPayoutRequest(quoteId, walletAddress, null);
     }
 }
