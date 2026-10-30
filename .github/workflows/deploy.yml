@@ -27,7 +27,6 @@ jobs:
       AWS_REGION: us-east-2
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       BACKEND_LAMBDA_FUNCTION_NAME: ${{ vars.BACKEND_LAMBDA_FUNCTION_NAME }}
-      SEED_LAMBDA_FUNCTION_NAME: ${{ vars.SEED_LAMBDA_FUNCTION_NAME }}
       API_URL: ${{ vars.API_URL }}
     steps:
       - uses: actions/checkout@v7
@@ -77,53 +76,6 @@ jobs:
             -t "${ECR_REPOSITORY}:${tag}" --metadata-file "$RUNNER_TEMP/image-metadata.json" --push .
           digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$RUNNER_TEMP/image-metadata.json")"
           echo "uri=${ECR_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
-
-      - name: Update private seed Lambda
-        run: |
-          aws lambda update-function-code --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
-            --image-uri '${{ steps.image.outputs.uri }}' > /dev/null
-          aws lambda wait function-updated --function-name "$SEED_LAMBDA_FUNCTION_NAME"
-
-      - name: Seed environment
-        shell: bash
-        env:
-          INITIAL_ADMIN_JSON: ${{ secrets.INITIAL_ADMIN_JSON }}
-          STAGING_DEMO_PASSWORD: ${{ secrets.STAGING_DEMO_PASSWORD }}
-          DEPLOY_ENVIRONMENT: ${{ github.event_name == 'push' && 'staging' || 'production' }}
-        run: |
-          set -euo pipefail
-          payload="$(mktemp)"
-          response="$(mktemp)"
-          metadata="$(mktemp)"
-          trap 'rm -f "$payload" "$response" "$metadata"' EXIT
-          chmod 600 "$payload" "$response" "$metadata"
-          python3 - "$payload" <<'PY'
-          import json, os, sys
-          try:
-              admin = json.loads(os.environ['INITIAL_ADMIN_JSON'])
-              if not isinstance(admin, dict):
-                  raise ValueError()
-              body = {'admin': admin}
-              if os.environ['DEPLOY_ENVIRONMENT'] == 'staging':
-                  body['stagingDemoPassword'] = os.environ['STAGING_DEMO_PASSWORD']
-              with open(sys.argv[1], 'w', encoding='utf-8') as file:
-                  json.dump(body, file)
-          except (KeyError, ValueError):
-              sys.exit('Configure INITIAL_ADMIN_JSON and STAGING_DEMO_PASSWORD for this environment')
-          PY
-          aws lambda invoke --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
-            --cli-binary-format raw-in-base64-out --payload "fileb://$payload" \
-            "$response" > "$metadata"
-          python3 - "$metadata" "$response" <<'PY'
-          import json, sys
-          try:
-              metadata = json.load(open(sys.argv[1], encoding='utf-8'))
-              response = json.load(open(sys.argv[2], encoding='utf-8'))
-              if metadata.get('StatusCode') != 200 or metadata.get('FunctionError') or response != {'seeded': True}:
-                  raise ValueError()
-          except (OSError, ValueError, TypeError):
-              sys.exit('Seed invocation failed; inspect the private seed Lambda logs')
-          PY
 
       - name: Update public API Lambda
         run: |

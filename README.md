@@ -65,12 +65,6 @@ Lambda e configurar o workflow de deploy do frontend. O staging recebe merges
 em `main`; produção recebe releases estáveis. O runner Terraform continua
 precisando de acesso à rede privada do RDS para criar o usuário da aplicação.
 
-O workflow [deploy.yml](.github/workflows/deploy.yml) publica o backend de forma
-independente do frontend: `main` em staging e GitHub Releases estáveis em
-produção. Cada ambiente tem uma Lambda privada para criar um super-admin
-configurado em segredo do GitHub; staging também recebe dados sintéticos.
-Configure os valores de ambiente e segredos conforme o
-[guia Terraform](terraform/README.md#backend-github-actions).
 
 Formato do `SecretString` (valores ilustrativos; não versionar credenciais):
 
