@@ -48,6 +48,19 @@ jobs:
           BLINDPAY_API_KEY: test-only-not-a-real-credential
           BLINDPAY_INSTANCE_ID: in_000000000000
           BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
+
+      - name: Run mutation tests (PIT)
+        id: pitest
+        run: ./gradlew pitest --no-daemon
+
+      - name: Upload PITest report
+        if: ${{ !cancelled() && (steps.pitest.outcome == 'success' || steps.pitest.outcome == 'failure') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitest-report
+          path: build/reports/pitest/
+          if-no-files-found: warn
+          retention-days: 14
   avenia-mcp-server:
     name: Avenia MCP Server
     uses: ./.github/workflows/avenia-mcp-server.yml
