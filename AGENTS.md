@@ -42,3 +42,5 @@ Para alterações Java, execute os testes e o build localmente quando possível:
 ```
 
 Os testes de integração que usam Testcontainers podem exigir Docker. O CI executa `./gradlew build sonar --no-daemon` em pull requests para `main` e em pushes para `main`; a análise Sonar pode depender dos secrets configurados no GitHub. Não invente resultados: se uma verificação não puder ser executada, informe qual e por quê.
+
+Para executar a análise de mutação isolada (independente de `test`, `check` e `build`, sem chamadas externas nem Docker), rode `./gradlew pitest`; os relatórios HTML e XML são gerados em `build/reports/pitest/` sem limite mínimo de score até consolidação da linha de base.
