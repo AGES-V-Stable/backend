@@ -34,4 +34,10 @@ public class CreateTransferRequest {
 
     @Size(max = 68)
     private String description;
+
+      /**
+     * Código TOTP de 6 dígitos gerado pelo aplicativo autenticador do usuário.
+     * Validado antes de qualquer comunicação com a Avenia (rejeitado com 401/422 se ausente ou inválido).
+     */
+    private String totpCode;
 }

@@ -40,7 +40,8 @@ public class OnboardingService {
     private final PasswordEncoder passwordEncoder;
     private final CompanyService companyService;
     private final JwtTokenUtils jwtTokenUtils;
-
+    private final TotpService totpService;
+    
     @Transactional
     public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
         validatePayload(request);
@@ -75,6 +76,15 @@ public class OnboardingService {
         user.setEmail(request.getEmail());
         user.setPasswordSalt(BCrypt.gensalt());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setTwoFactorEnabled(false);
+
+        boolean wantsTwoFactor = Boolean.TRUE.equals(request.getEnableTwoFactor());
+        String otpauthUri = null;
+        if (wantsTwoFactor) {
+            String rawSecret = totpService.generateSecret();
+            user.setTwoFactorSecret(rawSecret);
+            otpauthUri = totpService.buildOtpAuthUri(user.getEmail(), rawSecret);
+        }
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         user = userRepository.saveAndFlush(user);
@@ -92,6 +102,8 @@ public class OnboardingService {
                 .companyId(company.getId())
                 .kycVerificationId(kyc.getId())
                 .accessToken(jwtTokenUtils.generateToken(user))
+                .twoFactorSetupRequired(wantsTwoFactor)
+                .otpauthUri(otpauthUri)
                 .build();
     }
 

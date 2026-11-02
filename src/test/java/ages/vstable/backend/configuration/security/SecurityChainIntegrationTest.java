@@ -15,6 +15,7 @@ import ages.vstable.backend.logging.RequestLoggingFilter;
 import ages.vstable.backend.service.CompanyService;
 import ages.vstable.backend.service.TransferDetailsService;
 import ages.vstable.backend.service.TransferService;
+import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
@@ -89,6 +90,9 @@ class SecurityChainIntegrationTest {
 
     @MockitoBean
     private TransferService transferService;
+
+    @MockitoBean
+    private TwoFactorAuthService twoFactorAuthService;
 
     private final UUID companyId = UUID.randomUUID();
     private UserEntity user;
@@ -361,6 +365,28 @@ class SecurityChainIntegrationTest {
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "x-request-id"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void protectedRoute_with2faChallengeToken_returnsTokenInvalid401() throws Exception {
+        String challengeToken = jwtTokenUtils.generateChallengeToken(user);
+
+        mockMvc.perform(get("/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(challengeToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_INVALID"));
+    }
+
+    @Test
+    void verify2faLoginRoute_isPublicAndReturnsJwtOnSuccess() throws Exception {
+        when(twoFactorAuthService.verifyLoginChallenge("valid-challenge", "123456")).thenReturn(user);
+
+        mockMvc.perform(post("/v1/auth/login/verify-2fa")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"challengeToken\":\"valid-challenge\",\"code\":\"123456\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.AUTHORIZATION,
+                        org.hamcrest.Matchers.startsWith("Bearer ")))
+                .andExpect(jsonPath("$.token").isNotEmpty());
     }
 
 }

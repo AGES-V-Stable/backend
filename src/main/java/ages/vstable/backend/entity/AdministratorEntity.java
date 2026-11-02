@@ -3,11 +3,15 @@ package ages.vstable.backend.entity;
 import ages.vstable.backend.entity.enums.AdminAccessLevel;
 import jakarta.persistence.*;
 import lombok.*;
+
+import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import ages.vstable.backend.utils.TwoFactorSecretConverter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -20,6 +24,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Getter
 @Setter
+@DynamicInsert
 @Table(name = "administrators")
 public class AdministratorEntity implements UserDetails {
 
@@ -45,8 +50,23 @@ public class AdministratorEntity implements UserDetails {
     @Column(name = "access_level", columnDefinition = "admin_access_level_enum")
     private AdminAccessLevel accessLevel;
 
+    @Builder.Default
     @Column(name = "active")
-    private Boolean active;
+    private Boolean active = true;
+
+    @Builder.Default
+    @Column(name = "require_2fa", nullable = false)
+    private Boolean require2fa = true;
+
+    @JsonIgnore
+    @ToString.Exclude
+    @Convert(converter = TwoFactorSecretConverter.class)
+    @Column(name = "two_factor_secret", length = 255)
+    private String twoFactorSecret;
+
+    @Builder.Default
+    @Column(name = "two_factor_enabled", nullable = false)
+    private Boolean twoFactorEnabled = false;
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;

@@ -17,6 +17,7 @@ import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.external.avenia.AveniaTransferService;
 import ages.vstable.backend.external.avenia.dto.AveniaAppliedFee;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
@@ -37,6 +38,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -46,6 +49,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -78,6 +82,9 @@ class TransferCreationServiceTest {
 
     @Mock
     private CompanyRepository companyRepository;
+
+    @Mock
+    private TwoFactorAuthService twoFactorAuthService;
 
     private TransferService transferService;
 
@@ -136,7 +143,8 @@ class TransferCreationServiceTest {
         transferService = new TransferService(
                 aveniaTransferService, beneficiaryRepository,
                 aveniaKycVerificationRepository, subAccountProvisioningService,
-                baseTransactionRepository, importTransactionRepository, exportTransactionRepository, companyRepository);
+                baseTransactionRepository, importTransactionRepository, exportTransactionRepository, companyRepository,
+                twoFactorAuthService);
     }
 
     /** Devolve a mesma entity recebida, com id preenchido — como faria um save() real. */
@@ -156,6 +164,7 @@ class TransferCreationServiceTest {
         request.setDestinationCurrency(destinationCurrency);
         request.setPaymentMethod(TransferMethod.PIX);
         request.setBeneficiaryId(beneficiaryId);
+        request.setTotpCode("123456");
         request.setDescription("Pagamento de importação");
         return request;
     }
@@ -926,6 +935,7 @@ class TransferCreationServiceTest {
         assertThat(persistedBase.getBeneficiary()).isEqualTo(beneficiary);
         assertThat(persistedBase.getTransferMethod()).isEqualTo(TransferMethod.PIX);
         verify(baseTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService).consumeTransferTotp(CURRENT_USER_ID, "123456");
     }
 
     @Test
@@ -1197,6 +1207,7 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService, never()).createTransfer(any(), any());
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
     }
 
     @Test
@@ -1214,6 +1225,7 @@ class TransferCreationServiceTest {
 
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
+        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
     }
 
     @Test
@@ -1228,5 +1240,64 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class);
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
+    }
+
+    @Test
+    void create_totpInvalido_lancaBadCredentialsExceptionSemChamarAveniaNemProvisionarSubconta() {
+        setUpService();
+        CreateTransferRequest request = createRequestWith(UUID.randomUUID(), "USDC");
+        request.setTotpCode("000000");
+
+        doThrow(new BadCredentialsException("Invalid 2FA verification code"))
+                .when(twoFactorAuthService).validateTransferTotp(CURRENT_USER_ID, "000000");
+
+        assertThatThrownBy(() -> transferService.create(request, CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid 2FA verification code");
+
+        verifyNoInteractions(
+                beneficiaryRepository,
+                aveniaKycVerificationRepository,
+                subAccountProvisioningService,
+                aveniaTransferService,
+                importTransactionRepository,
+                baseTransactionRepository);
+    }
+
+    @Test
+    void create_totpAusenteOuUsuarioSem2faAtivo_lancaUnprocessableEntityExceptionSemChamarAvenia() {
+        setUpService();
+        CreateTransferRequest request = createRequestWith(UUID.randomUUID(), "USDC");
+        request.setTotpCode(null);
+
+        doThrow(new UnprocessableEntityException("O código TOTP de 6 dígitos é obrigatório"))
+                .when(twoFactorAuthService).validateTransferTotp(CURRENT_USER_ID, null);
+
+        assertThatThrownBy(() -> transferService.create(request, CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class);
+
+        verifyNoInteractions(
+                beneficiaryRepository,
+                subAccountProvisioningService,
+                aveniaTransferService,
+                importTransactionRepository);
+    }
+
+    @Test
+    void create_contaBloqueadaPorBruteForceTotp_lancaLockedExceptionSemChamarAvenia() {
+        setUpService();
+        CreateTransferRequest request = createRequestWith(UUID.randomUUID(), "USDC");
+
+        doThrow(new LockedException("Too many failed 2FA attempts"))
+                .when(twoFactorAuthService).validateTransferTotp(CURRENT_USER_ID, "123456");
+
+        assertThatThrownBy(() -> transferService.create(request, CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(LockedException.class);
+
+        verifyNoInteractions(
+                beneficiaryRepository,
+                subAccountProvisioningService,
+                aveniaTransferService,
+                importTransactionRepository);
     }
 }

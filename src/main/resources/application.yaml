@@ -62,6 +62,8 @@ api:
   auth:
     jwt:
       secret: ${JWT_SECRET}
+    two-factor:
+      encryption-key: ${TWO_FACTOR_ENCRYPTION_KEY}
 
 avenia:
   base-url: ${AVENIA_BASE_URL:https://api.sandbox.avenia.io:10952}

@@ -44,151 +44,154 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TransferServiceTest {
 
-    @Mock
-    private BaseTransactionRepository baseTransactionRepository;
-    @Mock
-    private ImportTransactionRepository importTransactionRepository;
-    @Mock
-    private ExportTransactionRepository exportTransactionRepository;
-    @Mock
-    private BeneficiaryRepository beneficiaryRepository;
-    @Mock
-    private CompanyRepository companyRepository;
+        @Mock
+        private BaseTransactionRepository baseTransactionRepository;
+        @Mock
+        private ImportTransactionRepository importTransactionRepository;
+        @Mock
+        private ExportTransactionRepository exportTransactionRepository;
+        @Mock
+        private BeneficiaryRepository beneficiaryRepository;
+        @Mock
+        private CompanyRepository companyRepository;
 
-    private TransferService service;
+        private TransferService service;
 
-    private final UUID companyId = UUID.randomUUID();
-    private final Pageable pageable = PageRequest.of(0, 12);
+        private final UUID companyId = UUID.randomUUID();
+        private final Pageable pageable = PageRequest.of(0, 12);
 
-    @BeforeEach
-    void setUp() {
-        service = new TransferService(null, beneficiaryRepository, null, null, baseTransactionRepository, importTransactionRepository,
-                exportTransactionRepository, companyRepository);
-    }
+        @BeforeEach
+        void setUp() {
+                service = new TransferService(null, beneficiaryRepository, null, null, baseTransactionRepository,
+                                importTransactionRepository,
+                                exportTransactionRepository, companyRepository, null);
+        }
 
-    private static TransferFilter noFilters() {
-        return new TransferFilter(null, null, null, null, null, null, null, null, null);
-    }
+        private static TransferFilter noFilters() {
+                return new TransferFilter(null, null, null, null, null, null, null, null, null);
+        }
 
-    private BaseTransactionEntity transaction(UUID id) {
-        return BaseTransactionEntity.builder()
-                .id(id)
-                .companyId(companyId)
-                .status(TransactionStatus.SETTLED)
-                .foreignCurrency("USD")
-                .foreignAmount(new BigDecimal("1500.25"))
-                .exchangeRate(new BigDecimal("5.123400"))
-                .serviceFeeBrl(new BigDecimal("12.50"))
-                .createdAt(OffsetDateTime.now())
-                .build();
-    }
+        private BaseTransactionEntity transaction(UUID id) {
+                return BaseTransactionEntity.builder()
+                                .id(id)
+                                .companyId(companyId)
+                                .status(TransactionStatus.SETTLED)
+                                .foreignCurrency("USD")
+                                .foreignAmount(new BigDecimal("1500.25"))
+                                .exchangeRate(new BigDecimal("5.123400"))
+                                .serviceFeeBrl(new BigDecimal("12.50"))
+                                .createdAt(OffsetDateTime.now())
+                                .build();
+        }
 
-    private CompanyEntity company() {
-        CompanyEntity company = new CompanyEntity();
-        company.setId(companyId);
-        company.setLegalName("Empresa Ltda");
-        return company;
-    }
+        private CompanyEntity company() {
+                CompanyEntity company = new CompanyEntity();
+                company.setId(companyId);
+                company.setLegalName("Empresa Ltda");
+                return company;
+        }
 
-    @Test
-    @SuppressWarnings("unchecked")
-    void findTransfers_mapsPaymentsAndReceiptsWithCounterpartyAndCompany() {
-        UUID paymentId = UUID.randomUUID();
-        UUID receiptId = UUID.randomUUID();
-        UUID beneficiaryId = UUID.randomUUID();
+        @Test
+        @SuppressWarnings("unchecked")
+        void findTransfers_mapsPaymentsAndReceiptsWithCounterpartyAndCompany() {
+                UUID paymentId = UUID.randomUUID();
+                UUID receiptId = UUID.randomUUID();
+                UUID beneficiaryId = UUID.randomUUID();
 
-        when(baseTransactionRepository.findAll(any(Specification.class), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(transaction(paymentId), transaction(receiptId)), pageable, 2));
-        when(importTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
-                ImportTransactionEntity.builder().id(paymentId).beneficiaryId(beneficiaryId)
-                        .transferMethod(TransferMethod.PIX).build()));
-        when(exportTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
-                ExportTransactionEntity.builder().id(receiptId).externalPayerName("Acme Inc").build()));
-        when(beneficiaryRepository.findAllById(anyIterable())).thenReturn(List.of(
-                BeneficiaryEntity.builder().id(beneficiaryId).nickname("atlas").accountHolderName("Atlas LLC").build()));
-        when(companyRepository.findAllById(anyIterable())).thenReturn(List.of(company()));
+                when(baseTransactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                                .thenReturn(new PageImpl<>(List.of(transaction(paymentId), transaction(receiptId)),
+                                                pageable, 2));
+                when(importTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
+                                ImportTransactionEntity.builder().id(paymentId).beneficiaryId(beneficiaryId)
+                                                .transferMethod(TransferMethod.PIX).build()));
+                when(exportTransactionRepository.findAllById(anyIterable())).thenReturn(List.of(
+                                ExportTransactionEntity.builder().id(receiptId).externalPayerName("Acme Inc").build()));
+                when(beneficiaryRepository.findAllById(anyIterable())).thenReturn(List.of(
+                                BeneficiaryEntity.builder().id(beneficiaryId).nickname("atlas")
+                                                .accountHolderName("Atlas LLC").build()));
+                when(companyRepository.findAllById(anyIterable())).thenReturn(List.of(company()));
 
-        Page<TransferResponse> page = service.findTransfers(noFilters(), pageable);
+                Page<TransferResponse> page = service.findTransfers(noFilters(), pageable);
 
-        assertThat(page.getTotalElements()).isEqualTo(2);
-        TransferResponse payment = page.getContent().getFirst();
-        assertThat(payment.getId()).isEqualTo(paymentId);
-        assertThat(payment.getBeneficiaryId()).isEqualTo(beneficiaryId);
-        assertThat(payment.getDirection()).isEqualTo(TransferDirection.PAYMENT);
-        assertThat(payment.getCounterpartyName()).isEqualTo("Atlas LLC");
-        assertThat(payment.getTransferMethod()).isEqualTo(TransferMethod.PIX);
-        assertThat(payment.getCompanyName()).isEqualTo("Empresa Ltda");
-        assertThat(payment.getForeignAmount()).isEqualByComparingTo("1500.25");
+                assertThat(page.getTotalElements()).isEqualTo(2);
+                TransferResponse payment = page.getContent().getFirst();
+                assertThat(payment.getId()).isEqualTo(paymentId);
+                assertThat(payment.getBeneficiaryId()).isEqualTo(beneficiaryId);
+                assertThat(payment.getDirection()).isEqualTo(TransferDirection.PAYMENT);
+                assertThat(payment.getCounterpartyName()).isEqualTo("Atlas LLC");
+                assertThat(payment.getTransferMethod()).isEqualTo(TransferMethod.PIX);
+                assertThat(payment.getCompanyName()).isEqualTo("Empresa Ltda");
+                assertThat(payment.getForeignAmount()).isEqualByComparingTo("1500.25");
 
-        TransferResponse receipt = page.getContent().get(1);
-        assertThat(receipt.getId()).isEqualTo(receiptId);
-        assertThat(receipt.getDirection()).isEqualTo(TransferDirection.RECEIPT);
-        assertThat(receipt.getCounterpartyName()).isEqualTo("Acme Inc");
-        assertThat(receipt.getBeneficiaryId()).isNull();
-    }
+                TransferResponse receipt = page.getContent().get(1);
+                assertThat(receipt.getId()).isEqualTo(receiptId);
+                assertThat(receipt.getDirection()).isEqualTo(TransferDirection.RECEIPT);
+                assertThat(receipt.getCounterpartyName()).isEqualTo("Acme Inc");
+                assertThat(receipt.getBeneficiaryId()).isNull();
+        }
 
-    @Test
-    @SuppressWarnings("unchecked")
-    void findTransfers_emptyPage_doesNotLoadRelatedRows() {
-        when(baseTransactionRepository.findAll(any(Specification.class), any(Pageable.class)))
-                .thenReturn(Page.empty(pageable));
+        @Test
+        @SuppressWarnings("unchecked")
+        void findTransfers_emptyPage_doesNotLoadRelatedRows() {
+                when(baseTransactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                                .thenReturn(Page.empty(pageable));
 
-        Page<TransferResponse> page = service.findTransfers(noFilters(), pageable);
+                Page<TransferResponse> page = service.findTransfers(noFilters(), pageable);
 
-        assertThat(page.getContent()).isEmpty();
-        verifyNoInteractions(importTransactionRepository, exportTransactionRepository,
-                beneficiaryRepository, companyRepository);
-    }
+                assertThat(page.getContent()).isEmpty();
+                verifyNoInteractions(importTransactionRepository, exportTransactionRepository,
+                                beneficiaryRepository, companyRepository);
+        }
 
-    @Test
-    void findTransfers_startDateAfterEndDate_isRejected() {
-        TransferFilter filter = new TransferFilter(null, null, null,
-                LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 1), null, null, null, null);
+        @Test
+        void findTransfers_startDateAfterEndDate_isRejected() {
+                TransferFilter filter = new TransferFilter(null, null, null,
+                                LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 1), null, null, null, null);
 
-        assertThatThrownBy(() -> service.findTransfers(filter, pageable))
-                .isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(baseTransactionRepository);
-    }
+                assertThatThrownBy(() -> service.findTransfers(filter, pageable))
+                                .isInstanceOf(IllegalArgumentException.class);
+                verifyNoInteractions(baseTransactionRepository);
+        }
 
-    @Test
-    void findTransfers_minAmountGreaterThanMax_isRejected() {
-        TransferFilter filter = new TransferFilter(null, null, null, null, null,
-                new BigDecimal("100"), new BigDecimal("10"), null, null);
+        @Test
+        void findTransfers_minAmountGreaterThanMax_isRejected() {
+                TransferFilter filter = new TransferFilter(null, null, null, null, null,
+                                new BigDecimal("100"), new BigDecimal("10"), null, null);
 
-        assertThatThrownBy(() -> service.findTransfers(filter, pageable))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
+                assertThatThrownBy(() -> service.findTransfers(filter, pageable))
+                                .isInstanceOf(IllegalArgumentException.class);
+        }
 
-    @Test
-    void findTransfers_negativeAmount_isRejected() {
-        TransferFilter filter = new TransferFilter(null, null, null, null, null,
-                new BigDecimal("-1"), null, null, null);
+        @Test
+        void findTransfers_negativeAmount_isRejected() {
+                TransferFilter filter = new TransferFilter(null, null, null, null, null,
+                                new BigDecimal("-1"), null, null, null);
 
-        assertThatThrownBy(() -> service.findTransfers(filter, pageable))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
+                assertThatThrownBy(() -> service.findTransfers(filter, pageable))
+                                .isInstanceOf(IllegalArgumentException.class);
+        }
 
-    @Test
-    void findById_unknownTransfer_throwsNotFound() {
-        UUID id = UUID.randomUUID();
-        when(baseTransactionRepository.findById(id)).thenReturn(Optional.empty());
+        @Test
+        void findById_unknownTransfer_throwsNotFound() {
+                UUID id = UUID.randomUUID();
+                when(baseTransactionRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.findById(id)).isInstanceOf(NotFoundException.class);
-    }
+                assertThatThrownBy(() -> service.findById(id)).isInstanceOf(NotFoundException.class);
+        }
 
-    @Test
-    void findById_returnsMappedTransfer() {
-        UUID id = UUID.randomUUID();
-        when(baseTransactionRepository.findById(id)).thenReturn(Optional.of(transaction(id)));
-        when(importTransactionRepository.findAllById(anyIterable())).thenReturn(List.of());
-        when(exportTransactionRepository.findAllById(anyIterable())).thenReturn(List.of());
-        when(beneficiaryRepository.findAllById(anyIterable())).thenReturn(List.of());
-        when(companyRepository.findAllById(anyIterable())).thenReturn(List.of(company()));
+        @Test
+        void findById_returnsMappedTransfer() {
+                UUID id = UUID.randomUUID();
+                when(baseTransactionRepository.findById(id)).thenReturn(Optional.of(transaction(id)));
+                when(importTransactionRepository.findAllById(anyIterable())).thenReturn(List.of());
+                when(exportTransactionRepository.findAllById(anyIterable())).thenReturn(List.of());
+                when(beneficiaryRepository.findAllById(anyIterable())).thenReturn(List.of());
+                when(companyRepository.findAllById(anyIterable())).thenReturn(List.of(company()));
 
-        TransferResponse response = service.findById(id);
+                TransferResponse response = service.findById(id);
 
-        assertThat(response.getId()).isEqualTo(id);
-        assertThat(response.getStatus()).isEqualTo(TransactionStatus.SETTLED);
-        assertThat(response.getDirection()).isNull();
-    }
+                assertThat(response.getId()).isEqualTo(id);
+                assertThat(response.getStatus()).isEqualTo(TransactionStatus.SETTLED);
+                assertThat(response.getDirection()).isNull();
+        }
 }

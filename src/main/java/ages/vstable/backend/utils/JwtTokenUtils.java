@@ -25,10 +25,14 @@ public class JwtTokenUtils implements Serializable {
     @Serial
     private static final long serialVersionUID = -2550185165626007488L;
     public static final long JWT_TOKEN_VALIDITY = 5 * 60 * 60;
+    public static final long CHALLENGE_TOKEN_VALIDITY = 5 * 60;
     public static final String ACCOUNT_TYPE_CLAIM = "account_type";
     public static final String ACCOUNT_TYPE_ADMIN = "ADMIN";
     public static final String ACCOUNT_TYPE_USER = "USER";
+    public static final String PURPOSE_CLAIM = "purpose";
+    public static final String PURPOSE_2FA_CHALLENGE = "2FA_CHALLENGE";
 
+    
     @Value("${api.auth.jwt.secret}")
     private String secret;
 
@@ -99,9 +103,47 @@ public class JwtTokenUtils implements Serializable {
         );
     }
 
+
+    /**
+     * Gera um token temporário (5 min) exclusivo para a 2ª etapa do login (desafio TOTP).
+     * Não concede acesso às rotas protegidas da API.
+     */
+    public String generateChallengeToken(UserDetails principal) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(PURPOSE_CLAIM, PURPOSE_2FA_CHALLENGE);
+        claims.put(ACCOUNT_TYPE_CLAIM,
+                principal instanceof AdministratorEntity ? ACCOUNT_TYPE_ADMIN : ACCOUNT_TYPE_USER);
+
+        return Jwts.builder()
+            .claims(claims)
+            .subject(principal.getUsername())
+            .issuedAt(new Date(System.currentTimeMillis()))
+            .expiration(new Date(System.currentTimeMillis() + CHALLENGE_TOKEN_VALIDITY * 1000))
+            .signWith(getSigningKey(), Jwts.SIG.HS512)
+            .compact();
+    }
+
+
+     /**
+     * Verifica se o token possui a claim purpose = 2FA_CHALLENGE e não está expirado.
+     */
+
+     public boolean validateChallengeToken(String token){
+        try {
+            String purpose = getClaimFromToken(token, claims -> claims.get(PURPOSE_CLAIM, String.class));
+            return PURPOSE_2FA_CHALLENGE.equals(purpose) && !isTokenExpired(token);
+        } catch (Exception e) {
+            return false;
+        }
+     }
     //validate token
     public Boolean validateToken(String token, UserDetails userDetails) {
         final String username = getUsernameFromToken(token);
+        final String purpose = getClaimFromToken(token, claims -> claims.get(PURPOSE_CLAIM, String.class));
+        // Impede que um challengeToken seja usado como token de sessão na API!
+        if (PURPOSE_2FA_CHALLENGE.equals(purpose)){
+            return false;
+        }
         return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
     }
 }

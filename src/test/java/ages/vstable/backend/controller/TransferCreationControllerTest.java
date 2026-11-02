@@ -14,6 +14,9 @@ import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.utils.JwtTokenUtils;
+import ages.vstable.backend.dto.transfer.CreateTransferRequest;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -59,14 +62,16 @@ class TransferCreationControllerTest {
     private static final UUID BENEFICIARY_ID = UUID.randomUUID();
 
     private String validPayload() throws Exception {
-        return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 125000.00);
-            put("amountType", "SOURCE");
-            put("sourceCurrency", "BRL");
-            put("destinationCurrency", "USD");
-            put("beneficiaryId", BENEFICIARY_ID.toString());
-            put("paymentMethod", "PIX");
-        }});
+        return objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 125000.00);
+                put("amountType", "SOURCE");
+                put("sourceCurrency", "BRL");
+                put("destinationCurrency", "USD");
+                put("beneficiaryId", BENEFICIARY_ID.toString());
+                put("paymentMethod", "PIX");
+            }
+        });
     }
 
     private TransferQuoteResponse sampleResponse() {
@@ -83,8 +88,8 @@ class TransferCreationControllerTest {
         when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.source.amount").value(125000.00))
                 .andExpect(jsonPath("$.source.currency").value("BRL"))
@@ -101,25 +106,29 @@ class TransferCreationControllerTest {
 
     @Test
     void post_semAmount_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amountType", "SOURCE");
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amountType", "SOURCE");
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void post_semAmountType_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 100.00);
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isBadRequest());
     }
 
@@ -128,14 +137,16 @@ class TransferCreationControllerTest {
         when(transferService.quote(any(), any(), any())).thenThrow(
                 new UnprocessableEntityException("Não foi possível determinar a moeda de destino da transferência"));
 
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 100.00);
+                put("amountType", "SOURCE");
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isUnprocessableEntity());
     }
 
@@ -144,8 +155,8 @@ class TransferCreationControllerTest {
         when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<TransferQuoteRequest> captor = ArgumentCaptor.forClass(TransferQuoteRequest.class);
@@ -156,16 +167,18 @@ class TransferCreationControllerTest {
 
     @Test
     void post_quoteMetodoDePagamentoInvalido_retorna400SemChamarService() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-            put("beneficiaryId", BENEFICIARY_ID.toString());
-            put("paymentMethod", "INTERNAL");
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 100.00);
+                put("amountType", "SOURCE");
+                put("beneficiaryId", BENEFICIARY_ID.toString());
+                put("paymentMethod", "INTERNAL");
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isBadRequest());
 
         verify(transferService, never()).quote(any(), any(), any());
@@ -177,18 +190,19 @@ class TransferCreationControllerTest {
                 new UnprocessableEntityException("A Avenia não oferece BRL via PIX para USD via WIRE"));
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void post_quoteBeneficiarioDeOutraEmpresa_retorna404() throws Exception {
-        when(transferService.quote(any(), any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
+        when(transferService.quote(any(), any(), any()))
+                .thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isNotFound());
     }
 
@@ -198,30 +212,34 @@ class TransferCreationControllerTest {
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers/quote")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validPayload()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
                 .andExpect(status().isServiceUnavailable());
     }
 
     private String createTransferPayload(UUID beneficiaryId) throws Exception {
-        return objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 125000.00);
-            put("amountType", "SOURCE");
-            put("sourceCurrency", "BRL");
-            put("destinationCurrency", "USD");
-            put("paymentMethod", "PIX");
-            put("beneficiaryId", beneficiaryId.toString());
-            put("description", "Pagamento de importação");
-        }});
+        return objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 125000.00);
+                put("amountType", "SOURCE");
+                put("sourceCurrency", "BRL");
+                put("destinationCurrency", "USD");
+                put("paymentMethod", "PIX");
+                put("beneficiaryId", beneficiaryId.toString());
+                put("description", "Pagamento de importação");
+                put("totpCode", "123456");
+            }
+        });
     }
 
     @Test
     void post_transferenciaValida_retorna200ComStatusSemIdentificadoresDaAvenia() throws Exception {
-        when(transferService.create(any(), any(), any())).thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+        when(transferService.create(any(), any(), any()))
+                .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
 
         mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PROCESSING"))
                 .andExpect(jsonPath("$.quoteToken").doesNotExist())
@@ -231,42 +249,47 @@ class TransferCreationControllerTest {
 
     @Test
     void post_semBeneficiaryId_retorna400() throws Exception {
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-            put("paymentMethod", "PIX");
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 100.00);
+                put("amountType", "SOURCE");
+                put("paymentMethod", "PIX");
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void post_externalIdAcimaDoLimiteDaAvenia_retorna400SemChamarService() throws Exception {
         UUID beneficiaryId = UUID.randomUUID();
-        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
-            put("amount", 100.00);
-            put("amountType", "SOURCE");
-            put("paymentMethod", "PIX");
-            put("beneficiaryId", beneficiaryId.toString());
-            put("description", "x".repeat(69));
-        }});
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {
+            {
+                put("amount", 100.00);
+                put("amountType", "SOURCE");
+                put("paymentMethod", "PIX");
+                put("beneficiaryId", beneficiaryId.toString());
+                put("description", "x".repeat(69));
+            }
+        });
 
         mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void post_beneficiarioInexistente_retorna404() throws Exception {
-        when(transferService.create(any(), any(), any())).thenThrow(new NotFoundException("Beneficiário não encontrado"));
+        when(transferService.create(any(), any(), any()))
+                .thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isNotFound());
     }
 
@@ -276,8 +299,59 @@ class TransferCreationControllerTest {
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createTransferPayload(UUID.randomUUID())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void post_transferenciaComTotpCode_repassaTotpCodeAoService() throws Exception {
+        when(transferService.create(any(), any(), any()))
+                .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+
+        mockMvc.perform(post("/v1/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<CreateTransferRequest> captor = ArgumentCaptor.forClass(CreateTransferRequest.class);
+        verify(transferService).create(captor.capture(), any(), any());
+        assertThat(captor.getValue().getTotpCode()).isEqualTo("123456");
+    }
+
+    @Test
+    void post_totpInvalido_retorna401() throws Exception {
+        when(transferService.create(any(), any(), any()))
+                .thenThrow(new BadCredentialsException("Invalid 2FA verification code"));
+
+        mockMvc.perform(post("/v1/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void post_totpAusenteOuUsuarioSem2fa_retorna422() throws Exception {
+        when(transferService.create(any(), any(), any()))
+                .thenThrow(new UnprocessableEntityException("Usuário não possui 2FA ativo"));
+
+        mockMvc.perform(post("/v1/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("UNPROCESSABLE_CONTENT"));
+    }
+
+    @Test
+    void post_totpBloqueadoPorTentativasExcedidas_retorna423() throws Exception {
+        when(transferService.create(any(), any(), any()))
+                .thenThrow(new LockedException("Too many failed 2FA attempts. Try again later."));
+
+        mockMvc.perform(post("/v1/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
     }
 }
