@@ -1,7 +1,10 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.transaction.TransactionDetailsResponseDTO;
+import ages.vstable.backend.dto.transaction.TransactionFilterDTO;
+import ages.vstable.backend.dto.transaction.TransactionHistoryResponseDTO;
 import ages.vstable.backend.entity.ExportTransactionEntity;
+import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import org.junit.jupiter.api.Test;
@@ -11,8 +14,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -51,6 +58,33 @@ class TransactionQueryServiceTest {
         assertEquals("Test Payer", response.getCounterpartyName());
         
         assertEquals(new BigDecimal("100.00"), response.getEstimatedSavingsBrl());
+    }
+
+    @Test
+    void testGetHistory_StartAfterEnd_ThrowsInvalidDateRangeWithoutQuerying() {
+        TransactionFilterDTO filter = new TransactionFilterDTO();
+        filter.setStartDate(OffsetDateTime.parse("2026-02-01T00:00:00-03:00"));
+        filter.setEndDate(OffsetDateTime.parse("2026-01-01T00:00:00-03:00"));
+
+        assertThrows(InvalidDateRangeException.class,
+                () -> transactionQueryService.getHistory(UUID.randomUUID(), filter, Pageable.unpaged()));
+
+        verifyNoInteractions(transactionRepository);
+    }
+
+    @Test
+    void testGetHistory_SameStartAndEnd_Queries() {
+        OffsetDateTime instant = OffsetDateTime.parse("2026-01-15T12:00:00-03:00");
+        TransactionFilterDTO filter = new TransactionFilterDTO();
+        filter.setStartDate(instant);
+        filter.setEndDate(instant);
+        when(transactionRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
+
+        Page<TransactionHistoryResponseDTO> result =
+                transactionQueryService.getHistory(UUID.randomUUID(), filter, Pageable.unpaged());
+
+        assertTrue(result.isEmpty());
+        verify(transactionRepository).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test

@@ -6,6 +6,7 @@ import ages.vstable.backend.dto.transaction.TransactionHistoryResponseDTO;
 import ages.vstable.backend.entity.BaseTransactionEntity;
 import ages.vstable.backend.entity.ExportTransactionEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
+import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.specification.TransactionSpecification;
@@ -29,6 +30,10 @@ public class TransactionQueryService {
 
     @Transactional(readOnly = true)
     public Page<TransactionHistoryResponseDTO> getHistory(UUID companyId, TransactionFilterDTO filter, Pageable pageable) {
+        if (filter != null && filter.getStartDate() != null && filter.getEndDate() != null
+                && filter.getStartDate().isAfter(filter.getEndDate())) {
+            throw new InvalidDateRangeException();
+        }
         Page<BaseTransactionEntity> transactions = transactionRepository.findAll(
                 TransactionSpecification.filterTransactions(companyId, filter), pageable);
 
