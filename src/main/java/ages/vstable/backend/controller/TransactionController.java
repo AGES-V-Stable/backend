@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.transaction.TransactionFilterDTO;
 import ages.vstable.backend.dto.transaction.TransactionHistoryResponseDTO;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.service.TransactionQueryService;
 import ages.vstable.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,10 @@ public class TransactionController {
         
         UserEntity user = userService.getByEmail(authentication.getName());
         UUID companyId = user.getCompanyId();
+        // Sem empresa o filtro de escopo seria omitido e a consulta devolveria todas as empresas.
+        if (companyId == null) {
+            throw new ForbiddenException("Company access is required");
+        }
 
         Page<TransactionHistoryResponseDTO> result = transactionQueryService.getHistory(companyId, filter, pageable);
         return ResponseEntity.ok(result);
