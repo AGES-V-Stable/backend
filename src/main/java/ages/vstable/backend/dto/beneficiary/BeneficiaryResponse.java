@@ -30,6 +30,13 @@ public class BeneficiaryResponse {
     private String walletAddress;
     private BlockchainNetwork blockchainNetwork;
     private String walletMemo;
+
+    private Boolean isSelfCustody;
+    private String custodianName;
+    private String counterpartyName;
+    private String counterpartyCountry;
+    private Boolean isSameEconomicGroup;
+
     private String pixKey;
     private String accountHolderName;
     private BankAccountType accountType;

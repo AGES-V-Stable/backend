@@ -115,6 +115,12 @@ public class BeneficiaryService {
                 .walletAddress(request.getWalletAddress())
                 .blockchainNetwork(request.getBlockchainNetwork())
                 .walletMemo(request.getWalletMemo())
+                .isSelfCustody(request.getIsSelfCustody())
+                .custodianName(request.getCustodianName())
+                .counterpartyName(request.getCounterpartyName())
+                .counterpartyCountry(request.getCounterpartyCountry() == null ? null
+                        : request.getCounterpartyCountry().trim().toUpperCase(java.util.Locale.ROOT))
+                .isSameEconomicGroup(request.getIsSameEconomicGroup())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -177,6 +183,12 @@ public class BeneficiaryService {
         response.setBlockchainNetwork(entity.getBlockchainNetwork());
         response.setWalletAddress(entity.getWalletAddress());
         response.setWalletMemo(entity.getWalletMemo());
+        response.setIsSelfCustody(entity.getIsSelfCustody());
+        response.setCustodianName(entity.getCustodianName());
+        response.setCounterpartyName(entity.getCounterpartyName());
+        response.setCounterpartyCountry(entity.getCounterpartyCountry());
+        response.setIsSameEconomicGroup(entity.getIsSameEconomicGroup());
+
         response.setCreatedAt(entity.getCreatedAt());
 
         response.setBeneficiaryType(entity.getBeneficiaryType());

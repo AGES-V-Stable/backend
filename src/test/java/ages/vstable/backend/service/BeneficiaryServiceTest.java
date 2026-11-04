@@ -191,9 +191,14 @@ class BeneficiaryServiceTest {
         assertThat(response.getReceivingMethod()).isEqualTo(ReceivingMethod.CRYPTO_WALLET);
         assertThat(response.getBlockchainNetwork()).isEqualTo(BlockchainNetwork.ethereum);
         assertThat(response.getWalletAddress()).isEqualTo("0xABCDEF1234567890");
+        assertThat(response.getIsSelfCustody()).isTrue();
+        assertThat(response.getCounterpartyName()).isEqualTo("Test Recipient");
+        assertThat(response.getCounterpartyCountry()).isEqualTo("BR");
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getAveniaWalletId()).isEqualTo(walletId);
+        assertThat(captor.getValue().getIsSelfCustody()).isTrue();
+        assertThat(captor.getValue().getCounterpartyCountry()).isEqualTo("BR");
         assertThat(captor.getValue().getAveniaSubAccountId()).isEqualTo(subAccountId);
     }
 
@@ -244,6 +249,9 @@ class BeneficiaryServiceTest {
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
 
         BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(true);
+        request.setCounterpartyName("Test Recipient");
+        request.setCounterpartyCountry(" br ");
         request.setWalletAddress(null);
 
         assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, request))
@@ -340,6 +348,9 @@ class BeneficiaryServiceTest {
         request.setAddress("Rua Teste, 123");
         request.setReceivingMethod(ReceivingMethod.CRYPTO_WALLET);
         request.setNickname("Carteira Principal");
+        request.setIsSelfCustody(true);
+        request.setCounterpartyName("Test Recipient");
+        request.setCounterpartyCountry(" br ");
         request.setWalletAddress("0xABCDEF1234567890");
         request.setBlockchainNetwork(BlockchainNetwork.ethereum);
         request.setCurrency("USDC");
