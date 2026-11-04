@@ -256,6 +256,26 @@ class DashboardControllerSecurityTest {
 
     @Test
     @WithMockUser(username = "admin@teste.com", roles = {"ADMIN"})
+    void administrator_getsTheSummaryAndVolumeSeriesOfTheChosenCompany() throws Exception {
+        DashboardPeriod june = new DashboardPeriod(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+        when(dashboardService.summary(companyId, june)).thenReturn(new DashboardSummaryResponse(
+                "BRL", june.startDate(), june.endDate(), "2825.60", "4.00", null, false, 0));
+        when(dashboardService.remittanceVolume(companyId, june)).thenReturn(EMPTY_SERIES);
+
+        mockMvc.perform(get("/v1/admin/dashboard/summary").param("companyId", companyId.toString())
+                        .param("startDate", "2026-06-01").param("endDate", "2026-06-30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value("2825.60"));
+        mockMvc.perform(get("/v1/admin/dashboard/remittance-volume").param("companyId", companyId.toString())
+                        .param("startDate", "2026-06-01").param("endDate", "2026-06-30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.points").isEmpty());
+
+        verify(dashboardService, org.mockito.Mockito.times(2)).requireCompany(companyId);
+    }
+
+    @Test
+    @WithMockUser(username = "admin@teste.com", roles = {"ADMIN"})
     void administrator_withUnknownCompany_returns404() throws Exception {
         doThrow(new NotFoundException("Company not found")).when(dashboardService).requireCompany(companyId);
 
