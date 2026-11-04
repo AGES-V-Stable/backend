@@ -27,6 +27,8 @@ jobs:
       AWS_REGION: us-east-2
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       BACKEND_LAMBDA_FUNCTION_NAME: ${{ vars.BACKEND_LAMBDA_FUNCTION_NAME }}
+      MIGRATION_LAMBDA_FUNCTION_NAME: ${{ vars.MIGRATION_LAMBDA_FUNCTION_NAME }}
+      SEED_LAMBDA_FUNCTION_NAME: ${{ vars.SEED_LAMBDA_FUNCTION_NAME }}
       API_URL: ${{ vars.API_URL }}
     steps:
       - uses: actions/checkout@v7
@@ -76,6 +78,73 @@ jobs:
             -t "${ECR_REPOSITORY}:${tag}" --metadata-file "$RUNNER_TEMP/image-metadata.json" --push .
           digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["containerimage.digest"])' "$RUNNER_TEMP/image-metadata.json")"
           echo "uri=${ECR_REPOSITORY}@${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Update and run database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws lambda update-function-code --function-name "$MIGRATION_LAMBDA_FUNCTION_NAME" \
+            --image-uri '${{ steps.image.outputs.uri }}' > /dev/null
+          aws lambda wait function-updated --function-name "$MIGRATION_LAMBDA_FUNCTION_NAME"
+          response="$RUNNER_TEMP/migration-response.json"
+          metadata="$RUNNER_TEMP/migration-invocation.json"
+          aws lambda invoke --function-name "$MIGRATION_LAMBDA_FUNCTION_NAME" \
+            --invocation-type RequestResponse --cli-binary-format raw-in-base64-out \
+            --payload '{}' "$response" > "$metadata"
+          python3 - "$metadata" "$response" <<'PY'
+          import json, sys
+          try:
+              metadata = json.load(open(sys.argv[1], encoding='utf-8'))
+              response = json.load(open(sys.argv[2], encoding='utf-8'))
+              if metadata.get('StatusCode') != 200 or metadata.get('FunctionError') or response.get('status') != 'migrated':
+                  raise ValueError()
+          except (OSError, ValueError, TypeError, AttributeError):
+              sys.exit('Database migration failed; inspect the migration Lambda logs')
+          PY
+
+      - name: Seed the first staging administrator
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          INITIAL_ADMIN_NAME: ${{ vars.INITIAL_ADMIN_NAME }}
+          INITIAL_ADMIN_EMAIL: ${{ vars.INITIAL_ADMIN_EMAIL }}
+          INITIAL_ADMIN_PASSWORD: ${{ secrets.INITIAL_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SEED_LAMBDA_FUNCTION_NAME:?Set SEED_LAMBDA_FUNCTION_NAME in the staging GitHub Environment}"
+          : "${INITIAL_ADMIN_NAME:?Set INITIAL_ADMIN_NAME in the staging GitHub Environment}"
+          : "${INITIAL_ADMIN_EMAIL:?Set INITIAL_ADMIN_EMAIL in the staging GitHub Environment}"
+          : "${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD as a staging GitHub secret}"
+          aws lambda update-function-code --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
+            --image-uri '${{ steps.image.outputs.uri }}' > /dev/null
+          aws lambda wait function-updated --function-name "$SEED_LAMBDA_FUNCTION_NAME"
+          umask 077
+          payload="$(mktemp "$RUNNER_TEMP/initial-admin.XXXXXX.json")"
+          trap 'rm -f "$payload"' EXIT
+          python3 - "$payload" <<'PY'
+          import json, os, sys
+          with open(sys.argv[1], 'w', encoding='utf-8') as output:
+              json.dump({
+                  'fullName': os.environ['INITIAL_ADMIN_NAME'],
+                  'email': os.environ['INITIAL_ADMIN_EMAIL'],
+                  'password': os.environ['INITIAL_ADMIN_PASSWORD'],
+              }, output)
+          PY
+          response="$RUNNER_TEMP/seed-response.json"
+          metadata="$RUNNER_TEMP/seed-invocation.json"
+          aws lambda invoke --function-name "$SEED_LAMBDA_FUNCTION_NAME" \
+            --invocation-type RequestResponse --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$payload" "$response" > "$metadata"
+          python3 - "$metadata" "$response" <<'PY'
+          import json, sys
+          try:
+              metadata = json.load(open(sys.argv[1], encoding='utf-8'))
+              response = json.load(open(sys.argv[2], encoding='utf-8'))
+              if metadata.get('StatusCode') != 200 or metadata.get('FunctionError') or response.get('status') not in ('seeded', 'already_exists'):
+                  raise ValueError()
+          except (OSError, ValueError, TypeError, AttributeError):
+              sys.exit('Initial administrator seed failed; inspect the seed Lambda logs')
+          PY
 
       - name: Update public API Lambda
         run: |

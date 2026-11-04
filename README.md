@@ -59,13 +59,22 @@ S3 com CloudFront. O CORS da Lambda usa a URL CloudFront do próprio ambiente.
 O frontend existente está em [AGES-V-Stable/frontend](https://github.com/AGES-V-Stable/frontend)
 e usa `VITE_API_URL` no build para chamar a API do ambiente.
 
-Veja o [guia de implantação Terraform](terraform/README.md) para aplicar o
-bootstrap OIDC, provisionar os ambientes em estados separados, publicar a imagem
-Lambda e configurar o workflow de deploy do frontend. O staging recebe merges
-em `main`; produção recebe releases estáveis. O runner Terraform continua
-precisando de acesso à rede privada do RDS para criar o usuário da aplicação.
+O workflow [deploy.yml](.github/workflows/deploy.yml) publica `main` em staging e
+releases estáveis em produção. Configure `MIGRATION_LAMBDA_FUNCTION_NAME`,
+`SEED_LAMBDA_FUNCTION_NAME` e `BACKEND_LAMBDA_FUNCTION_NAME` com os outputs do
+Terraform no GitHub Environment correspondente. As funções internas usam a
+mesma imagem Spring da API, mas não têm API Gateway. O Lambda Web Adapter envia
+invocações diretas para `POST /events`; o perfil Spring seleciona `migration` ou
+`seed`. O workflow atualiza e invoca a migração de forma síncrona antes da API.
+Em pushes para staging, ele também invoca o seed após a migração e antes da API.
+Qualquer falha interrompe o deploy.
 
-
+No GitHub Environment `staging`, configure `INITIAL_ADMIN_NAME` e
+`INITIAL_ADMIN_EMAIL` como variables e `INITIAL_ADMIN_PASSWORD` como secret
+(mínimo de 12 caracteres). O seed cria apenas o primeiro administrador com
+acesso `SUPER_ADMIN`; invocações posteriores retornam `already_exists` sem
+alterar a conta. O perfil `dev` continua responsável apenas pelos dados
+sintéticos locais e não é usado no deploy.
 Formato do `SecretString` (valores ilustrativos; não versionar credenciais):
 
 ```json
@@ -84,9 +93,11 @@ Formato do `SecretString` (valores ilustrativos; não versionar credenciais):
 ```
 
 O perfil `lambda` falha na inicialização se o ARN ou as três chaves obrigatórias
-(`DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`) estiverem ausentes. O Flyway aplica as
-migrations no startup e o Hibernate valida o schema. A conexão JDBC do perfil
-`lambda` exige TLS com validação do certificado e do hostname do RDS Proxy usando
+(`DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`) estiverem ausentes. O Flyway não roda
+automaticamente nesse perfil: a função de migração executa as migrations quando
+é invocada. O Hibernate valida o schema na API e no seed; a função de migração
+desabilita essa validação para poder atualizar um schema ainda antigo. A conexão
+JDBC do perfil `lambda` exige TLS com validação do certificado e do hostname do RDS usando
 o bundle global de CA do RDS incluído na imagem. Publique primeiro em staging e
 teste login, JWT válido/inválido, CORS e o download de comprovante PDF pela URL do
 API Gateway antes de encaminhar tráfego de produção.
