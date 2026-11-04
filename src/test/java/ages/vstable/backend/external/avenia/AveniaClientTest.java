@@ -274,13 +274,16 @@ class AveniaClientTest {
                         {
                           "alias":"Wallet",
                           "walletAddress":"0xabc",
-                          "walletChain":"POLYGON"
+                          "walletChain":"POLYGON",
+                          "isSelfCustody":true,
+                          "counterpartyName":"Test Recipient",
+                          "counterpartyCountry":"BR"
                         }
                         """, true))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> client.createWalletBeneficiary(new AveniaWalletBeneficiaryRequest(
-                "Wallet", null, "0xabc", "POLYGON", null, "sub-1")))
+                "Wallet", null, "0xabc", "POLYGON", null, true, null, "Test Recipient", "BR", null, "sub-1")))
                 .isInstanceOf(AveniaIntegrationException.class)
                 .hasMessage("Avenia returned a beneficiary without id");
         server.verify();
@@ -381,7 +384,7 @@ class AveniaClientTest {
                 .andRespond(withSuccess("{\"id\":\"" + walletId + "\"}", MediaType.APPLICATION_JSON));
 
         AveniaBeneficiaryResponse response = client.createWalletBeneficiary(new AveniaWalletBeneficiaryRequest(
-                "Wallet", null, "0xabc", "POLYGON", null, "sub-1"));
+                "Wallet", null, "0xabc", "POLYGON", null, true, null, "Test Recipient", "BR", null, "sub-1"));
 
         assertThat(response.id()).isEqualTo(walletId);
         server.verify();

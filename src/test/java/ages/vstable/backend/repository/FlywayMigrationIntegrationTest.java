@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V8 sem versões duplicadas e
+ * Valida as migrations num PostgreSQL real: a sequência V1..V10 sem versões duplicadas e
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
  * criados pela antiga V4 da branch BlindPay. Ignorado quando não há Docker.
  */
@@ -37,15 +37,46 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void migrate_existingFiatDatabase_canPersistFourLetterTokenCurrencies() throws SQLException {
+        flyway("9").migrate();
+        execute("""
+                INSERT INTO companies (id, legal_name, cnpj)
+                    VALUES ('00000000-0000-0000-0000-000000000001', 'Sandbox Company', '1');
+                INSERT INTO beneficiaries (id, company_id, nickname, currency)
+                    VALUES ('00000000-0000-0000-0000-000000000002',
+                        '00000000-0000-0000-0000-000000000001', 'Fiat beneficiary', 'BRL');
+                """);
+
+        flyway(null).migrate();
+
+        execute("""
+                UPDATE beneficiaries SET currency = 'USDC'
+                    WHERE id = '00000000-0000-0000-0000-000000000002';
+                INSERT INTO base_transactions (company_id, foreign_currency, foreign_amount)
+                    VALUES ('00000000-0000-0000-0000-000000000001', 'USDC', 10);
+                """);
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(
+                        "SELECT b.currency, t.foreign_currency FROM beneficiaries b JOIN base_transactions t ON t.company_id = b.company_id")) {
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getString(1)).isEqualTo("USDC");
+            assertThat(rows.getString(2)).isEqualTo("USDC");
+        }
+    }
+
+    @Test
     void migrate_emptyDatabase_appliesAllVersionsInOrder() throws SQLException {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
         assertThat(columnExists("administrators", "two_factor_secret")).isTrue();
+        assertThat(columnExists("beneficiaries", "is_self_custody")).isTrue();
+        assertThat(columnExists("beneficiaries", "counterparty_country")).isTrue();
     }
 
     @Test
@@ -62,7 +93,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
