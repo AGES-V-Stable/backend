@@ -919,7 +919,7 @@ class TransferCreationServiceTest {
         ArgumentCaptor<ImportTransactionEntity> baseCaptor = ArgumentCaptor.forClass(ImportTransactionEntity.class);
         verify(importTransactionRepository).save(baseCaptor.capture());
         ImportTransactionEntity persistedBase = baseCaptor.getValue();
-        assertThat(persistedBase.getCompanyId()).isEqualTo(beneficiary.getCompany().getId());
+        assertThat(persistedBase.getCompanyId()).isEqualTo(CURRENT_COMPANY_ID);
         assertThat(persistedBase.getCreatorUserId()).isEqualTo(CURRENT_USER_ID);
         assertThat(persistedBase.getStatus()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
         assertThat(persistedBase.getForeignCurrency()).isEqualTo("USDC");
@@ -1131,6 +1131,7 @@ class TransferCreationServiceTest {
 
         verify(beneficiaryRepository, never()).findByIdAndCompanyId(beneficiaryId, anotherCompanyId);
         verify(aveniaTransferService, never()).createTransfer(any(), any());
+        verify(importTransactionRepository, never()).save(any());
     }
 
     @Test
