@@ -4,6 +4,7 @@ import ages.vstable.backend.dto.transaction.TransactionVolumeResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.exception.GlobalExceptionHandler;
+import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.service.TransactionVolumeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class TransactionVolumeControllerTest {
 
     @Test
     void getTransactionVolume_returnsTheVolumeOfTheAuthenticatedUsersCompanyOverTheWholeHistory() throws Exception {
-        when(service.getSettledVolume(companyId, null)).thenReturn(new TransactionVolumeResponse("412000.00"));
+        when(service.getSettledVolume(companyId, null, null)).thenReturn(new TransactionVolumeResponse("412000.00"));
 
         mockMvc.perform(get("/v1/dashboard/transaction-volume").principal(authenticated(companyUser(companyId))))
                 .andExpect(status().isOk())
@@ -67,7 +68,7 @@ class TransactionVolumeControllerTest {
 
     @Test
     void getTransactionVolume_passesTheStartDateToTheService() throws Exception {
-        when(service.getSettledVolume(companyId, LocalDate.of(2026, 10, 1)))
+        when(service.getSettledVolume(companyId, LocalDate.of(2026, 10, 1), null))
                 .thenReturn(new TransactionVolumeResponse("75.30"));
 
         mockMvc.perform(get("/v1/dashboard/transaction-volume")
@@ -75,6 +76,32 @@ class TransactionVolumeControllerTest {
                         .principal(authenticated(companyUser(companyId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.transactedVolumeBrl").value("75.30"));
+    }
+
+    @Test
+    void getTransactionVolume_passesTheEndDateToTheService() throws Exception {
+        when(service.getSettledVolume(companyId, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)))
+                .thenReturn(new TransactionVolumeResponse("40.00"));
+
+        mockMvc.perform(get("/v1/dashboard/transaction-volume")
+                        .param("startDate", "2026-10-01")
+                        .param("endDate", "2026-10-31")
+                        .principal(authenticated(companyUser(companyId))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactedVolumeBrl").value("40.00"));
+    }
+
+    @Test
+    void getTransactionVolume_rejectsAStartDateAfterTheEndDate() throws Exception {
+        when(service.getSettledVolume(companyId, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 10, 1)))
+                .thenThrow(new InvalidDateRangeException());
+
+        mockMvc.perform(get("/v1/dashboard/transaction-volume")
+                        .param("startDate", "2026-11-01")
+                        .param("endDate", "2026-10-01")
+                        .principal(authenticated(companyUser(companyId))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_DATE_RANGE"));
     }
 
     @Test

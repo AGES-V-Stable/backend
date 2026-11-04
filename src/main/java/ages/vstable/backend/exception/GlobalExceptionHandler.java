@@ -53,6 +53,13 @@ public class GlobalExceptionHandler {
                 .body(Map.of("code", "VALIDATION_ERROR", "message", message));
     }
 
+    @ExceptionHandler(InvalidDateRangeException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidDateRange(InvalidDateRangeException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("code", "INVALID_DATE_RANGE", "message", ex.getMessage()));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, String>> handleMalformedPayload(HttpMessageNotReadableException ex) {
         return ResponseEntity

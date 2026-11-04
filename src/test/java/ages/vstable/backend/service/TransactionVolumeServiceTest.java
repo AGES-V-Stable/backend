@@ -2,6 +2,7 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.transaction.TransactionVolumeResponse;
 import ages.vstable.backend.entity.enums.TransactionStatus;
+import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +19,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -33,6 +35,9 @@ class TransactionVolumeServiceTest {
 
     private final UUID companyId = UUID.randomUUID();
 
+    private static final OffsetDateTime EARLIEST = OffsetDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+    private static final OffsetDateTime LATEST = OffsetDateTime.of(9999, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+
     @ParameterizedTest
     @CsvSource({
             "0, 0.00",
@@ -40,21 +45,23 @@ class TransactionVolumeServiceTest {
             "412000, 412000.00",
             "1234567890123.45, 1234567890123.45"
     })
-    void getSettledVolume_withoutStartDate_sumsTheWholeHistoryAsDecimalStringWithTwoPlaces(String stored, String expected) {
-        when(transactionRepository.sumSettlementAmountBrl(companyId, TransactionStatus.SETTLED)).thenReturn(new BigDecimal(stored));
+    void getSettledVolume_withoutDates_sumsTheWholeHistoryAsDecimalStringWithTwoPlaces(String stored, String expected) {
+        when(transactionRepository.sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, EARLIEST, LATEST))
+                .thenReturn(new BigDecimal(stored));
 
-        TransactionVolumeResponse response = service.getSettledVolume(companyId, null);
+        TransactionVolumeResponse response = service.getSettledVolume(companyId, null, null);
 
         assertThat(response.transactedVolumeBrl()).isEqualTo(expected);
-        verify(transactionRepository).sumSettlementAmountBrl(companyId, TransactionStatus.SETTLED);
+        verify(transactionRepository).sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, EARLIEST, LATEST);
         verifyNoMoreInteractions(transactionRepository);
     }
 
     @Test
     void getSettledVolume_returnsZeroWhenThereAreNoSettledTransactions() {
-        when(transactionRepository.sumSettlementAmountBrl(companyId, TransactionStatus.SETTLED)).thenReturn(null);
+        when(transactionRepository.sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, EARLIEST, LATEST))
+                .thenReturn(null);
 
-        TransactionVolumeResponse response = service.getSettledVolume(companyId, null);
+        TransactionVolumeResponse response = service.getSettledVolume(companyId, null, null);
 
         assertThat(response.transactedVolumeBrl()).isEqualTo("0.00");
     }
@@ -62,22 +69,42 @@ class TransactionVolumeServiceTest {
     @Test
     void getSettledVolume_withStartDate_filtersFromTheStartOfThatDayInTheBusinessTimeZone() {
         OffsetDateTime startOfDay = OffsetDateTime.of(2026, 10, 1, 0, 0, 0, 0, ZoneOffset.ofHours(-3));
-        when(transactionRepository.sumSettlementAmountBrlSince(companyId, TransactionStatus.SETTLED, startOfDay)).thenReturn(new BigDecimal("75.30"));
+        when(transactionRepository.sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, startOfDay, LATEST))
+                .thenReturn(new BigDecimal("75.30"));
 
-        TransactionVolumeResponse response = service.getSettledVolume(companyId, LocalDate.of(2026, 10, 1));
+        TransactionVolumeResponse response = service.getSettledVolume(companyId, LocalDate.of(2026, 10, 1), null);
 
         assertThat(response.transactedVolumeBrl()).isEqualTo("75.30");
-        verify(transactionRepository).sumSettlementAmountBrlSince(companyId, TransactionStatus.SETTLED, startOfDay);
+        verify(transactionRepository).sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, startOfDay, LATEST);
         verifyNoMoreInteractions(transactionRepository);
     }
 
     @Test
-    void getSettledVolume_withStartDate_returnsZeroWhenNothingMatches() {
-        when(transactionRepository.sumSettlementAmountBrlSince(companyId, TransactionStatus.SETTLED,
-                OffsetDateTime.of(2030, 1, 1, 0, 0, 0, 0, ZoneOffset.ofHours(-3)))).thenReturn(null);
+    void getSettledVolume_withEndDate_includesTheWholeEndDayInTheBusinessTimeZone() {
+        OffsetDateTime startOfNextDay = OffsetDateTime.of(2026, 11, 1, 0, 0, 0, 0, ZoneOffset.ofHours(-3));
+        when(transactionRepository.sumSettlementAmountBrlCreatedBetween(companyId, TransactionStatus.SETTLED, EARLIEST, startOfNextDay))
+                .thenReturn(new BigDecimal("12.00"));
 
-        TransactionVolumeResponse response = service.getSettledVolume(companyId, LocalDate.of(2030, 1, 1));
+        TransactionVolumeResponse response = service.getSettledVolume(companyId, null, LocalDate.of(2026, 10, 31));
 
-        assertThat(response.transactedVolumeBrl()).isEqualTo("0.00");
+        assertThat(response.transactedVolumeBrl()).isEqualTo("12.00");
+    }
+
+    @Test
+    void getSettledVolume_withoutCompany_sumsAllCompanies() {
+        when(transactionRepository.sumSettlementAmountBrlCreatedBetween(null, TransactionStatus.SETTLED, EARLIEST, LATEST))
+                .thenReturn(new BigDecimal("900.00"));
+
+        TransactionVolumeResponse response = service.getSettledVolume(null, null, null);
+
+        assertThat(response.transactedVolumeBrl()).isEqualTo("900.00");
+    }
+
+    @Test
+    void getSettledVolume_withStartDateAfterEndDate_throwsWithoutQuerying() {
+        assertThatThrownBy(() -> service.getSettledVolume(companyId, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 10, 1)))
+                .isInstanceOf(InvalidDateRangeException.class);
+
+        verifyNoMoreInteractions(transactionRepository);
     }
 }

@@ -86,6 +86,11 @@ quotes:
     # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
     confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
 
+# Economia estimada do dashboard: custo de câmbio bancário de referência, em pontos percentuais.
+dashboard:
+  savings:
+    reference-spread-percentage: ${DASHBOARD_SAVINGS_REFERENCE_SPREAD_PERCENTAGE:4.00}
+
 # Conciliação das transferências BlindPay: retoma execuções paradas (webhook perdido,
 # chamada sem resposta) repetindo cada etapa com a mesma chave de idempotência.
 transfers:

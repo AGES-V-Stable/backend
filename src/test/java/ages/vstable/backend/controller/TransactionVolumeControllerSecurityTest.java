@@ -69,7 +69,7 @@ class TransactionVolumeControllerSecurityTest {
     void getTransactionVolume_withAuthenticatedCompanyUserReturnsTheVolume() throws Exception {
         UUID companyId = UUID.randomUUID();
         UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
-        when(transactionVolumeService.getSettledVolume(companyId, null))
+        when(transactionVolumeService.getSettledVolume(companyId, null, null))
                 .thenReturn(new TransactionVolumeResponse("12.75"));
 
         mockMvc.perform(get("/v1/dashboard/transaction-volume")
