@@ -34,17 +34,19 @@ public class TransactionVolumeController {
     @Operation(summary = "Soma em BRL das transações liquidadas da empresa do usuário autenticado")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Volume transacionado; zero quando não há transações"),
-            @ApiResponse(responseCode = "400", description = "startDate em formato inválido"),
+            @ApiResponse(responseCode = "400", description = "Data em formato inválido ou startDate posterior a endDate"),
             @ApiResponse(responseCode = "401", description = "Não autenticado"),
             @ApiResponse(responseCode = "403", description = "Principal sem vínculo empresarial (ex.: Administrador)"),
     })
     public ResponseEntity<TransactionVolumeResponse> getTransactionVolume(
             Authentication authentication,
             @Parameter(description = "Data inicial (AAAA-MM-DD, fuso America/Sao_Paulo); sem ela, considera todo o histórico")
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Data final inclusiva (AAAA-MM-DD, fuso America/Sao_Paulo); sem ela, não há limite final")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         UserEntity user = CompanyAccess.companyUser(authentication)
                 .filter(companyUser -> companyUser.getCompanyId() != null)
                 .orElseThrow(() -> new ForbiddenException("Company access is required"));
-        return ResponseEntity.ok(transactionVolumeService.getSettledVolume(user.getCompanyId(), startDate));
+        return ResponseEntity.ok(transactionVolumeService.getSettledVolume(user.getCompanyId(), startDate, endDate));
     }
 }

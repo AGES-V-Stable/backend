@@ -1,8 +1,12 @@
 package ages.vstable.backend.exception;
 
-/** Período de consulta com data inicial posterior à data final. */
+/** Período de consulta inválido: início posterior ao fim ou data fora do intervalo aceito. */
 public class InvalidDateRangeException extends RuntimeException {
     public InvalidDateRangeException() {
-        super("startDate must not be after endDate");
+        this("startDate must not be after endDate");
+    }
+
+    public InvalidDateRangeException(String message) {
+        super(message);
     }
 }
