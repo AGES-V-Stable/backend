@@ -10,6 +10,7 @@ import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.specification.TransactionSpecification;
+import ages.vstable.backend.service.dashboard.SavingsEstimator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.UUID;
 
 @Service
@@ -25,8 +25,7 @@ import java.util.UUID;
 public class TransactionQueryService {
 
     private final BaseTransactionRepository transactionRepository;
-
-    private static final BigDecimal STANDARD_BANK_SPREAD = new BigDecimal("0.04");
+    private final SavingsEstimator savingsEstimator;
 
     @Transactional(readOnly = true)
     public Page<TransactionHistoryResponseDTO> getHistory(UUID companyId, TransactionFilterDTO filter, Pageable pageable) {
@@ -96,7 +95,7 @@ public class TransactionQueryService {
             counterpartyDetails = exportEntity.getExternalPayerEmail();
         }
 
-        BigDecimal savings = calculateSavings(entity);
+        BigDecimal savings = savingsEstimator.estimate(entity);
 
         return TransactionDetailsResponseDTO.builder()
                 .id(entity.getId())
@@ -114,20 +113,6 @@ public class TransactionQueryService {
                 .counterpartyName(counterpartyName)
                 .counterpartyDetails(counterpartyDetails)
                 .build();
-    }
-
-    private BigDecimal calculateSavings(BaseTransactionEntity entity) {
-        if (entity.getEffectiveSpreadPercentage() == null || entity.getForeignAmount() == null || entity.getExchangeRate() == null) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal spreadDiff = STANDARD_BANK_SPREAD.subtract(entity.getEffectiveSpreadPercentage());
-        if (spreadDiff.compareTo(BigDecimal.ZERO) < 0) {
-            return BigDecimal.ZERO;
-        }
-
-        BigDecimal baseValueBrl = entity.getForeignAmount().multiply(entity.getExchangeRate());
-        return baseValueBrl.multiply(spreadDiff).setScale(2, RoundingMode.HALF_UP);
     }
 }
 

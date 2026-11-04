@@ -1,5 +1,7 @@
 package ages.vstable.backend.service.dashboard;
 
+import ages.vstable.backend.entity.BaseTransactionEntity;
+import ages.vstable.backend.entity.enums.TransactionStatus;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -28,6 +30,14 @@ public class SavingsEstimator {
 
     public BigDecimal referenceSpreadPercentage() {
         return referenceSpreadPercentage;
+    }
+
+    /** Economia de uma transação liquidada; {@code null} para outros status ou sem valor e tarifa. */
+    public BigDecimal estimate(BaseTransactionEntity transaction) {
+        if (transaction.getStatus() != TransactionStatus.SETTLED) {
+            return null;
+        }
+        return estimate(transaction.getSettlementAmountBrl(), transaction.getServiceFeeBrl());
     }
 
     /** {@code null} quando a operação não registrou o valor em BRL ou a tarifa. */

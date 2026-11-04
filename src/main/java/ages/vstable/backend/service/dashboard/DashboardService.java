@@ -8,7 +8,6 @@ import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.ExportTransactionEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
-import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferDirection;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.repository.BaseTransactionRepository;
@@ -155,9 +154,7 @@ public class DashboardService {
             direction = TransferDirection.RECEIPT;
             counterparty = receipt.getExternalPayerName();
         }
-        BigDecimal savings = transaction.getStatus() == TransactionStatus.SETTLED
-                ? savingsEstimator.estimate(transaction.getSettlementAmountBrl(), transaction.getServiceFeeBrl())
-                : null;
+        BigDecimal savings = savingsEstimator.estimate(transaction);
         return new DashboardSettlementResponse(
                 transaction.getId(),
                 transaction.getCompanyId(),
