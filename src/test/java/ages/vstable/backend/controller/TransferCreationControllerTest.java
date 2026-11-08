@@ -3,29 +3,38 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
 import ages.vstable.backend.dto.transfer.FeeInfo;
+import ages.vstable.backend.configuration.security.AuthenticationConfigurer;
+import ages.vstable.backend.configuration.security.SecurityConfiguration;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
 import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
-import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.TransferService;
+import ages.vstable.backend.service.UserService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -33,16 +42,23 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(TransferController.class)
+@Import({SecurityConfiguration.class, AuthenticationConfigurer.class})
 class TransferCreationControllerTest {
 
     @Autowired
+    private WebApplicationContext context;
+
     private MockMvc mockMvc;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -51,15 +67,22 @@ class TransferCreationControllerTest {
     private TransferService transferService;
 
     @MockitoBean
-    private SecurityContextRepository securityContextRepository;
+    private UserService userService;
 
     @MockitoBean
     private JwtTokenUtils jwtTokenUtils;
 
     @MockitoBean
-    private UserRepository userRepository;
+    private AuthenticationProvider authenticationProvider;
 
     private static final UUID BENEFICIARY_ID = UUID.randomUUID();
+
+    private final UserEntity principal = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OWNER);
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
 
     private String validPayload() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {
@@ -88,6 +111,7 @@ class TransferCreationControllerTest {
         when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
                 .andExpect(status().isOk())
@@ -113,6 +137,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isBadRequest());
@@ -127,6 +152,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isBadRequest());
@@ -145,6 +171,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isUnprocessableEntity());
@@ -155,6 +182,7 @@ class TransferCreationControllerTest {
         when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
                 .andExpect(status().isOk());
@@ -177,6 +205,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isBadRequest());
@@ -190,6 +219,7 @@ class TransferCreationControllerTest {
                 new UnprocessableEntityException("A Avenia não oferece BRL via PIX para USD via WIRE"));
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
                 .andExpect(status().isUnprocessableEntity());
@@ -201,6 +231,7 @@ class TransferCreationControllerTest {
                 .thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
                 .andExpect(status().isNotFound());
@@ -212,6 +243,7 @@ class TransferCreationControllerTest {
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validPayload()))
                 .andExpect(status().isServiceUnavailable());
@@ -238,6 +270,7 @@ class TransferCreationControllerTest {
                 .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isOk())
@@ -258,6 +291,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isBadRequest());
@@ -277,6 +311,7 @@ class TransferCreationControllerTest {
         });
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
                 .andExpect(status().isBadRequest());
@@ -288,6 +323,7 @@ class TransferCreationControllerTest {
                 .thenThrow(new NotFoundException("Beneficiário não encontrado"));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isNotFound());
@@ -299,6 +335,7 @@ class TransferCreationControllerTest {
                 AveniaIntegrationException.communication("Falha ao comunicar com a Avenia", null));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isServiceUnavailable());
@@ -310,6 +347,7 @@ class TransferCreationControllerTest {
                 .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isOk());
@@ -325,6 +363,7 @@ class TransferCreationControllerTest {
                 .thenThrow(new BadCredentialsException("Invalid 2FA verification code"));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isUnauthorized())
@@ -337,6 +376,7 @@ class TransferCreationControllerTest {
                 .thenThrow(new UnprocessableEntityException("Usuário não possui 2FA ativo"));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isUnprocessableEntity())
@@ -349,9 +389,130 @@ class TransferCreationControllerTest {
                 .thenThrow(new LockedException("Too many failed 2FA attempts. Try again later."));
 
         mockMvc.perform(post("/v1/transfers")
+                .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(createTransferPayload(UUID.randomUUID())))
                 .andExpect(status().isLocked())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+    }
+
+    @Test
+    void post_semAutenticacao_retorna401SemChamarService() throws Exception {
+        mockMvc.perform(post("/v1/transfers/quote")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/v1/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_quoteOperador_retorna200ComEmpresaDoVinculo() throws Exception {
+        UserEntity operator = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OPERATOR);
+        when(transferService.quote(any(), any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(operator))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
+                .andExpect(status().isOk());
+
+        verify(transferService).quote(any(), eq(operator.getId()), eq(operator.getMembership().getCompanyId()));
+    }
+
+    @Test
+    void post_quoteVisualizador_retorna403PermissionDeniedSemChamarService() throws Exception {
+        mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.VIEWER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_quoteVinculoRemovido_retorna403AcessoRevogadoSemChamarService() throws Exception {
+        mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(TestCompanyUsers.removedMember(UUID.randomUUID(), CompanyRole.OWNER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_quoteSemVinculo_retorna403AcessoNegadoSemChamarService() throws Exception {
+        UserEntity semVinculo = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(post("/v1/transfers/quote")
+                .with(user(semVinculo))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validPayload()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_transferenciaOperador_retorna200ComEmpresaDoVinculo() throws Exception {
+        UserEntity operator = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OPERATOR);
+        when(transferService.create(any(), any(), any()))
+                .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+
+        mockMvc.perform(post("/v1/transfers")
+                .with(user(operator))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSING"));
+
+        verify(transferService).create(any(), eq(operator.getId()), eq(operator.getMembership().getCompanyId()));
+    }
+
+    @Test
+    void post_transferenciaVisualizador_retorna403PermissionDeniedSemChamarService() throws Exception {
+        mockMvc.perform(post("/v1/transfers")
+                .with(user(TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.VIEWER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_transferenciaVinculoRemovido_retorna403AcessoRevogadoSemChamarService() throws Exception {
+        mockMvc.perform(post("/v1/transfers")
+                .with(user(TestCompanyUsers.removedMember(UUID.randomUUID(), CompanyRole.OPERATOR)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void post_transferenciaSemVinculo_retorna403AcessoNegadoSemChamarService() throws Exception {
+        UserEntity semVinculo = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(post("/v1/transfers")
+                .with(user(semVinculo))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(createTransferPayload(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(transferService);
     }
 }

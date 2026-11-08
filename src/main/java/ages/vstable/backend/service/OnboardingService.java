@@ -41,7 +41,8 @@ public class OnboardingService {
     private final CompanyService companyService;
     private final JwtTokenUtils jwtTokenUtils;
     private final TotpService totpService;
-    
+    private final CompanyMembershipService companyMembershipService;
+
     @Transactional
     public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
         validatePayload(request);
@@ -88,6 +89,8 @@ public class OnboardingService {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
         user = userRepository.saveAndFlush(user);
+
+        companyMembershipService.assignOwner(user.getId(), company.getId(), now);
 
         AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
         kyc.setUserId(user.getId());
@@ -145,7 +148,7 @@ public class OnboardingService {
 
         return OnboardingStatusResponse.builder()
                 .kycVerificationId(kyc.getId())
-                .companyId(user.getCompanyId())
+                .companyId(CompanyMembershipService.currentCompanyId(user))
                 .status(kyc.getStatus())
                 .documentSubmitted(isPresent(kyc.getDocumentId()))
                 .livenessSubmitted(isPresent(kyc.getLivenessId()))

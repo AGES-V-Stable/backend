@@ -1,11 +1,10 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.transaction.TransactionFilterDTO;
 import ages.vstable.backend.dto.transaction.TransactionHistoryResponseDTO;
-import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.TransactionQueryService;
-import ages.vstable.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,23 +20,18 @@ import java.util.UUID;
 public class TransactionController {
 
     private final TransactionQueryService transactionQueryService;
-    private final UserService userService;
 
     @GetMapping
     public ResponseEntity<Page<TransactionHistoryResponseDTO>> getHistory(
             TransactionFilterDTO filter,
             Pageable pageable,
             Authentication authentication) {
-        
-        UserEntity user = userService.getByEmail(authentication.getName());
-        UUID companyId = user.getCompanyId();
-        // Sem empresa o filtro de escopo seria omitido e a consulta devolveria todas as empresas.
-        if (companyId == null) {
-            throw new ForbiddenException("Company access is required");
-        }
+
+        // A empresa vem do vínculo ativo: sem ela o filtro de escopo seria omitido
+        // e a consulta devolveria as transações de todas as empresas.
+        UUID companyId = CompanyAccess.requireCompanyId(authentication, CompanyPermission.TRANSFER_READ);
 
         Page<TransactionHistoryResponseDTO> result = transactionQueryService.getHistory(companyId, filter, pageable);
         return ResponseEntity.ok(result);
     }
 }
-

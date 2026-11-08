@@ -4,8 +4,7 @@ import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.dashboard.DashboardSeriesResponse;
 import ages.vstable.backend.dto.dashboard.DashboardSettlementResponse;
 import ages.vstable.backend.dto.dashboard.DashboardSummaryResponse;
-import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.dashboard.DashboardPeriod;
 import ages.vstable.backend.service.dashboard.DashboardService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,7 +33,7 @@ import java.util.UUID;
 @ApiResponses({
         @ApiResponse(responseCode = "400", description = "Data em formato inválido ou startDate posterior a endDate"),
         @ApiResponse(responseCode = "401", description = "Não autenticado"),
-        @ApiResponse(responseCode = "403", description = "Principal sem vínculo empresarial (ex.: Administrador)"),
+        @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão de consulta (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
 })
 public class DashboardController {
 
@@ -85,8 +84,6 @@ public class DashboardController {
     }
 
     private static UUID companyId(Authentication authentication) {
-        return CompanyAccess.companyUser(authentication)
-                .map(UserEntity::getCompanyId)
-                .orElseThrow(() -> new ForbiddenException("Company access is required"));
+        return CompanyAccess.requireCompanyId(authentication, CompanyPermission.TRANSFER_READ);
     }
 }

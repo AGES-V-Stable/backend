@@ -9,14 +9,19 @@ import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransactionStatus;
+import ages.vstable.backend.exception.TransferDetailsException;
 import ages.vstable.backend.logging.LogCapture;
 import ages.vstable.backend.logging.RequestLoggingFilter;
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.service.CompanyService;
 import ages.vstable.backend.service.TransferDetailsService;
 import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.service.UserService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -46,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -82,6 +88,9 @@ class SecurityChainIntegrationTest {
     @MockitoBean
     private CompanyService companyService;
 
+    @MockitoBean
+    private CompanyMembershipService companyMembershipService;
+
     @MockitoBean(name = "userService")
     private UserService userService;
 
@@ -113,6 +122,13 @@ class SecurityChainIntegrationTest {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    /** The membership the JWT filter loads on every request for the test user. */
+    private void givenMembership(CompanyRole role, MembershipStatus status) {
+        UserEntity holder = UserEntity.builder().id(user.getId()).companyId(companyId).build();
+        when(companyMembershipService.findCurrentMembership(user.getId()))
+                .thenReturn(Optional.of(TestCompanyUsers.withMembership(holder, companyId, role, status).getMembership()));
     }
 
     @Test
@@ -174,6 +190,7 @@ class SecurityChainIntegrationTest {
 
     @Test
     void transferQuote_withUserToken_passesTheAuthenticatedUserIdToService() throws Exception {
+        givenMembership(CompanyRole.OWNER, MembershipStatus.ACTIVE);
         when(transferService.quote(any(), eq(user.getId()), eq(user.getCompanyId())))
                 .thenReturn(new TransferQuoteResponse(null, null, null, null, null));
 
@@ -188,6 +205,7 @@ class SecurityChainIntegrationTest {
 
     @Test
     void transferCreation_withUserToken_passesTheAuthenticatedUserIdToService() throws Exception {
+        givenMembership(CompanyRole.OWNER, MembershipStatus.ACTIVE);
         when(transferService.create(any(), eq(user.getId()), eq(user.getCompanyId())))
                 .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
 
@@ -202,11 +220,82 @@ class SecurityChainIntegrationTest {
     }
 
     @Test
+    void transferCreation_withOperatorToken_isAllowed() throws Exception {
+        givenMembership(CompanyRole.OPERATOR, MembershipStatus.ACTIVE);
+        when(transferService.create(any(), eq(user.getId()), eq(companyId)))
+                .thenReturn(new CreateTransferResponse(TransactionStatus.PROCESSING));
+
+        mockMvc.perform(post("/v1/transfers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isOk());
+        verify(transferService).create(any(), eq(user.getId()), eq(companyId));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/quote"})
+    void transferCreation_withViewerToken_returns403PermissionDenied(String suffix) throws Exception {
+        givenMembership(CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+
+        mockMvc.perform(post("/v1/transfers" + suffix)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+        verifyNoInteractions(transferService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "/quote"})
+    void transferCreation_withTokenIssuedBeforeMembershipRemoval_returns403AccessRevoked(String suffix)
+            throws Exception {
+        String token = jwtTokenUtils.generateToken(user);
+        givenMembership(CompanyRole.OWNER, MembershipStatus.REMOVED);
+
+        mockMvc.perform(post("/v1/transfers" + suffix)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
+    void transferCreation_withUserTokenWithoutMembership_returns403AccessDenied() throws Exception {
+        mockMvc.perform(post("/v1/transfers/quote")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":100,\"amountType\":\"SOURCE\",\"destinationCurrency\":\"USD\","
+                                + "\"paymentMethod\":\"PIX\",\"beneficiaryId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+        verifyNoInteractions(transferService);
+    }
+
+    @Test
     void currentUser_withUserToken_returnsCompanyAndRoles() throws Exception {
         mockMvc.perform(get("/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.companyId").value(companyId.toString()))
                 .andExpect(jsonPath("$.roles[0]").value("ROLE_USER"));
+    }
+
+    @Test
+    void currentUser_withTokenIssuedBeforeMembershipRemoval_reflectsTheCurrentMembership() throws Exception {
+        String token = jwtTokenUtils.generateToken(user);
+        givenMembership(CompanyRole.OPERATOR, MembershipStatus.REMOVED);
+
+        mockMvc.perform(get("/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.companyId").doesNotExist())
+                .andExpect(jsonPath("$.companyAccess.status").value("REMOVED"))
+                .andExpect(jsonPath("$.companyAccess.permissions.length()").value(1));
     }
 
     @Test
@@ -223,9 +312,34 @@ class SecurityChainIntegrationTest {
 
     @Test
     void ownerRoute_withUserOfAnotherCompany_isForbidden() throws Exception {
+        givenMembership(CompanyRole.OWNER, MembershipStatus.ACTIVE);
+
         mockMvc.perform(get("/v1/companies/{id}", UUID.randomUUID())
                         .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+    }
+
+    @Test
+    void companyRoute_withViewerOfTheCompany_isAllowed() throws Exception {
+        givenMembership(CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+
+        // Authorization passed: the 404 is the service's own answer (the stub has no such company).
+        mockMvc.perform(get("/v1/companies/{id}", companyId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user))))
+                .andExpect(status().isNotFound());
+        verify(companyService).findById(companyId);
+    }
+
+    @Test
+    void companyRoute_withTokenIssuedBeforeMembershipRemoval_returns403AccessRevoked() throws Exception {
+        String token = jwtTokenUtils.generateToken(user);
+        givenMembership(CompanyRole.OWNER, MembershipStatus.REMOVED);
+
+        mockMvc.perform(get("/v1/companies/{id}", companyId).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+        verify(companyService, never()).findById(any());
     }
 
     @Test
@@ -283,7 +397,35 @@ class SecurityChainIntegrationTest {
     }
 
     @Test
+    void receiptDownload_withRemovedMembership_returnsJson403AccessRevoked() throws Exception {
+        givenMembership(CompanyRole.OWNER, MembershipStatus.REMOVED);
+
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user)))
+                        .accept(MediaType.APPLICATION_PDF))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+        verifyNoInteractions(transferDetailsService);
+    }
+
+    @Test
+    void transferDetails_withViewerToken_isAllowed() throws Exception {
+        givenMembership(CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+        UUID transferId = UUID.randomUUID();
+        when(transferDetailsService.getDetails(eq(transferId), any(UserEntity.class)))
+                .thenThrow(TransferDetailsException.transferNotFound());
+
+        // Authorization passed: the 404 is the service's own answer for an unknown transfer.
+        mockMvc.perform(get("/api/transferencias/{id}", transferId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(jwtTokenUtils.generateToken(user))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRANSFER_NOT_FOUND"));
+    }
+
+    @Test
     void receiptDownload_withUserToken_keepsPrivateNoStoreAndExposesTheFileName() throws Exception {
+        givenMembership(CompanyRole.OWNER, MembershipStatus.ACTIVE);
         UUID transferId = UUID.randomUUID();
         when(transferDetailsService.getReceipt(eq(transferId), any(UserEntity.class)))
                 .thenReturn(new TransferDetailsService.Receipt("comprovante-transferencia.pdf", new byte[] {'%', 'P', 'D', 'F'}));

@@ -1,8 +1,10 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.transfer.ConfirmOfferRequest;
 import ages.vstable.backend.dto.transfer.TransferExecutionResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.transfer.TransferExecutionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -40,6 +42,7 @@ public class TransferExecutionController {
             @AuthenticationPrincipal UserEntity currentUser,
             @PathVariable UUID offerId,
             @Valid @RequestBody ConfirmOfferRequest request) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_CREATE);
         return ResponseEntity.ok(executionService.confirm(currentUser, offerId, request));
     }
 
@@ -53,6 +56,7 @@ public class TransferExecutionController {
     public ResponseEntity<TransferExecutionResponse> find(
             @AuthenticationPrincipal UserEntity currentUser,
             @PathVariable UUID executionId) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_READ);
         return ResponseEntity.ok(executionService.find(currentUser, executionId));
     }
 
@@ -69,6 +73,7 @@ public class TransferExecutionController {
             @AuthenticationPrincipal UserEntity currentUser,
             @PathVariable UUID executionId,
             @Valid @RequestBody ConfirmOfferRequest request) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_CREATE);
         return ResponseEntity.ok(executionService.confirmRequote(currentUser, executionId, request));
     }
 }

@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.blindpay.BlindPayComplianceStatusResponse;
 import ages.vstable.backend.dto.blindpay.BlindPayDocumentType;
 import ages.vstable.backend.dto.blindpay.BlindPayDocumentUploadResponse;
@@ -8,6 +9,7 @@ import ages.vstable.backend.dto.blindpay.BlindPayRfiDetailsResponse;
 import ages.vstable.backend.dto.blindpay.BlindPayRfiSubmitRequest;
 import ages.vstable.backend.dto.blindpay.BlindPayTermsResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.blindpay.BlindPayComplianceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -26,7 +28,9 @@ import java.io.IOException;
 
 /**
  * Onboarding da empresa do usuário autenticado na BlindPay. A empresa vem sempre do
- * token, nunca da requisição, então um usuário não acessa o compliance de outra.
+ * vínculo do usuário, nunca da requisição, então um usuário não acessa o compliance de outra.
+ * A consulta de status é de qualquer membro ativo; os envios (termos, documentos, KYB e RFI)
+ * são só do proprietário.
  */
 @RestController
 @RequestMapping("/v1/blindpay/compliance")
@@ -44,6 +48,7 @@ public class BlindPayComplianceController {
             @ApiResponse(responseCode = "404", description = "Empresa não encontrada"),
     })
     public ResponseEntity<BlindPayComplianceStatusResponse> status(@AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.COMPANY_READ);
         return ResponseEntity.ok(complianceService.getStatus(currentUser));
     }
 
@@ -55,6 +60,7 @@ public class BlindPayComplianceController {
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a BlindPay"),
     })
     public ResponseEntity<BlindPayTermsResponse> initiateTerms(@AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.requireOwner(currentUser);
         return ResponseEntity.ok(complianceService.initiateTermsOfService(currentUser));
     }
 
@@ -70,6 +76,7 @@ public class BlindPayComplianceController {
             @AuthenticationPrincipal UserEntity currentUser,
             @RequestParam BlindPayDocumentType documentType,
             @RequestPart("file") MultipartFile file) throws IOException {
+        CompanyAccess.requireOwner(currentUser);
         return ResponseEntity.ok(complianceService.uploadDocument(currentUser, documentType, file.getBytes()));
     }
 
@@ -85,6 +92,7 @@ public class BlindPayComplianceController {
     public ResponseEntity<BlindPayComplianceStatusResponse> submitKyb(
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody BlindPayKybRequest request) {
+        CompanyAccess.requireOwner(currentUser);
         return ResponseEntity.ok(complianceService.submitKyb(currentUser, request));
     }
 
@@ -99,6 +107,7 @@ public class BlindPayComplianceController {
     public ResponseEntity<BlindPayComplianceStatusResponse> updateKyb(
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody BlindPayKybRequest request) {
+        CompanyAccess.requireOwner(currentUser);
         return ResponseEntity.ok(complianceService.updateKyb(currentUser, request));
     }
 
@@ -109,6 +118,7 @@ public class BlindPayComplianceController {
             @ApiResponse(responseCode = "422", description = "KYB ainda não enviado"),
     })
     public ResponseEntity<BlindPayRfiDetailsResponse> rfi(@AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.COMPANY_READ);
         return ResponseEntity.ok(complianceService.getRfi(currentUser));
     }
 
@@ -122,6 +132,7 @@ public class BlindPayComplianceController {
     public ResponseEntity<BlindPayComplianceStatusResponse> submitRfi(
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody BlindPayRfiSubmitRequest request) {
+        CompanyAccess.requireOwner(currentUser);
         return ResponseEntity.ok(complianceService.submitRfi(currentUser, request.responses()));
     }
 }

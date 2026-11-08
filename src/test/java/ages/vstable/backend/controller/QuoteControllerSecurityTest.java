@@ -5,8 +5,11 @@ import ages.vstable.backend.configuration.security.SecurityConfiguration;
 import ages.vstable.backend.dto.quote.QuoteOfferResponse;
 import ages.vstable.backend.dto.quote.QuoteResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.quote.QuoteOrchestratorService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,13 +89,7 @@ class QuoteControllerSecurityTest {
         UUID beneficiaryId = UUID.randomUUID();
         UUID quoteRequestId = UUID.randomUUID();
         UUID offerId = UUID.randomUUID();
-        UserEntity principal = UserEntity.builder()
-                .id(UUID.randomUUID())
-                .companyId(UUID.randomUUID())
-                .email("user@example.com")
-                .passwordHash("hash")
-                .passwordSalt("salt")
-                .build();
+        UserEntity principal = member(CompanyRole.OWNER);
         when(quoteOrchestratorService.quote(same(principal), any())).thenReturn(new QuoteResponse(
                 quoteRequestId,
                 new QuoteOfferResponse(
@@ -142,5 +139,68 @@ class QuoteControllerSecurityTest {
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(quoteOrchestratorService);
+    }
+
+    @Test
+    void quote_operator_isAllowed() throws Exception {
+        UserEntity operator = member(CompanyRole.OPERATOR);
+
+        mockMvc.perform(post("/v1/quotes")
+                        .with(user(operator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_BODY.formatted(UUID.randomUUID())))
+                .andExpect(status().isOk());
+
+        verify(quoteOrchestratorService).quote(same(operator), any());
+    }
+
+    @Test
+    void quote_viewer_returns403PermissionDeniedWithoutQuoting() throws Exception {
+        mockMvc.perform(post("/v1/quotes")
+                        .with(user(member(CompanyRole.VIEWER)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_BODY.formatted(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(quoteOrchestratorService);
+    }
+
+    @Test
+    void quote_removedMember_returns403AccessRevokedWithoutQuoting() throws Exception {
+        mockMvc.perform(post("/v1/quotes")
+                        .with(user(TestCompanyUsers.removedMember(UUID.randomUUID(), CompanyRole.OWNER)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_BODY.formatted(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(quoteOrchestratorService);
+    }
+
+    @Test
+    void quote_userWithoutMembership_returns403AccessDeniedWithoutQuoting() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(post("/v1/quotes")
+                        .with(user(withoutMembership))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REQUEST_BODY.formatted(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(quoteOrchestratorService);
+    }
+
+    private UserEntity member(CompanyRole role) {
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .companyId(companyId)
+                .email("user@example.com")
+                .passwordHash("hash")
+                .passwordSalt("salt")
+                .build();
+        return TestCompanyUsers.withMembership(user, companyId, role, MembershipStatus.ACTIVE);
     }
 }

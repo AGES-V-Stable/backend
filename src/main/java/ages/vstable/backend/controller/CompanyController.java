@@ -7,6 +7,7 @@ import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.CompanyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -81,7 +82,7 @@ public class CompanyController {
             @PathVariable UUID id,
             Authentication authentication) {
 
-        CompanyAccess.assertCanRead(authentication, id);
+        CompanyAccess.requirePermissionOrAdmin(authentication, id, CompanyPermission.COMPANY_READ);
 
         return companyService.findById(id)
                 .map(ResponseEntity::ok)
@@ -100,7 +101,7 @@ public class CompanyController {
             @PathVariable UUID id,
             Authentication authentication) {
 
-        CompanyAccess.assertCanRead(authentication, id);
+        CompanyAccess.requirePermissionOrAdmin(authentication, id, CompanyPermission.COMPANY_READ);
 
         return ResponseEntity.ok(companyService.getComplianceStatus(id));
     }

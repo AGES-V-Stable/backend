@@ -63,6 +63,13 @@ public class UserEntity implements UserDetails {
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
+    /**
+     * Vínculo atual com a empresa (o ativo ou, na falta dele, o último removido), carregado a cada
+     * requisição autenticada. Nunca é persistido; sem ele, a autorização por empresa é negada.
+     */
+    @Transient
+    private CompanyMembershipEntity membership;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_USER"));

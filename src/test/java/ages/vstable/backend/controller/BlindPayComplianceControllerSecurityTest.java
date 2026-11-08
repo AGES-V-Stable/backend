@@ -8,12 +8,17 @@ import ages.vstable.backend.dto.blindpay.BlindPayDocumentUploadResponse;
 import ages.vstable.backend.dto.blindpay.BlindPayTermsResponse;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.BlindPayOnboardingStatus;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.blindpay.BlindPayComplianceService;
 import ages.vstable.backend.service.blindpay.BlindPayWebhookService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -41,6 +46,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,18 +65,41 @@ class BlindPayComplianceControllerSecurityTest {
     @MockitoBean private JwtTokenUtils jwtTokenUtils;
     @MockitoBean private AuthenticationProvider authenticationProvider;
 
+    private static final String VALID_KYB = """
+            {"email":"finance@acme.test","legalName":"Acme Importadora LTDA","addressLine1":"Av. Ipiranga, 6681",
+            "city":"Porto Alegre","stateProvinceRegion":"RS","country":"BR","postalCode":"90619900",
+            "formationDate":"2020-04-23","businessType":"corporation","businessDescription":"Importação",
+            "businessIndustry":"423690","estimatedAnnualRevenue":"1000000_9999999",
+            "sourceOfWealth":"business_dividends_or_profits","accountPurpose":"business_expenses",
+            "incorporationDocFile":"https://files.blindpay.test/doc.pdf",
+            "proofOfOwnershipDocFile":"https://files.blindpay.test/doc.pdf",
+            "owners":[{"role":"beneficial_controlling","firstName":"Ana","lastName":"Souza",
+            "dateOfBirth":"1985-03-10","taxId":"12345678909","addressLine1":"Rua A, 10","city":"Porto Alegre",
+            "stateProvinceRegion":"RS","country":"BR","postalCode":"90000000","idDocCountry":"BR",
+            "idDocType":"PASSPORT","idDocFrontFile":"https://files.blindpay.test/doc.pdf"}]}
+            """;
+
     private UserEntity principal;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-        principal = UserEntity.builder()
+        principal = memberOf(UUID.randomUUID(), CompanyRole.OWNER, MembershipStatus.ACTIVE);
+    }
+
+    private UserEntity memberOf(UUID companyId, CompanyRole role, MembershipStatus membershipStatus) {
+        UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID())
-                .companyId(UUID.randomUUID())
+                .companyId(companyId)
                 .email("user@example.com")
                 .passwordHash("hash")
                 .passwordSalt("salt")
                 .build();
+        return TestCompanyUsers.withMembership(user, companyId, role, membershipStatus);
+    }
+
+    private UserEntity member(CompanyRole role) {
+        return memberOf(UUID.randomUUID(), role, MembershipStatus.ACTIVE);
     }
 
     @Test
@@ -106,6 +135,101 @@ class BlindPayComplianceControllerSecurityTest {
         mockMvc.perform(get("/v1/blindpay/compliance").with(user(administrator))).andExpect(status().isForbidden());
         mockMvc.perform(post("/v1/blindpay/compliance/terms").with(user(administrator)))
                 .andExpect(status().isForbidden());
+
+        verifyNoInteractions(complianceService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CompanyRole.class, names = {"OPERATOR", "VIEWER"})
+    void readEndpoints_nonOwnerMember_areAllowed(CompanyRole role) throws Exception {
+        UserEntity member = member(role);
+
+        mockMvc.perform(get("/v1/blindpay/compliance").with(user(member))).andExpect(status().isOk());
+        mockMvc.perform(get("/v1/blindpay/compliance/rfi").with(user(member))).andExpect(status().isOk());
+
+        verify(complianceService).getStatus(same(member));
+        verify(complianceService).getRfi(same(member));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = CompanyRole.class, names = {"OPERATOR", "VIEWER"})
+    void ownerOnlyEndpoints_nonOwnerMember_return403OwnerRequiredWithoutCallingService(CompanyRole role)
+            throws Exception {
+        UserEntity member = member(role);
+
+        mockMvc.perform(post("/v1/blindpay/compliance/terms").with(user(member)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("OWNER_REQUIRED"));
+        mockMvc.perform(multipart("/v1/blindpay/compliance/documents")
+                        .file(new MockMultipartFile("file", "contrato.pdf", "application/pdf", "%PDF-1.7".getBytes()))
+                        .param("documentType", "INCORPORATION")
+                        .with(user(member)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("OWNER_REQUIRED"));
+        mockMvc.perform(post("/v1/blindpay/compliance/kyb")
+                        .with(user(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_KYB))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("OWNER_REQUIRED"));
+        mockMvc.perform(put("/v1/blindpay/compliance/kyb")
+                        .with(user(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_KYB))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("OWNER_REQUIRED"));
+        mockMvc.perform(post("/v1/blindpay/compliance/rfi")
+                        .with(user(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"responses\":{\"note\":\"Revenue from exports\"}}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("OWNER_REQUIRED"));
+
+        verifyNoInteractions(complianceService);
+    }
+
+    @Test
+    void submitKyb_owner_forwardsRequestToTheService() throws Exception {
+        when(complianceService.submitKyb(same(principal), any())).thenReturn(new BlindPayComplianceStatusResponse(
+                BlindPayOnboardingStatus.VERIFYING, false, true, true, false, true, "verifying", null,
+                List.of(), List.of(), null, null, false));
+
+        mockMvc.perform(post("/v1/blindpay/compliance/kyb")
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_KYB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFYING"));
+        verify(complianceService).submitKyb(same(principal), any());
+    }
+
+    @Test
+    void endpoints_removedMember_return403AccessRevokedWithoutCallingService() throws Exception {
+        UserEntity removed = memberOf(UUID.randomUUID(), CompanyRole.OWNER, MembershipStatus.REMOVED);
+
+        mockMvc.perform(get("/v1/blindpay/compliance").with(user(removed)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+        mockMvc.perform(get("/v1/blindpay/compliance/rfi").with(user(removed)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+        mockMvc.perform(post("/v1/blindpay/compliance/terms").with(user(removed)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(complianceService);
+    }
+
+    @Test
+    void endpoints_userWithoutMembership_return403AccessDeniedWithoutCallingService() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(get("/v1/blindpay/compliance").with(user(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+        mockMvc.perform(post("/v1/blindpay/compliance/terms").with(user(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(complianceService);
     }

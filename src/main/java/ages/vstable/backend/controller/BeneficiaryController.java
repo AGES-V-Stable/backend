@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.BeneficiaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -42,7 +43,7 @@ public class BeneficiaryController {
                         @Valid @RequestBody BeneficiaryCreateRequest request,
                         Authentication authentication) {
 
-                CompanyAccess.assertMember(authentication, companyId);
+                CompanyAccess.requirePermission(authentication, companyId, CompanyPermission.BENEFICIARY_WRITE);
 
                 return ResponseEntity
                                 .status(HttpStatus.CREATED)
@@ -65,7 +66,7 @@ public class BeneficiaryController {
                         @Parameter(description = "Parâmetros de ordenação e paginação (size, page, sort)") Pageable pageable,
                         Authentication authentication) {
 
-                CompanyAccess.assertCanRead(authentication, companyId);
+                CompanyAccess.requirePermissionOrAdmin(authentication, companyId, CompanyPermission.BENEFICIARY_READ);
 
                 return ResponseEntity.ok(
                                 beneficiaryService.findBeneficiaries(companyId, search, document, country, pageable));
@@ -84,7 +85,7 @@ public class BeneficiaryController {
                         @PathVariable UUID id,
                         Authentication authentication) {
 
-                CompanyAccess.assertCanRead(authentication, companyId);
+                CompanyAccess.requirePermissionOrAdmin(authentication, companyId, CompanyPermission.BENEFICIARY_READ);
 
                 return ResponseEntity.ok(beneficiaryService.findByIdForCompany(companyId, id));
         }

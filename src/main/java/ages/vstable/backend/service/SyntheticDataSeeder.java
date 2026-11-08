@@ -43,13 +43,15 @@ public class SyntheticDataSeeder {
     private final BeneficiaryRepository beneficiaryRepository;
     private final BaseTransactionRepository transactionRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CompanyMembershipService companyMembershipService;
 
     public SyntheticDataSeeder(CompanyRepository companyRepository, UserRepository userRepository,
                                  AdministratorRepository administratorRepository,
                                  AveniaKycVerificationRepository kycRepository,
                                  BeneficiaryRepository beneficiaryRepository,
                                  BaseTransactionRepository transactionRepository,
-                                 PasswordEncoder passwordEncoder) {
+                                 PasswordEncoder passwordEncoder,
+                                 CompanyMembershipService companyMembershipService) {
         this.companyRepository = companyRepository;
         this.userRepository = userRepository;
         this.administratorRepository = administratorRepository;
@@ -57,6 +59,7 @@ public class SyntheticDataSeeder {
         this.beneficiaryRepository = beneficiaryRepository;
         this.transactionRepository = transactionRepository;
         this.passwordEncoder = passwordEncoder;
+        this.companyMembershipService = companyMembershipService;
     }
 
     @Transactional
@@ -72,6 +75,7 @@ public class SyntheticDataSeeder {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         CompanyEntity company = seedCompany(now);
         UserEntity user = seedUser(company, now, password);
+        companyMembershipService.assignOwner(user.getId(), company.getId(), now);
         if (includeDemoAdministrator) {
             seedAdministrator(now, password);
         }

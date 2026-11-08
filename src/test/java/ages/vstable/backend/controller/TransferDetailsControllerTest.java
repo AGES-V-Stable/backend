@@ -8,10 +8,12 @@ import ages.vstable.backend.dto.transaction.TransferDetailsResponse.Money;
 import ages.vstable.backend.dto.transaction.TransferDetailsResponse.Type;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.exception.TransferDetailsException;
 import ages.vstable.backend.exception.TransferDetailsExceptionHandler;
 import ages.vstable.backend.service.TransferDetailsService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +39,7 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -67,7 +70,7 @@ class TransferDetailsControllerTest {
     }
 
     private UserEntity user() {
-        return UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+        return TestCompanyUsers.member(companyId, CompanyRole.OWNER);
     }
 
     private Authentication authenticated(UserEntity user) {
@@ -128,6 +131,40 @@ class TransferDetailsControllerTest {
         mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(adminAuth))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REQUIRED"));
+    }
+
+    @Test
+    void getDetails_viewer_isAllowed() throws Exception {
+        UserEntity viewer = TestCompanyUsers.member(companyId, CompanyRole.VIEWER);
+        when(service.getDetails(eq(transferId), eq(viewer))).thenReturn(details());
+
+        mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(authenticated(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(transferId.toString()));
+    }
+
+    @Test
+    void getDetails_removedMember_returns403AccessRevokedWithoutCallingService() throws Exception {
+        UserEntity removed = TestCompanyUsers.removedMember(companyId, CompanyRole.OWNER);
+
+        mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(authenticated(removed)))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"))
+                .andExpect(jsonPath("$.message").isNotEmpty());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void getDetails_userWithoutMembership_returns403AccessDeniedWithoutCallingService() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(service);
     }
 
     @Test
@@ -193,6 +230,47 @@ class TransferDetailsControllerTest {
                         "attachment; filename=\"comprovante-transferencia.pdf\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
                 .andExpect(content().bytes(pdf));
+    }
+
+    @Test
+    void downloadReceipt_viewer_isAllowed() throws Exception {
+        UserEntity viewer = TestCompanyUsers.member(companyId, CompanyRole.VIEWER);
+        byte[] pdf = "%PDF-1.7 conteudo".getBytes();
+        when(service.getReceipt(eq(transferId), eq(viewer)))
+                .thenReturn(new TransferDetailsService.Receipt("comprovante-transferencia.pdf", pdf));
+
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", transferId)
+                        .accept(MediaType.APPLICATION_PDF)
+                        .principal(authenticated(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(pdf));
+    }
+
+    @Test
+    void downloadReceipt_removedMember_returns403JsonAccessRevokedWithoutCallingService() throws Exception {
+        UserEntity removed = TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR);
+
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", transferId)
+                        .accept(MediaType.APPLICATION_PDF)
+                        .principal(authenticated(removed)))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void downloadReceipt_userWithoutMembership_returns403AccessDeniedWithoutCallingService() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(get("/api/transferencias/{id}/comprovante", transferId)
+                        .accept(MediaType.APPLICATION_PDF)
+                        .principal(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(service);
     }
 
     @Test

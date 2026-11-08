@@ -1,7 +1,11 @@
 package ages.vstable.backend.configuration.security;
 
 import ages.vstable.backend.entity.AdministratorEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -24,6 +28,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.context.SecurityContextRepository;
 
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -43,6 +50,9 @@ class JwtTokenFilterTest {
     private UserService userService;
 
     @Mock
+    private CompanyMembershipService companyMembershipService;
+
+    @Mock
     private FilterChain filterChain;
 
     private JwtTokenFilter filter;
@@ -55,7 +65,8 @@ class JwtTokenFilterTest {
         filter = new JwtTokenFilter(
                 securityContextRepository,
                 jwtTokenUtils,
-                userService
+                userService,
+                companyMembershipService
         );
 
         request = new MockHttpServletRequest();
@@ -123,6 +134,58 @@ class JwtTokenFilterTest {
         assertEquals(1, authentication.getAuthorities().size());
         assertTrue(authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_USER")));
         assertEquals(EMAIL, request.getAttribute("user_id"));
+    }
+
+    @Test
+    void shouldAttachTheCurrentMembershipToTheCompanyUserOnEveryRequest() throws Exception {
+        withBearerToken();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email(EMAIL).build();
+        CompanyMembershipEntity membership = CompanyMembershipEntity.builder()
+                .id(UUID.randomUUID()).companyId(UUID.randomUUID()).userId(user.getId())
+                .role(CompanyRole.OPERATOR).status(MembershipStatus.ACTIVE).build();
+
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER)).thenReturn(user);
+        when(jwtTokenUtils.validateToken(TOKEN, user)).thenReturn(true);
+        when(companyMembershipService.findCurrentMembership(user.getId())).thenReturn(Optional.of(membership));
+
+        filter.doFilter(request, response, filterChain);
+
+        assertSame(membership, user.getMembership());
+        assertSame(user, SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+    }
+
+    @Test
+    void shouldLeaveTheMembershipEmptyWhenTheUserNeverHadOne() throws Exception {
+        withBearerToken();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email(EMAIL).build();
+
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn(EMAIL);
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_USER);
+        when(userService.loadPrincipal(EMAIL, JwtTokenUtils.ACCOUNT_TYPE_USER)).thenReturn(user);
+        when(jwtTokenUtils.validateToken(TOKEN, user)).thenReturn(true);
+        when(companyMembershipService.findCurrentMembership(user.getId())).thenReturn(Optional.empty());
+
+        filter.doFilter(request, response, filterChain);
+
+        assertNull(user.getMembership());
+        assertNotNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void shouldNotLookUpMembershipsForAdministrators() throws Exception {
+        withBearerToken();
+        AdministratorEntity admin = AdministratorEntity.builder().email("admin@vstable.com").build();
+
+        when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenReturn("admin@vstable.com");
+        when(jwtTokenUtils.getAccountTypeFromToken(TOKEN)).thenReturn(JwtTokenUtils.ACCOUNT_TYPE_ADMIN);
+        when(userService.loadPrincipal("admin@vstable.com", JwtTokenUtils.ACCOUNT_TYPE_ADMIN)).thenReturn(admin);
+        when(jwtTokenUtils.validateToken(TOKEN, admin)).thenReturn(true);
+
+        filter.doFilter(request, response, filterChain);
+
+        verifyNoInteractions(companyMembershipService);
     }
 
     @Test

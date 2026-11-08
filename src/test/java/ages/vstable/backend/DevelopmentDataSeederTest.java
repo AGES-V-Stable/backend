@@ -1,5 +1,6 @@
 package ages.vstable.backend;
 
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.service.SyntheticDataSeeder;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
@@ -37,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -58,6 +60,8 @@ class DevelopmentDataSeederTest {
     private BeneficiaryRepository beneficiaryRepository;
     @Mock
     private BaseTransactionRepository transactionRepository;
+    @Mock
+    private CompanyMembershipService companyMembershipService;
     @Spy
     private PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
@@ -108,6 +112,7 @@ class DevelopmentDataSeederTest {
         assertThat(user.getPasswordSalt()).startsWith("$2").hasSize(29);
         assertThat(user.getCreatedAt()).isNotNull();
         assertThat(user.getUpdatedAt()).isNotNull();
+        verify(companyMembershipService).assignOwner(eq(userId), eq(companyId), any());
 
         ArgumentCaptor<AdministratorEntity> adminCaptor = ArgumentCaptor.forClass(AdministratorEntity.class);
         verify(administratorRepository).save(adminCaptor.capture());
@@ -213,7 +218,7 @@ class DevelopmentDataSeederTest {
         verify(userRepository).existsByEmail("dev.user@example.test");
         verifyNoMoreInteractions(userRepository);
         verifyNoInteractions(companyRepository, administratorRepository, kycRepository,
-                beneficiaryRepository, transactionRepository, passwordEncoder);
+                beneficiaryRepository, transactionRepository, passwordEncoder, companyMembershipService);
     }
 
     @Test
@@ -241,6 +246,7 @@ class DevelopmentDataSeederTest {
         // Assert
         verifyNoInteractions(administratorRepository);
         verify(userRepository).saveAndFlush(any());
+        verify(companyMembershipService).assignOwner(any(), any(), any());
         verify(transactionRepository, times(3)).save(any());
     }
 
@@ -254,7 +260,7 @@ class DevelopmentDataSeederTest {
         verify(userRepository).existsByEmail("dev.user@example.test");
         verifyNoMoreInteractions(userRepository);
         verifyNoInteractions(companyRepository, administratorRepository, kycRepository,
-                beneficiaryRepository, transactionRepository, passwordEncoder);
+                beneficiaryRepository, transactionRepository, passwordEncoder, companyMembershipService);
     }
 
     @ParameterizedTest
@@ -276,7 +282,8 @@ class DevelopmentDataSeederTest {
 
     private SyntheticDataSeeder seeder() {
         return new SyntheticDataSeeder(companyRepository, userRepository, administratorRepository,
-                kycRepository, beneficiaryRepository, transactionRepository, passwordEncoder);
+                kycRepository, beneficiaryRepository, transactionRepository, passwordEncoder,
+                companyMembershipService);
     }
 
     private ApplicationContextRunner contextRunner() {
@@ -288,6 +295,7 @@ class DevelopmentDataSeederTest {
                 .withBean(AveniaKycVerificationRepository.class, () -> kycRepository)
                 .withBean(BeneficiaryRepository.class, () -> beneficiaryRepository)
                 .withBean(BaseTransactionRepository.class, () -> transactionRepository)
-                .withBean(PasswordEncoder.class, () -> passwordEncoder);
+                .withBean(PasswordEncoder.class, () -> passwordEncoder)
+                .withBean(CompanyMembershipService.class, () -> companyMembershipService);
     }
 }

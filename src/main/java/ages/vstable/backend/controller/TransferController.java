@@ -1,5 +1,6 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.TransferFilter;
@@ -7,6 +8,7 @@ import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
 import ages.vstable.backend.dto.transfer.TransferResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferDirection;
 import ages.vstable.backend.service.TransferService;
@@ -44,6 +46,7 @@ public class TransferController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Cotação obtida com sucesso"),
             @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão para transferir (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
             @ApiResponse(responseCode = "422", description = "Beneficiário ou método de pagamento não informado, combinação de moeda e métodos não suportada, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
@@ -52,9 +55,8 @@ public class TransferController {
     public ResponseEntity<TransferQuoteResponse> quote(
             @Valid @RequestBody TransferQuoteRequest request,
             @AuthenticationPrincipal UserEntity currentUser) {
-        UUID currentUserId = currentUser == null ? null : currentUser.getId();
-        UUID currentCompanyId = currentUser == null ? null : currentUser.getCompanyId();
-        return ResponseEntity.ok(transferService.quote(request, currentUserId, currentCompanyId));
+        UUID currentCompanyId = CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_CREATE);
+        return ResponseEntity.ok(transferService.quote(request, currentUser.getId(), currentCompanyId));
     }
 
     @PostMapping
@@ -63,6 +65,7 @@ public class TransferController {
             @ApiResponse(responseCode = "200", description = "Transferência criada; retorna o status atual"),
             @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente ou inválido"),
             @ApiResponse(responseCode = "401", description = "Não autenticado ou código TOTP inválido/já utilizado"),
+            @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão para transferir (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
             @ApiResponse(responseCode = "422", description = "Código TOTP ausente, usuário sem 2FA ativo, moeda não determinável, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
             @ApiResponse(responseCode = "423", description = "Conta temporariamente bloqueada por excesso de tentativas incorretas de TOTP"),
@@ -72,9 +75,8 @@ public class TransferController {
     public ResponseEntity<CreateTransferResponse> create(
             @Valid @RequestBody CreateTransferRequest request,
             @AuthenticationPrincipal UserEntity currentUser) {
-        UUID currentUserId = currentUser == null ? null : currentUser.getId();
-        UUID currentCompanyId = currentUser == null ? null : currentUser.getCompanyId();
-        return ResponseEntity.ok(transferService.create(request, currentUserId, currentCompanyId));
+        UUID currentCompanyId = CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_CREATE);
+        return ResponseEntity.ok(transferService.create(request, currentUser.getId(), currentCompanyId));
     }
 
     @GetMapping
