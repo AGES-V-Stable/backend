@@ -5,11 +5,13 @@ import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
 import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.service.BeneficiaryService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +64,14 @@ class BeneficiaryControllerTest {
     }
 
     private Authentication userOf(UUID company) {
-        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(company).build();
+        return userOf(company, CompanyRole.OWNER);
+    }
+
+    private Authentication userOf(UUID company, CompanyRole role) {
+        return authenticated(TestCompanyUsers.member(company, role));
+    }
+
+    private Authentication authenticated(UserEntity user) {
         return new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
     }
 
@@ -249,7 +258,8 @@ class BeneficiaryControllerTest {
                 .principal(userOf(UUID.randomUUID()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validBankAccountRequest())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(beneficiaryService);
     }
@@ -260,7 +270,59 @@ class BeneficiaryControllerTest {
                 .principal(admin())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validBankAccountRequest())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(beneficiaryService);
+    }
+
+    @Test
+    void create_operator_returns201() throws Exception {
+        BeneficiaryResponse response = sampleResponse();
+        when(beneficiaryService.create(eq(companyId), any(), any())).thenReturn(response);
+
+        mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(userOf(companyId, CompanyRole.OPERATOR))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(response.getId().toString()));
+    }
+
+    @Test
+    void create_viewer_returns403PermissionDeniedWithoutCallingService() throws Exception {
+        mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(userOf(companyId, CompanyRole.VIEWER))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(beneficiaryService);
+    }
+
+    @Test
+    void create_removedMember_returns403AccessRevokedWithoutCallingService() throws Exception {
+        mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(authenticated(TestCompanyUsers.removedMember(companyId, CompanyRole.OWNER)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(beneficiaryService);
+    }
+
+    @Test
+    void create_userWithoutMembership_returns403AccessDeniedWithoutCallingService() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(authenticated(withoutMembership))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(validBankAccountRequest())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(beneficiaryService);
     }
@@ -292,7 +354,29 @@ class BeneficiaryControllerTest {
     void findByCompany_userOfAnotherCompany_returns403() throws Exception {
         mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries", companyId)
                 .principal(userOf(UUID.randomUUID())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(beneficiaryService);
+    }
+
+    @Test
+    void findByCompany_viewer_returnsCompanyPage() throws Exception {
+        when(beneficiaryService.findBeneficiaries(eq(companyId), any(), any(), any(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(sampleResponse()), PageRequest.of(0, 10), 1));
+
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(userOf(companyId, CompanyRole.VIEWER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)));
+    }
+
+    @Test
+    void findByCompany_removedMember_returns403AccessRevokedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries", companyId)
+                .principal(authenticated(TestCompanyUsers.removedMember(companyId, CompanyRole.VIEWER))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
 
         verifyNoInteractions(beneficiaryService);
     }
@@ -306,6 +390,27 @@ class BeneficiaryControllerTest {
                 .principal(member()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(response.getId().toString()));
+    }
+
+    @Test
+    void findByCompanyAndId_viewer_returnsBeneficiary() throws Exception {
+        BeneficiaryResponse response = sampleResponse();
+        when(beneficiaryService.findByIdForCompany(companyId, response.getId())).thenReturn(response);
+
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries/{id}", companyId, response.getId())
+                .principal(userOf(companyId, CompanyRole.VIEWER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(response.getId().toString()));
+    }
+
+    @Test
+    void findByCompanyAndId_userOfAnotherCompany_returns403WithoutCallingService() throws Exception {
+        mockMvc.perform(get("/v1/companies/{companyId}/beneficiaries/{id}", companyId, UUID.randomUUID())
+                .principal(userOf(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(beneficiaryService);
     }
 
     @Test

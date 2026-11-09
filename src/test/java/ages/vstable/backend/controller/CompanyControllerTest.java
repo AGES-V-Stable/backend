@@ -8,12 +8,14 @@ import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.service.CompanyService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +64,14 @@ class CompanyControllerTest {
     }
 
     private Authentication userOf(UUID companyId) {
-        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+        return userOf(companyId, CompanyRole.OWNER);
+    }
+
+    private Authentication userOf(UUID companyId, CompanyRole role) {
+        return authenticated(TestCompanyUsers.member(companyId, role));
+    }
+
+    private Authentication authenticated(UserEntity user) {
         return new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
     }
 
@@ -268,11 +277,45 @@ class CompanyControllerTest {
     }
 
     @Test
+    void findById_viewerOfTheCompany_isAllowed() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(companyService.findById(id)).thenReturn(Optional.of(sampleResponse(id)));
+
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(userOf(id, CompanyRole.VIEWER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void findById_userOfAnotherCompany_returns403() throws Exception {
         UUID id = UUID.randomUUID();
 
         mockMvc.perform(get("/v1/companies/{id}", id).principal(userOf(UUID.randomUUID())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(companyService);
+    }
+
+    @Test
+    void findById_removedMember_returns403AccessRevoked() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/companies/{id}", id)
+                        .principal(authenticated(TestCompanyUsers.removedMember(id, CompanyRole.OWNER))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(companyService);
+    }
+
+    @Test
+    void findById_userWithoutMembership_returns403AccessDenied() throws Exception {
+        UUID id = UUID.randomUUID();
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(id).build();
+
+        mockMvc.perform(get("/v1/companies/{id}", id).principal(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(companyService);
     }
@@ -282,7 +325,33 @@ class CompanyControllerTest {
         UUID id = UUID.randomUUID();
 
         mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(userOf(UUID.randomUUID())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(companyService);
+    }
+
+    @Test
+    void getComplianceStatus_viewerOfTheCompany_isAllowed() throws Exception {
+        UUID id = UUID.randomUUID();
+        CompanyComplianceStatusResponse response = new CompanyComplianceStatusResponse();
+        response.setId(id);
+        response.setDocuments(List.of());
+        when(companyService.getComplianceStatus(id)).thenReturn(response);
+
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(userOf(id, CompanyRole.VIEWER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void getComplianceStatus_removedMember_returns403AccessRevoked() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/companies/{id}/compliance-status", id)
+                        .principal(authenticated(TestCompanyUsers.removedMember(id, CompanyRole.OPERATOR))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
 
         verifyNoInteractions(companyService);
     }

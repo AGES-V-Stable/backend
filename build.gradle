@@ -158,6 +158,7 @@ pitest {
 		'ages.vstable.backend.sandbox.*',
 		'ages.vstable.backend.repository.*IntegrationTest',
 		'ages.vstable.backend.service.*IntegrationTest',
+		'ages.vstable.backend.configuration.security.CompanyAuthorizationIntegrationTest',
 		'ages.vstable.backend.external.*ContextTest',
 		'ages.vstable.backend.logging.LoggingFormatTest'
 	]

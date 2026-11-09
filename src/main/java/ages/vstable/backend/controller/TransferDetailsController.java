@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.transaction.TransferDetailsResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.exception.TransferDetailsExceptionHandler.ErrorBody;
 import ages.vstable.backend.service.TransferDetailsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,7 +46,7 @@ public class TransferDetailsController {
             @ApiResponse(responseCode = "401", description = "UNAUTHENTICATED: token ausente, inválido ou expirado",
                     content = @Content(schema = @Schema(implementation = ErrorBody.class))),
             @ApiResponse(responseCode = "403",
-                    description = "USER_NOT_VERIFIED (sem a verificação exigida) ou COMPANY_ACCESS_REQUIRED (sem vínculo empresarial)",
+                    description = "USER_NOT_VERIFIED (sem a verificação exigida), COMPANY_ACCESS_REQUIRED (sem empresa) ou, pelo vínculo, COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED e PERMISSION_DENIED",
                     content = @Content(schema = @Schema(implementation = ErrorBody.class))),
             @ApiResponse(responseCode = "404", description = "TRANSFER_NOT_FOUND: inexistente ou de outra empresa",
                     content = @Content(schema = @Schema(implementation = ErrorBody.class))),
@@ -53,7 +54,7 @@ public class TransferDetailsController {
                     content = @Content(schema = @Schema(implementation = ErrorBody.class)))
     })
     public ResponseEntity<TransferDetailsResponse> getDetails(@PathVariable UUID id, Authentication authentication) {
-        return ResponseEntity.ok(transferDetailsService.getDetails(id, currentUser(authentication)));
+        return ResponseEntity.ok(transferDetailsService.getDetails(id, authorizedUser(authentication)));
     }
 
     @GetMapping(value = "/{id}/comprovante", produces = MediaType.APPLICATION_PDF_VALUE)
@@ -68,7 +69,7 @@ public class TransferDetailsController {
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ErrorBody.class))),
             @ApiResponse(responseCode = "403",
-                    description = "USER_NOT_VERIFIED (sem a verificação exigida) ou COMPANY_ACCESS_REQUIRED (sem vínculo empresarial)",
+                    description = "USER_NOT_VERIFIED (sem a verificação exigida), COMPANY_ACCESS_REQUIRED (sem empresa) ou, pelo vínculo, COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED e PERMISSION_DENIED",
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ErrorBody.class))),
             @ApiResponse(responseCode = "404", description = "TRANSFER_NOT_FOUND: inexistente ou de outra empresa",
@@ -82,7 +83,7 @@ public class TransferDetailsController {
                             schema = @Schema(implementation = ErrorBody.class)))
     })
     public ResponseEntity<byte[]> downloadReceipt(@PathVariable UUID id, Authentication authentication) {
-        TransferDetailsService.Receipt receipt = transferDetailsService.getReceipt(id, currentUser(authentication));
+        TransferDetailsService.Receipt receipt = transferDetailsService.getReceipt(id, authorizedUser(authentication));
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -91,8 +92,15 @@ public class TransferDetailsController {
                 .body(receipt.content());
     }
 
-    /** Administrador (ou principal sem empresa) vira nulo e é recusado pelo serviço. */
-    private static UserEntity currentUser(Authentication authentication) {
-        return CompanyAccess.companyUser(authentication).orElse(null);
+    /**
+     * Administrador (ou principal sem empresa) vira nulo e é recusado pelo serviço; usuário de empresa
+     * precisa de vínculo ativo com permissão de consulta.
+     */
+    private static UserEntity authorizedUser(Authentication authentication) {
+        UserEntity user = CompanyAccess.companyUser(authentication).orElse(null);
+        if (user != null) {
+            CompanyAccess.requireCompanyId(user, CompanyPermission.TRANSFER_READ);
+        }
+        return user;
     }
 }

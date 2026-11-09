@@ -5,10 +5,13 @@ import ages.vstable.backend.configuration.security.SecurityConfiguration;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
 import ages.vstable.backend.dto.transfer.TransferExecutionResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
 import ages.vstable.backend.exception.QuotePriceChangedException;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.transfer.TransferExecutionService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,13 +72,19 @@ class TransferExecutionControllerSecurityTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-        principal = UserEntity.builder()
+        principal = member(CompanyRole.OWNER, MembershipStatus.ACTIVE);
+    }
+
+    private UserEntity member(CompanyRole role, MembershipStatus membershipStatus) {
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID())
-                .companyId(UUID.randomUUID())
+                .companyId(companyId)
                 .email("user@example.com")
                 .passwordHash("hash")
                 .passwordSalt("salt")
                 .build();
+        return TestCompanyUsers.withMembership(user, companyId, role, membershipStatus);
     }
 
     @Test
@@ -185,6 +194,131 @@ class TransferExecutionControllerSecurityTest {
                         .content(CONFIRMATION))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PAYOUT_PROCESSING"));
+    }
+
+    @Test
+    void confirm_operator_isAllowed() throws Exception {
+        UserEntity operator = member(CompanyRole.OPERATOR, MembershipStatus.ACTIVE);
+        UUID offerId = UUID.randomUUID();
+        when(executionService.confirm(same(operator), eq(offerId), any()))
+                .thenReturn(response(offerId, TransferExecutionStatus.AWAITING_FUNDS, "pix-code"));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", offerId)
+                        .with(user(operator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AWAITING_FUNDS"));
+    }
+
+    @Test
+    void confirm_viewer_returns403PermissionDeniedWithoutExecuting() throws Exception {
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(member(CompanyRole.VIEWER, MembershipStatus.ACTIVE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirm_removedMember_returns403AccessRevokedWithoutExecuting() throws Exception {
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(member(CompanyRole.OWNER, MembershipStatus.REMOVED)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirm_userWithoutMembership_returns403AccessDeniedWithoutExecuting() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(withoutMembership))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void find_viewer_isAllowed() throws Exception {
+        UserEntity viewer = member(CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+        UUID executionId = UUID.randomUUID();
+        when(executionService.find(same(viewer), eq(executionId)))
+                .thenReturn(response(UUID.randomUUID(), TransferExecutionStatus.COMPLETED, null));
+
+        mockMvc.perform(get("/v1/transfer-executions/{id}", executionId).with(user(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    void find_removedMember_returns403AccessRevokedWithoutReadingTheTransfer() throws Exception {
+        mockMvc.perform(get("/v1/transfer-executions/{id}", UUID.randomUUID())
+                        .with(user(member(CompanyRole.VIEWER, MembershipStatus.REMOVED))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void find_userWithoutMembership_returns403AccessDeniedWithoutReadingTheTransfer() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(get("/v1/transfer-executions/{id}", UUID.randomUUID()).with(user(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirmRequote_operator_isAllowed() throws Exception {
+        UserEntity operator = member(CompanyRole.OPERATOR, MembershipStatus.ACTIVE);
+        UUID executionId = UUID.randomUUID();
+        when(executionService.confirmRequote(same(operator), eq(executionId), any()))
+                .thenReturn(response(UUID.randomUUID(), TransferExecutionStatus.PAYOUT_PROCESSING, null));
+
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", executionId)
+                        .with(user(operator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PAYOUT_PROCESSING"));
+    }
+
+    @Test
+    void confirmRequote_viewer_returns403PermissionDeniedWithoutExecuting() throws Exception {
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(member(CompanyRole.VIEWER, MembershipStatus.ACTIVE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PERMISSION_DENIED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirmRequote_removedMember_returns403AccessRevokedWithoutExecuting() throws Exception {
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(member(CompanyRole.OPERATOR, MembershipStatus.REMOVED)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(executionService);
     }
 
     private static TransferExecutionResponse response(

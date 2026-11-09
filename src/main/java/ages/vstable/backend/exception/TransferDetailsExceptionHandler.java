@@ -6,6 +6,7 @@ import ages.vstable.backend.controller.TransferDetailsController;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +30,14 @@ public class TransferDetailsExceptionHandler {
     @ExceptionHandler(TransferDetailsException.class)
     public ResponseEntity<ErrorBody> handleTransferDetails(TransferDetailsException ex) {
         return json(ex);
+    }
+
+    /** Acesso à empresa negado pelo vínculo: mantém o código próprio da exceção, em vez de virar erro interno. */
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorBody> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(new ErrorBody(ex.getCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

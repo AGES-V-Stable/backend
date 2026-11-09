@@ -106,7 +106,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenException ex) {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
-                .body(Map.of("code", "FORBIDDEN", "message", ex.getMessage()));
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
     }
 
     @ExceptionHandler(NotFoundException.class)

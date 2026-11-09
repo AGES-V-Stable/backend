@@ -2,8 +2,7 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.transaction.TransactionVolumeResponse;
-import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.TransactionVolumeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 /** Volume transacionado da empresa do usuário autenticado; não existe parâmetro para escolher a empresa. */
 @RestController
@@ -36,7 +36,7 @@ public class TransactionVolumeController {
             @ApiResponse(responseCode = "200", description = "Volume transacionado; zero quando não há transações"),
             @ApiResponse(responseCode = "400", description = "Data em formato inválido ou startDate posterior a endDate"),
             @ApiResponse(responseCode = "401", description = "Não autenticado"),
-            @ApiResponse(responseCode = "403", description = "Principal sem vínculo empresarial (ex.: Administrador)"),
+            @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão de consulta (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
     })
     public ResponseEntity<TransactionVolumeResponse> getTransactionVolume(
             Authentication authentication,
@@ -44,9 +44,7 @@ public class TransactionVolumeController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "Data final inclusiva (AAAA-MM-DD, fuso America/Sao_Paulo); sem ela, não há limite final")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        UserEntity user = CompanyAccess.companyUser(authentication)
-                .filter(companyUser -> companyUser.getCompanyId() != null)
-                .orElseThrow(() -> new ForbiddenException("Company access is required"));
-        return ResponseEntity.ok(transactionVolumeService.getSettledVolume(user.getCompanyId(), startDate, endDate));
+        UUID companyId = CompanyAccess.requireCompanyId(authentication, CompanyPermission.TRANSFER_READ);
+        return ResponseEntity.ok(transactionVolumeService.getSettledVolume(companyId, startDate, endDate));
     }
 }

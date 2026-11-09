@@ -1,5 +1,6 @@
 package ages.vstable.backend.service.transfer;
 
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.dto.transfer.ConfirmOfferRequest;
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
@@ -133,13 +134,13 @@ public class TransferExecutionService {
     }
 
     public TransferExecutionResponse find(UserEntity user, UUID executionId) {
-        return toResponse(executionRepository.findByIdAndCompanyId(executionId, user.getCompanyId())
+        return toResponse(executionRepository.findByIdAndCompanyId(executionId, CompanyMembershipService.currentCompanyId(user))
                 .orElseThrow(() -> new NotFoundException("Transfer not found")));
     }
 
     public TransferExecutionResponse confirmRequote(
             UserEntity user, UUID executionId, ConfirmOfferRequest confirmation) {
-        blindPayProcessor.acceptRequote(executionId, user.getCompanyId(),
+        blindPayProcessor.acceptRequote(executionId, CompanyMembershipService.currentCompanyId(user),
                 confirmation.sourceAmount(), confirmation.targetAmount());
         return find(user, executionId);
     }
@@ -153,7 +154,8 @@ public class TransferExecutionService {
         ProviderQuoteEntity offer = providerQuoteRepository.findById(offerId)
                 .orElseThrow(() -> new NotFoundException("Offer not found"));
         QuoteRequestEntity request = offer.getQuoteRequest();
-        if (user.getCompanyId() == null || !user.getCompanyId().equals(request.getCompany().getId())) {
+        UUID companyId = CompanyMembershipService.currentCompanyId(user);
+        if (companyId == null || !companyId.equals(request.getCompany().getId())) {
             throw new NotFoundException("Offer not found");
         }
 

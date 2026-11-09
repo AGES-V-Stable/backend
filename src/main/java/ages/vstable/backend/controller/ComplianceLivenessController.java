@@ -36,6 +36,7 @@ public class ComplianceLivenessController {
     })
     public ResponseEntity<LivenessStartResponse> iniciar(@PathVariable UUID kycVerificationId,
                                                          Authentication authentication) {
+        CompanyAccess.rejectRevokedMembership(CompanyAccess.companyUser(authentication).orElse(null));
         return complianceLivenessService.iniciar(kycVerificationId, CompanyAccess.currentUserId(authentication))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -54,6 +55,7 @@ public class ComplianceLivenessController {
             @PathVariable UUID kycVerificationId,
             @RequestParam(required = false) String livenessId,
             Authentication authentication) {
+        CompanyAccess.rejectRevokedMembership(CompanyAccess.companyUser(authentication).orElse(null));
 
         if (livenessId == null || livenessId.isBlank()) {
             return ResponseEntity.badRequest().build();
@@ -76,6 +78,7 @@ public class ComplianceLivenessController {
             @PathVariable UUID kycVerificationId,
             @Valid @RequestBody LivenessSubmitRequest request,
             Authentication authentication) {
+        CompanyAccess.rejectRevokedMembership(CompanyAccess.companyUser(authentication).orElse(null));
 
         boolean atualizado = complianceLivenessService.concluir(
                 kycVerificationId, CompanyAccess.currentUserId(authentication), request);

@@ -3,9 +3,11 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.balance.BalanceResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.service.BalanceService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,7 +54,7 @@ class BalanceControllerTest {
     }
 
     private UserEntity companyUser(UUID userCompanyId) {
-        return UserEntity.builder().id(UUID.randomUUID()).companyId(userCompanyId).build();
+        return TestCompanyUsers.member(userCompanyId, CompanyRole.OWNER);
     }
 
     @Test
@@ -71,16 +73,49 @@ class BalanceControllerTest {
 
         mockMvc.perform(get("/v1/balance").principal(admin))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(service);
     }
 
     @Test
     void getBalance_isForbiddenForUsersWithoutCompany() throws Exception {
-        mockMvc.perform(get("/v1/balance").principal(authenticated(companyUser(null))))
+        UserEntity withoutCompany = UserEntity.builder().id(UUID.randomUUID()).build();
+
+        mockMvc.perform(get("/v1/balance").principal(authenticated(withoutCompany)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void getBalance_isAllowedForViewers() throws Exception {
+        when(service.getBalance(companyId)).thenReturn(new BalanceResponse("485200.00"));
+
+        mockMvc.perform(get("/v1/balance")
+                        .principal(authenticated(TestCompanyUsers.member(companyId, CompanyRole.VIEWER))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableBalanceBrl").value("485200.00"));
+    }
+
+    @Test
+    void getBalance_isForbiddenWhenTheMembershipWasRemoved() throws Exception {
+        mockMvc.perform(get("/v1/balance")
+                        .principal(authenticated(TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void getBalance_isForbiddenForUsersWithCompanyButNoMembership() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(get("/v1/balance").principal(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(service);
     }

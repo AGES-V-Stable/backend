@@ -8,12 +8,15 @@ import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.ExportTransactionEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.TransferDetailsException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
+import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -287,6 +290,29 @@ class TransferDetailsServiceTest {
         assertThatThrownBy(() -> service.getDetails(transferId, user))
                 .isInstanceOfSatisfying(TransferDetailsException.class,
                         ex -> assertThat(ex.getCode()).isEqualTo("TRANSFER_NOT_FOUND"));
+    }
+
+    @Test
+    void getDetails_usesTheCompanyOfTheMembershipInsteadOfTheAccount() {
+        UUID membershipCompany = UUID.randomUUID();
+        TestCompanyUsers.withMembership(user, membershipCompany, CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+        verifiedUser();
+        ImportTransactionEntity accountCompanyTransfer = payment(TransactionStatus.SETTLED);
+        when(transactionRepository.findById(transferId)).thenReturn(Optional.of(accountCompanyTransfer));
+
+        assertThatThrownBy(() -> service.getDetails(transferId, user))
+                .isInstanceOfSatisfying(TransferDetailsException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("TRANSFER_NOT_FOUND"));
+    }
+
+    @Test
+    void getDetails_removedMembership_isRefusedBeforeAnyLookup() {
+        UserEntity removed = TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR);
+
+        assertThatThrownBy(() -> service.getDetails(transferId, removed))
+                .isInstanceOfSatisfying(TransferDetailsException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo("COMPANY_ACCESS_REQUIRED"));
+        verifyNoInteractions(transactionRepository, kycRepository);
     }
 
     @Test

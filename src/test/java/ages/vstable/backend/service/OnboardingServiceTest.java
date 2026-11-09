@@ -6,7 +6,9 @@ import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -15,11 +17,13 @@ import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -33,6 +37,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,6 +68,9 @@ class OnboardingServiceTest {
     @Mock
     private JwtTokenUtils jwtTokenUtils;
 
+    @Mock
+    private CompanyMembershipService companyMembershipService;
+
     private OnboardingService onboardingService;
 
     @BeforeEach
@@ -68,7 +79,8 @@ class OnboardingServiceTest {
                 companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
         onboardingService = new OnboardingService(
                 userRepository, administratorRepository, companyRepository, aveniaKycVerificationRepository,
-                new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService());
+                new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
+                companyMembershipService);
     }
 
     @Test
@@ -118,6 +130,33 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void performOnboarding_assignsCreatedUserAsOwnerOfCreatedCompany() {
+        UUID companyId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        stubCompanyAndUserPersistence(companyId, userId);
+
+        onboardingService.performOnboarding(validRequest());
+
+        InOrder order = inOrder(userRepository, companyMembershipService, aveniaKycVerificationRepository);
+        order.verify(userRepository).saveAndFlush(any());
+        order.verify(companyMembershipService).assignOwner(eq(userId), eq(companyId), any());
+        order.verify(aveniaKycVerificationRepository).save(any());
+    }
+
+    @Test
+    void performOnboarding_ownerAssignmentFails_doesNotCreateKycNorIssueToken() {
+        stubCompanyAndUserPersistence(UUID.randomUUID(), UUID.randomUUID());
+        when(companyMembershipService.assignOwner(any(), any(), any()))
+                .thenThrow(new IllegalStateException("owner assignment failed"));
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(aveniaKycVerificationRepository, never()).save(any());
+        verify(jwtTokenUtils, never()).generateToken(any());
+    }
+
+    @Test
     void performOnboarding_emailAlreadyRegistered_throwsConflict() {
         when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
 
@@ -150,6 +189,34 @@ class OnboardingServiceTest {
         assertThat(result.getStatus()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(result.isDocumentSubmitted()).isTrue();
         assertThat(result.isLivenessSubmitted()).isFalse();
+    }
+
+    @Test
+    void getCurrentOnboarding_userWithActiveMembership_returnsTheCompanyOfTheMembership() {
+        UUID accountCompanyId = UUID.randomUUID();
+        UUID membershipCompanyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(accountCompanyId).build();
+        TestCompanyUsers.withMembership(user, membershipCompanyId, CompanyRole.OWNER, MembershipStatus.ACTIVE);
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()))
+                .thenReturn(Optional.of(AveniaKycVerificationEntity.builder()
+                        .id(UUID.randomUUID()).userId(user.getId()).status(ComplianceStatus.PENDING).build()));
+
+        OnboardingStatusResponse result = onboardingService.getCurrentOnboarding(user);
+
+        assertThat(result.getCompanyId()).isEqualTo(membershipCompanyId);
+    }
+
+    @Test
+    void getCurrentOnboarding_userWithRemovedMembership_returnsNoCompany() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+        TestCompanyUsers.withMembership(user, user.getCompanyId(), CompanyRole.OPERATOR, MembershipStatus.REMOVED);
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()))
+                .thenReturn(Optional.of(AveniaKycVerificationEntity.builder()
+                        .id(UUID.randomUUID()).userId(user.getId()).status(ComplianceStatus.PENDING).build()));
+
+        OnboardingStatusResponse result = onboardingService.getCurrentOnboarding(user);
+
+        assertThat(result.getCompanyId()).isNull();
     }
 
     @Test
@@ -218,6 +285,22 @@ class OnboardingServiceTest {
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    private void stubCompanyAndUserPersistence(UUID companyId, UUID userId) {
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            CompanyEntity company = invocation.getArgument(0);
+            company.setId(companyId);
+            return company;
+        });
+        when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            UserEntity user = invocation.getArgument(0);
+            user.setId(userId);
+            return user;
+        });
+        when(aveniaKycVerificationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(passwordEncoder.encode("Senha@123")).thenReturn("hash-bcrypt");
+        when(jwtTokenUtils.generateToken(any())).thenReturn("jwt-token-123");
     }
 
     private OnboardingRequestDTO validRequest() {

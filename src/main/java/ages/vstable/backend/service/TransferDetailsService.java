@@ -88,14 +88,15 @@ public class TransferDetailsService {
      * uma inexistente.
      */
     private BaseTransactionEntity findOwned(UUID transferId, UserEntity user) {
-        if (user == null || user.getCompanyId() == null) {
+        UUID companyId = user == null ? null : CompanyMembershipService.currentCompanyId(user);
+        if (companyId == null) {
             throw TransferDetailsException.companyAccessRequired();
         }
         if (!isVerified(user)) {
             throw TransferDetailsException.userNotVerified();
         }
         return transactionRepository.findById(transferId)
-                .filter(transaction -> user.getCompanyId().equals(transaction.getCompanyId()))
+                .filter(transaction -> companyId.equals(transaction.getCompanyId()))
                 .orElseThrow(TransferDetailsException::transferNotFound);
     }
 

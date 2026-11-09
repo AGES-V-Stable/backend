@@ -120,6 +120,8 @@ nesse momento interrompe a inicialização com uma mensagem de configuração.
 
 Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, preservando os status HTTP existentes. Códigos: `INVALID_ARGUMENT`, `VALIDATION_ERROR`, `MALFORMED_PAYLOAD`, `MISSING_HEADER`, `INVALID_PARAMETER`, `CONFLICT`, `FORBIDDEN`, `NOT_FOUND`, `UNPROCESSABLE_ENTITY`, `PROVIDER_ERROR`, `ACCESS_DENIED` e `INTERNAL_ERROR`. Login inválido retorna 401 com `INVALID_CREDENTIALS`; conta bloqueada retorna 423 com `ACCOUNT_LOCKED`. Contratos especializados de detalhes/comprovantes e códigos da camada de segurança são preservados. Clientes antigos podem continuar consumindo somente `message`.
 
+Acesso à empresa usa códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário).
+
 ## 4. Testes e análise de mutação (PITest)
 
 Suíte padrão (unitários, slices web e migrações quando Docker está disponível):

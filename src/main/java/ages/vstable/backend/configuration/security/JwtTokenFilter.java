@@ -3,6 +3,8 @@ package ages.vstable.backend.configuration.security;
 import ages.vstable.backend.logging.OperationalLog;
 
 
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -38,14 +40,17 @@ public class JwtTokenFilter extends OncePerRequestFilter {
     private final SecurityContextRepository securityContextRepository;
     private final JwtTokenUtils jwtTokenUtils;
     private final UserService userService;
+    private final CompanyMembershipService companyMembershipService;
 
     public JwtTokenFilter(
             SecurityContextRepository securityContextRepository,
             JwtTokenUtils jwtTokenUtils,
-            @Lazy UserService userService) {
+            @Lazy UserService userService,
+            @Lazy CompanyMembershipService companyMembershipService) {
         this.securityContextRepository = securityContextRepository;
         this.jwtTokenUtils = jwtTokenUtils;
         this.userService = userService;
+        this.companyMembershipService = companyMembershipService;
     }
 
     @Override
@@ -71,6 +76,7 @@ public class JwtTokenFilter extends OncePerRequestFilter {
             UserDetails principal = userService.loadPrincipal(email, jwtTokenUtils.getAccountTypeFromToken(token));
 
             if (principal.isEnabled() && jwtTokenUtils.validateToken(token, principal)) {
+                attachMembership(principal);
                 authenticate(principal, email, httpServletRequest, httpServletResponse);
             } else {
                 rejectToken(httpServletRequest, TOKEN_INVALID);
@@ -83,6 +89,14 @@ public class JwtTokenFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(httpServletRequest, httpServletResponse);
+    }
+
+    // Like the authorities, the company membership comes from the stored account on every request, so a
+    // role change or a removal applies to tokens issued earlier.
+    private void attachMembership(UserDetails principal) {
+        if (principal instanceof UserEntity user) {
+            user.setMembership(companyMembershipService.findCurrentMembership(user.getId()).orElse(null));
+        }
     }
 
     private void authenticate(UserDetails principal,

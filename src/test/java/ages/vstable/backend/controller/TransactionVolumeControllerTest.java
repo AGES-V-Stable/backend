@@ -3,9 +3,11 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.transaction.TransactionVolumeResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.exception.GlobalExceptionHandler;
 import ages.vstable.backend.exception.InvalidDateRangeException;
 import ages.vstable.backend.service.TransactionVolumeService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,7 +55,7 @@ class TransactionVolumeControllerTest {
     }
 
     private UserEntity companyUser(UUID userCompanyId) {
-        return UserEntity.builder().id(UUID.randomUUID()).companyId(userCompanyId).build();
+        return TestCompanyUsers.member(userCompanyId, CompanyRole.OWNER);
     }
 
     @Test
@@ -119,16 +121,49 @@ class TransactionVolumeControllerTest {
     void getTransactionVolume_isForbiddenForAdministrators() throws Exception {
         mockMvc.perform(get("/v1/dashboard/transaction-volume").principal(authenticated(new AdministratorEntity())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(service);
     }
 
     @Test
     void getTransactionVolume_isForbiddenForUsersWithoutCompany() throws Exception {
-        mockMvc.perform(get("/v1/dashboard/transaction-volume").principal(authenticated(companyUser(null))))
+        UserEntity withoutCompany = UserEntity.builder().id(UUID.randomUUID()).build();
+
+        mockMvc.perform(get("/v1/dashboard/transaction-volume").principal(authenticated(withoutCompany)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void getTransactionVolume_isAllowedForViewers() throws Exception {
+        when(service.getSettledVolume(companyId, null, null)).thenReturn(new TransactionVolumeResponse("412000.00"));
+
+        mockMvc.perform(get("/v1/dashboard/transaction-volume")
+                        .principal(authenticated(TestCompanyUsers.member(companyId, CompanyRole.VIEWER))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactedVolumeBrl").value("412000.00"));
+    }
+
+    @Test
+    void getTransactionVolume_isForbiddenWhenTheMembershipWasRemoved() throws Exception {
+        mockMvc.perform(get("/v1/dashboard/transaction-volume")
+                        .principal(authenticated(TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void getTransactionVolume_isForbiddenForUsersWithCompanyButNoMembership() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(get("/v1/dashboard/transaction-volume").principal(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(service);
     }

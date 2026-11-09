@@ -1,5 +1,6 @@
 package ages.vstable.backend.service.quote;
 
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.logging.OperationalLog;
 
 import ages.vstable.backend.dto.quote.*;
@@ -52,10 +53,14 @@ public class QuoteOrchestratorService {
 
     public QuoteResponse quote(UserEntity currentUser, QuoteRequest request) {
         long startedAt = System.nanoTime();
-        CompanyEntity company = companyRepository.findById(currentUser.getCompanyId())
+        UUID companyId = CompanyMembershipService.currentCompanyId(currentUser);
+        if (companyId == null) {
+            throw new NotFoundException("Company not found");
+        }
+        CompanyEntity company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new NotFoundException("Company not found"));
         BeneficiaryEntity beneficiary = beneficiaryRepository
-                .findByIdAndCompanyId(request.beneficiaryId(), currentUser.getCompanyId())
+                .findByIdAndCompanyId(request.beneficiaryId(), companyId)
                 .orElseThrow(() -> new NotFoundException("Beneficiary not found"));
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);

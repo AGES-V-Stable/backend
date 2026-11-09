@@ -1,8 +1,10 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.quote.QuoteRequest;
 import ages.vstable.backend.dto.quote.QuoteResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyPermission;
 import ages.vstable.backend.service.quote.QuoteOrchestratorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class QuoteController {
     public ResponseEntity<QuoteResponse> quote(
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody QuoteRequest request) {
+        CompanyAccess.requireCompanyId(currentUser, CompanyPermission.TRANSFER_CREATE);
         return ResponseEntity.ok(quoteOrchestratorService.quote(currentUser, request));
     }
 }

@@ -7,6 +7,7 @@ import ages.vstable.backend.dto.dashboard.DashboardSettlementResponse;
 import ages.vstable.backend.dto.dashboard.DashboardSummaryResponse;
 import ages.vstable.backend.dto.transaction.TransactionVolumeResponse;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferDirection;
 import ages.vstable.backend.exception.NotFoundException;
@@ -14,6 +15,7 @@ import ages.vstable.backend.service.TransactionVolumeService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.dashboard.DashboardPeriod;
 import ages.vstable.backend.service.dashboard.DashboardService;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,7 +91,14 @@ class DashboardControllerSecurityTest {
     }
 
     private static RequestPostProcessor companyUser(UUID userCompanyId) {
-        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(userCompanyId).build();
+        return companyUser(userCompanyId, CompanyRole.OWNER);
+    }
+
+    private static RequestPostProcessor companyUser(UUID userCompanyId, CompanyRole role) {
+        return authenticated(TestCompanyUsers.member(userCompanyId, role));
+    }
+
+    private static RequestPostProcessor authenticated(UserEntity user) {
         return authentication(new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
     }
 
@@ -179,9 +188,47 @@ class DashboardControllerSecurityTest {
 
     @Test
     void companyUser_withoutCompany_returns403WithoutReadingMetrics() throws Exception {
-        mockMvc.perform(get("/v1/dashboard/summary").with(companyUser(null)))
+        UserEntity withoutCompany = UserEntity.builder().id(UUID.randomUUID()).build();
+
+        mockMvc.perform(get("/v1/dashboard/summary").with(authenticated(withoutCompany)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(dashboardService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/v1/dashboard/summary", "/v1/dashboard/remittance-volume", "/v1/dashboard/savings-history",
+            "/v1/dashboard/settlements"})
+    void companyRoutes_viewer_isAllowed(String path) throws Exception {
+        mockMvc.perform(get(path).with(companyUser(companyId, CompanyRole.VIEWER)))
+                .andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/v1/dashboard/summary", "/v1/dashboard/remittance-volume", "/v1/dashboard/savings-history",
+            "/v1/dashboard/settlements"})
+    void companyRoutes_removedMember_returns403AccessRevokedWithoutReadingMetrics(String path) throws Exception {
+        mockMvc.perform(get(path).with(authenticated(TestCompanyUsers.removedMember(companyId, CompanyRole.OWNER))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        verifyNoInteractions(dashboardService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/v1/dashboard/summary", "/v1/dashboard/remittance-volume", "/v1/dashboard/savings-history",
+            "/v1/dashboard/settlements"})
+    void companyRoutes_userWithCompanyButNoMembership_returns403AccessDeniedWithoutReadingMetrics(String path)
+            throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+
+        mockMvc.perform(get(path).with(authenticated(withoutMembership)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(dashboardService);
     }
@@ -197,7 +244,9 @@ class DashboardControllerSecurityTest {
     @Test
     @WithMockUser(username = "admin@teste.com", roles = {"ADMIN"})
     void administrator_onCompanyRoute_returns403() throws Exception {
-        mockMvc.perform(get("/v1/dashboard/summary")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/v1/dashboard/summary"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
 
         verifyNoInteractions(dashboardService);
     }

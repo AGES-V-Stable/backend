@@ -39,6 +39,7 @@ public class ComplianceDocumentController {
             @PathVariable UUID kycVerificationId,
             @Valid @RequestBody DocumentUploadStartRequest request,
             Authentication authentication) {
+        CompanyAccess.rejectRevokedMembership(CompanyAccess.companyUser(authentication).orElse(null));
 
         return complianceDocumentoService.iniciar(kycVerificationId, CompanyAccess.currentUserId(authentication), request)
                 .map(ResponseEntity::ok)
@@ -57,6 +58,7 @@ public class ComplianceDocumentController {
             @PathVariable UUID kycVerificationId,
             @Valid @RequestBody DocumentSubmitRequest request,
             Authentication authentication) {
+        CompanyAccess.rejectRevokedMembership(CompanyAccess.companyUser(authentication).orElse(null));
 
         boolean atualizado = complianceDocumentoService.concluir(
                 kycVerificationId, CompanyAccess.currentUserId(authentication), request);
