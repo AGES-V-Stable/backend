@@ -95,6 +95,21 @@ public class BeneficiaryEntity {
     @Column(name = "wallet_memo", length = 100)
     private String walletMemo;
 
+    @Column(name = "is_self_custody")
+    private Boolean isSelfCustody;
+
+    @Column(name = "custodian_name", length = 100)
+    private String custodianName;
+
+    @Column(name = "counterparty_name", length = 100)
+    private String counterpartyName;
+
+    @Column(name = "counterparty_country", length = 2)
+    private String counterpartyCountry;
+
+    @Column(name = "is_same_economic_group")
+    private Boolean isSameEconomicGroup;
+
     @Column(name = "beneficiary_type", nullable = false, length = 50)
     @Builder.Default
     private String beneficiaryType = "LEGAL_ENTITY";
@@ -105,7 +120,7 @@ public class BeneficiaryEntity {
     @Column(name = "swift_bic", length = 20)
     private String swiftBic;
 
-    @Column(name = "currency", length = 3)
+    @Column(name = "currency", length = 10)
     private String currency;
 
     @Column(name = "payment_rail", nullable = false, length = 50)

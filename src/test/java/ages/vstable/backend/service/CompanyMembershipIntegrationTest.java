@@ -45,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Valida no PostgreSQL real o vínculo empresarial: o mapeamento das entidades contra a migration V9,
+ * Valida no PostgreSQL real o vínculo empresarial: o mapeamento das entidades contra a migration V11,
  * a atribuição atômica do proprietário no onboarding e o contexto de acesso devolvido por
  * {@code GET /v1/users/me} pela cadeia completa de segurança. Ignorado quando não há Docker.
  */

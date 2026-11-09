@@ -88,6 +88,29 @@ class BeneficiaryValidator {
         requireNonBlank(request.getWalletAddress(), "walletAddress");
         requireNonNull(request.getBlockchainNetwork(), "blockchainNetwork");
         requireNonBlank(request.getCurrency(), "currency");
+        requireNonNull(request.getIsSelfCustody(), "isSelfCustody");
+        validateQualificationName(request.getCounterpartyName(), "counterpartyName");
+        String country = request.getCounterpartyCountry();
+        if (country == null || !country.trim().matches("[a-zA-Z]{2}")) {
+            throw new IllegalArgumentException("counterpartyCountry deve ser um código ISO de 2 letras");
+        }
+        if (Boolean.TRUE.equals(request.getIsSelfCustody())) {
+            if (request.getCustodianName() != null) {
+                throw new IllegalArgumentException("custodianName não deve ser informado para carteira própria");
+            }
+        } else {
+            validateQualificationName(request.getCustodianName(), "custodianName");
+        }
+        if ("BR".equalsIgnoreCase(country.trim()) && request.getIsSameEconomicGroup() != null) {
+            throw new IllegalArgumentException("isSameEconomicGroup não deve ser informado para carteira no Brasil");
+        }
+    }
+
+    private void validateQualificationName(String value, String field) {
+        requireNonBlank(value, field);
+        if (value.length() > 100 || value.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException(field + " deve ter no máximo 100 caracteres e não conter controles");
+        }
     }
 
     private void requireAddress(BeneficiaryCreateRequest request) {

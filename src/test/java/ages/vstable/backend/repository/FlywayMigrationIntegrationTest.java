@@ -20,9 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V9 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V11 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
- * criados pela antiga V4 da branch BlindPay e, na V9, o backfill dos vínculos e as
+ * criados pela antiga V4 da branch BlindPay e, na V11, o backfill dos vínculos e as
  * invariantes de vínculos e convites. Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -49,15 +49,46 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void migrate_existingFiatDatabase_canPersistFourLetterTokenCurrencies() throws SQLException {
+        flyway("9").migrate();
+        execute("""
+                INSERT INTO companies (id, legal_name, cnpj)
+                    VALUES ('00000000-0000-0000-0000-000000000001', 'Sandbox Company', '1');
+                INSERT INTO beneficiaries (id, company_id, nickname, currency)
+                    VALUES ('00000000-0000-0000-0000-000000000002',
+                        '00000000-0000-0000-0000-000000000001', 'Fiat beneficiary', 'BRL');
+                """);
+
+        flyway(null).migrate();
+
+        execute("""
+                UPDATE beneficiaries SET currency = 'USDC'
+                    WHERE id = '00000000-0000-0000-0000-000000000002';
+                INSERT INTO base_transactions (company_id, foreign_currency, foreign_amount)
+                    VALUES ('00000000-0000-0000-0000-000000000001', 'USDC', 10);
+                """);
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement();
+                ResultSet rows = statement.executeQuery(
+                        "SELECT b.currency, t.foreign_currency FROM beneficiaries b JOIN base_transactions t ON t.company_id = b.company_id")) {
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getString(1)).isEqualTo("USDC");
+            assertThat(rows.getString(2)).isEqualTo("USDC");
+        }
+    }
+
+    @Test
     void migrate_emptyDatabase_appliesAllVersionsInOrder() throws SQLException {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
         assertThat(columnExists("administrators", "two_factor_secret")).isTrue();
+        assertThat(columnExists("beneficiaries", "is_self_custody")).isTrue();
+        assertThat(columnExists("beneficiaries", "counterparty_country")).isTrue();
         assertThat(tableExists("company_memberships")).isTrue();
         assertThat(tableExists("company_invitations")).isTrue();
     }
@@ -76,7 +107,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10", "11");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
@@ -117,7 +148,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void membershipBackfill_companyWithSingleUser_makesThatUserTheActiveOwner() throws SQLException {
         // Arrange
-        flyway("8").migrate();
+        flyway("10").migrate();
         insertCompany(COMPANY_A, "1");
         insertUser(USER_A1, COMPANY_A, "a1@example.com", "'2026-01-01T00:00:00Z'");
 
@@ -132,7 +163,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void membershipBackfill_companyWithSeveralUsers_promotesNobodyAndKeepsEveryoneAsOperator() throws SQLException {
         // Arrange: um dos usuários vem de uma linha antiga sem created_at.
-        flyway("8").migrate();
+        flyway("10").migrate();
         insertCompany(COMPANY_A, "1");
         insertUser(USER_A1, COMPANY_A, "a1@example.com", "'2026-01-01T00:00:00Z'");
         insertUser(USER_A2, COMPANY_A, "a2@example.com", "'2026-02-01T00:00:00Z'");
@@ -150,7 +181,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void membershipBackfill_severalCompanies_decidesTheOwnerOfEachOneIndependently() throws SQLException {
         // Arrange: A tem um usuário, B tem dois e C não tem nenhum.
-        flyway("8").migrate();
+        flyway("10").migrate();
         insertCompany(COMPANY_A, "1");
         insertCompany(COMPANY_B, "2");
         insertCompany(COMPANY_C, "3");
@@ -173,7 +204,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     void membershipBackfill_leavesCredentialsTwoFactorAndCompanyOfTheUsersUntouched() throws SQLException {
         // Arrange
-        flyway("8").migrate();
+        flyway("10").migrate();
         insertCompany(COMPANY_A, "1");
         execute("INSERT INTO users (id, company_id, full_name, email, password_hash, password_salt, "
                 + "two_factor_secret, two_factor_enabled) VALUES ('" + USER_A1 + "', '" + COMPANY_A

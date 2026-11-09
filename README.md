@@ -122,6 +122,24 @@ Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, pr
 
 Acesso à empresa usa códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário).
 
+## 4. Testes e análise de mutação (PITest)
+
+Suíte padrão (unitários, slices web e migrações quando Docker está disponível):
+
+```bash
+./gradlew test
+```
+
+Análise de mutação com PITest (tarefa dedicada e independente de `test`, `check`, `build` e `bootJar`):
+
+```bash
+./gradlew pitest
+```
+
+* **Relatórios:** gerados em caminho fixo em `build/reports/pitest/index.html` e `build/reports/pitest/mutations.xml` (`timestampedReports = false`). Como o Gradle faz cache incremental das entradas e saídas da tarefa, use `./gradlew pitest --rerun-tasks` se quiser forçar nova execução sem mudanças no código.
+* **Isolamento:** exclui a tag `blindpay-sandbox`, testes de integração de banco/Testcontainers (`*IntegrationTest` de persistência/serviço) e testes puros de infraestrutura/wiring (`*ContextTest`, `LoggingFormatTest`). Em runtime, as JVMs do PIT recebem `-Dspring.profiles.active=test`, segredo JWT exclusivamente de teste, endpoints loopback inválidos (`http://127.0.0.1:0`) para Avenia e BlindPay, `APP_CONFIG_SECRET_ARN` vazio e conciliação desabilitada; adicionalmente, `LambdaSecretsEnvironmentPostProcessor` fica fora do alvo de mutação e `avoidCallsTo` suprime mutações em linhas de chamada ao AWS SDK e loggers (não sendo um bloqueador de rede em runtime).
+* **Linha de base e leitura do relatório:** não há `mutationThreshold` mínimo configurado nesta etapa inicial, e `repository.specification.*` permanece fora do escopo até haver testes unitários/isolados dedicados para essas Specifications. No `mutations.xml`, o atributo `partial="true"` reflete o modo padrão de cobertura parcial (`shouldReportCoverage`) do `XMLReportListener`, e status `TIMED_OUT` indica mutante detectado por loop/tempo excedido (a revisar na curadoria da baseline). No CI (`pr-to-trunk.yml` e `push-on-trunk.yml`), o PIT roda em step explícito após o build/testes e publica `pitest-report` como artefato.
+
 ## Operational logging
 
 The backend writes logs to stdout. Local runs use readable text, including structured

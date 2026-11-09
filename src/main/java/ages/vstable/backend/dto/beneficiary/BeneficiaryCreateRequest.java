@@ -66,6 +66,13 @@ public class BeneficiaryCreateRequest {
     private BlockchainNetwork blockchainNetwork;
     private String walletMemo;
 
+    private Boolean isSelfCustody;
+    private String custodianName;
+    private String counterpartyName;
+    private String counterpartyCountry;
+    private Boolean isSameEconomicGroup;
+
+
     @AssertTrue(message = "Confirmação de revisão dos dados é obrigatória")
     private boolean confirmed;
 }

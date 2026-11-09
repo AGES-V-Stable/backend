@@ -10,6 +10,11 @@ public record AveniaWalletBeneficiaryRequest(
         String walletAddress,
         String walletChain,
         String walletMemo,
+        Boolean isSelfCustody,
+        String custodianName,
+        String counterpartyName,
+        String counterpartyCountry,
+        Boolean isSameEconomicGroup,
         @JsonIgnore String subAccountId
 ) {
 }

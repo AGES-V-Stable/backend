@@ -42,7 +42,7 @@ public class BaseTransactionEntity {
     @Column(name = "status", columnDefinition = "transaction_status_enum")
     private TransactionStatus status;
 
-    @Column(name = "foreign_currency", nullable = false, length = 3)
+    @Column(name = "foreign_currency", nullable = false, length = 10)
     private String foreignCurrency;
 
     @Column(name = "foreign_amount", nullable = false, precision = 15, scale = 2)
