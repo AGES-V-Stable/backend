@@ -235,4 +235,15 @@ class CompanyAccessTest {
         assertForbiddenWith(() -> CompanyAccess.requireOwner(
                 TestCompanyUsers.member(companyId, CompanyRole.OWNER), null), "COMPANY_ACCESS_DENIED");
     }
+
+    @Test
+    void rejectRevokedMembership_onlyRefusesARemovedMembership() {
+        assertForbiddenWith(() -> CompanyAccess.rejectRevokedMembership(
+                TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR)), "COMPANY_ACCESS_REVOKED");
+        assertThatCode(() -> CompanyAccess.rejectRevokedMembership(
+                TestCompanyUsers.member(companyId, CompanyRole.VIEWER))).doesNotThrowAnyException();
+        assertThatCode(() -> CompanyAccess.rejectRevokedMembership(userWithoutMembership()))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CompanyAccess.rejectRevokedMembership(null)).doesNotThrowAnyException();
+    }
 }

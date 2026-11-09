@@ -1,5 +1,6 @@
 package ages.vstable.backend.service.blindpay;
 
+import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.dto.blindpay.BlindPayComplianceStatusResponse;
 import ages.vstable.backend.dto.blindpay.BlindPayDocumentType;
 import ages.vstable.backend.dto.blindpay.BlindPayDocumentUploadResponse;
@@ -633,10 +634,11 @@ public class BlindPayComplianceService {
     }
 
     private CompanyEntity company(UserEntity currentUser) {
-        if (currentUser == null || currentUser.getCompanyId() == null) {
+        UUID companyId = currentUser == null ? null : CompanyMembershipService.currentCompanyId(currentUser);
+        if (companyId == null) {
             throw new NotFoundException("Company not found");
         }
-        return companyRepository.findById(currentUser.getCompanyId())
+        return companyRepository.findById(companyId)
                 .orElseThrow(() -> new NotFoundException("Company not found"));
     }
 

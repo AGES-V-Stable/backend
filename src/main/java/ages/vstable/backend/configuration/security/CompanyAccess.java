@@ -81,10 +81,25 @@ public final class CompanyAccess {
         requireOwnerRole(activeMembership(user, companyId));
     }
 
+    /**
+     * Personal onboarding actions (KYC) do not depend on a company permission, but a user whose
+     * membership was removed must not keep using them. Users that never had a membership pass.
+     */
+    public static void rejectRevokedMembership(UserEntity user) {
+        CompanyMembershipEntity membership = user == null ? null : user.getMembership();
+        if (membership != null && membership.getStatus() != MembershipStatus.ACTIVE) {
+            throw revoked();
+        }
+    }
+
     private static void requireOwnerRole(CompanyMembershipEntity membership) {
         if (membership.getRole() != CompanyRole.OWNER) {
             throw new ForbiddenException("OWNER_REQUIRED", "Apenas o proprietário da empresa pode realizar esta ação.");
         }
+    }
+
+    private static ForbiddenException revoked() {
+        return new ForbiddenException("COMPANY_ACCESS_REVOKED", "Seu acesso a esta empresa foi removido.");
     }
 
     private static ForbiddenException denied() {
@@ -107,7 +122,7 @@ public final class CompanyAccess {
             throw denied();
         }
         if (membership.getStatus() != MembershipStatus.ACTIVE) {
-            throw new ForbiddenException("COMPANY_ACCESS_REVOKED", "Seu acesso a esta empresa foi removido.");
+            throw revoked();
         }
         return membership;
     }

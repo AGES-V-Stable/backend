@@ -2,6 +2,7 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.dto.compliance.KycSubmitResponse;
+import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.ComplianceKycService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,6 +41,7 @@ public class ComplianceKycController {
             @AuthenticationPrincipal UserEntity currentUser,
             @Valid @RequestBody KycSubmitRequest request) {
 
+        CompanyAccess.rejectRevokedMembership(currentUser);
         UUID currentUserId = currentUser == null ? null : currentUser.getId();
 
         return complianceKycService.finalizar(kycVerificationId, currentUserId, request)
