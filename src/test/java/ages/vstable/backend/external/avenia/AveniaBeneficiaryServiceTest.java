@@ -75,6 +75,10 @@ class AveniaBeneficiaryServiceTest {
         when(gateway.createWalletBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(externalId));
         BeneficiaryEntity beneficiary = baseBeneficiary()
                 .receivingMethod(ReceivingMethod.CRYPTO_WALLET)
+                .isSelfCustody(false)
+                .custodianName("Test Exchange")
+                .counterpartyName("Test Recipient")
+                .counterpartyCountry("BR")
                 .walletAddress("0xabc")
                 .blockchainNetwork(BlockchainNetwork.polygon)
                 .currency("USDC")
@@ -87,6 +91,11 @@ class AveniaBeneficiaryServiceTest {
         verify(gateway).createWalletBeneficiary(captor.capture());
         assertThat(captor.getValue().walletAddress()).isEqualTo("0xabc");
         assertThat(captor.getValue().walletChain()).isEqualTo("POLYGON");
+        assertThat(captor.getValue().isSelfCustody()).isFalse();
+        assertThat(captor.getValue().custodianName()).isEqualTo("Test Exchange");
+        assertThat(captor.getValue().counterpartyName()).isEqualTo("Test Recipient");
+        assertThat(captor.getValue().counterpartyCountry()).isEqualTo("BR");
+        assertThat(captor.getValue().isSameEconomicGroup()).isNull();
         assertThat(registration.walletId()).isEqualTo(externalId);
     }
 

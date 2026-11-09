@@ -94,7 +94,8 @@ public class AveniaBeneficiaryService {
         return new AveniaWalletBeneficiaryRequest(
                 beneficiary.getNickname(), beneficiary.getInternalDescription(), beneficiary.getWalletAddress(),
                 beneficiary.getBlockchainNetwork().name().toUpperCase(Locale.ROOT), beneficiary.getWalletMemo(),
-                subAccountId);
+                beneficiary.getIsSelfCustody(), beneficiary.getCustodianName(), beneficiary.getCounterpartyName(),
+                beneficiary.getCounterpartyCountry(), beneficiary.getIsSameEconomicGroup(), subAccountId);
     }
 
     private AveniaBeneficiaryRegistration bankAccount(AveniaBeneficiaryResponse response) {

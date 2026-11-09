@@ -13,6 +13,65 @@ class BeneficiaryValidatorTest {
     private final BeneficiaryValidator validator = new BeneficiaryValidator();
 
     @Test
+    void walletQualification_acceptsExchangeCustody() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(false);
+        request.setCustodianName("Test Exchange");
+
+        assertThatCode(() -> validator.validate(request)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void walletQualification_rejectsMissingCustodyChoice() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(null);
+
+        assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("isSelfCustody");
+    }
+
+    @Test
+    void walletQualification_rejectsExchangeWithoutCustodian() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(false);
+
+        assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("custodianName");
+    }
+
+    @Test
+    void walletQualification_rejectsCustodianOnSelfCustody() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setCustodianName("Test Exchange");
+
+        assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("custodianName");
+    }
+
+    @Test
+    void walletQualification_rejectsMissingOrInvalidCountry() {
+        BeneficiaryCreateRequest request = walletRequest();
+        for (String country : new String[]{null, "", "BRA", "12"}) {
+            request.setCounterpartyCountry(country);
+            assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("counterpartyCountry");
+        }
+    }
+
+    @Test
+    void walletQualification_rejectsMissingLongOrControlCharacterNames() {
+        BeneficiaryCreateRequest request = walletRequest();
+        for (String name : new String[]{null, " ", "X".repeat(101), "Test\nRecipient"}) {
+            request.setCounterpartyName(name);
+            assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("counterpartyName");
+        }
+    }
+
+    @Test
+    void walletQualification_rejectsEconomicGroupForDomesticWallet() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSameEconomicGroup(false);
+
+        assertThatThrownBy(() -> validator.validate(request)).hasMessageContaining("isSameEconomicGroup");
+    }
+
+    @Test
     void shouldAcceptValidBankAccountRequest() {
         BeneficiaryCreateRequest request = bankAccountRequest();
 
@@ -79,6 +138,9 @@ class BeneficiaryValidatorTest {
     @Test
     void shouldRejectWalletMissingWalletAddress() {
         BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(true);
+        request.setCounterpartyName("Test Recipient");
+        request.setCounterpartyCountry("BR");
         request.setWalletAddress(null);
 
         assertThatThrownBy(() -> validator.validate(request))
@@ -273,6 +335,9 @@ class BeneficiaryValidatorTest {
         BeneficiaryCreateRequest request = new BeneficiaryCreateRequest();
         request.setReceivingMethod(ReceivingMethod.CRYPTO_WALLET);
         request.setNickname("Carteira Principal");
+        request.setIsSelfCustody(true);
+        request.setCounterpartyName("Test Recipient");
+        request.setCounterpartyCountry("BR");
         request.setWalletAddress("0xABCDEF1234567890");
         request.setBlockchainNetwork(BlockchainNetwork.ethereum);
         request.setCurrency("USDC");

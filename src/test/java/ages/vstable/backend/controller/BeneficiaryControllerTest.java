@@ -99,6 +99,10 @@ class BeneficiaryControllerTest {
     @Test
     void create_validWalletRequest_returns201() throws Exception {
         BeneficiaryCreateRequest request = validWalletRequest();
+        request.setIsSelfCustody(false);
+        request.setCustodianName("Test Exchange");
+        request.setCounterpartyName("Test Recipient");
+        request.setCounterpartyCountry("BR");
         BeneficiaryResponse response = sampleResponse();
 
         when(beneficiaryService.create(eq(companyId), any(), any())).thenReturn(response);
@@ -111,6 +115,12 @@ class BeneficiaryControllerTest {
                 .andExpect(jsonPath("$.aveniaId").doesNotExist())
                 .andExpect(jsonPath("$.aveniaWalletId").doesNotExist())
                 .andExpect(jsonPath("$.aveniaSubAccountId").doesNotExist());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(BeneficiaryCreateRequest.class);
+        org.mockito.Mockito.verify(beneficiaryService).create(eq(companyId), any(), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getIsSelfCustody()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getCustodianName()).isEqualTo("Test Exchange");
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getCounterpartyCountry()).isEqualTo("BR");
     }
 
     @Test
