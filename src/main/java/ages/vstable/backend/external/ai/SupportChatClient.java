@@ -155,7 +155,7 @@ public class SupportChatClient implements SupportChatGateway {
         for (String model : candidateModels) {
             try {
                 String cleanModel = model.startsWith("models/") ? model.substring(7) : model;
-                URI uri = URI.create(baseUrl + "/v1beta/models/" + cleanModel + ":generateContent?key=" + apiKey);
+                URI uri = URI.create(baseUrl + "/v1beta/models/" + cleanModel + ":generateContent");
                 log.info("Tentando chamada ao modelo: {}", cleanModel);
                 byte[] responseBytes = restClient.post()
                         .uri(uri)
