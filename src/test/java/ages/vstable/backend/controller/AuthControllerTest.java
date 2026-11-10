@@ -70,6 +70,8 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Bearer jwt-token", response.getHeaders().getFirst(HttpHeaders.AUTHORIZATION));
+        assertNotNull(response.getBody());
+        assertEquals("jwt-token", response.getBody().getToken());
         verify(jwtTokenUtil).generateToken(user);
     }
 
