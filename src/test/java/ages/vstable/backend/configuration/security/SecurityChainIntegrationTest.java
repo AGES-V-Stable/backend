@@ -352,7 +352,10 @@ class SecurityChainIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"maria@empresa.com\",\"password\":\"Senha@123\"}"))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.AUTHORIZATION, org.hamcrest.Matchers.startsWith("Bearer ")));
+                .andExpect(header().string(HttpHeaders.AUTHORIZATION, org.hamcrest.Matchers.startsWith("Bearer ")))
+                .andExpect(jsonPath("$.token").isString())
+                // A resposta carrega o JWT: proxies e o navegador não podem guardá-la em cache.
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, org.hamcrest.Matchers.containsString("no-store")));
     }
 
     @Test

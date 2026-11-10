@@ -63,7 +63,8 @@ public class AuthController {
       return ResponseEntity
           .ok()
           .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-          .build();
+          // Token também no corpo: proxies (API Gateway/Lambda) podem não repassar Authorization ao navegador.
+          .body(LoginResponseDTO.builder().token(token).build());
     } catch (LockedException | DisabledException le) {
       OperationalLog.authentication("account_unavailable");
       return ResponseEntity.status(HttpStatus.LOCKED)
