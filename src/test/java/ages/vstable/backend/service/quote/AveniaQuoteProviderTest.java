@@ -92,6 +92,8 @@ class AveniaQuoteProviderTest {
         assertThat(result.provider()).isEqualTo(IntegrationProvider.AVENIA);
         assertThat(result.sourceAmount()).isEqualByComparingTo("1000.00");
         assertThat(result.targetAmount()).isEqualByComparingTo("180.50");
+        // Destino por unidade de origem (180,50 / 1000,00), como na BlindPay; não o basePrice de 5,50.
+        assertThat(result.exchangeRate()).isEqualByComparingTo("0.1805");
         assertThat(result.totalFee()).isEqualByComparingTo("5.00");
         // O quoteToken da Avenia vale 15 s; a oferta precisa ficar confirmável por mais tempo,
         // pois a execução recota e recusa preço pior.

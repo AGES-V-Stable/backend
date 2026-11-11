@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -57,12 +58,14 @@ public class AveniaQuoteProvider implements QuoteProvider {
         TransferQuoteResponse response = transferService.quote(
                 toTransferQuoteRequest(context), context.requestedBy(), context.company().getId());
 
+        // Mesmo sentido da BlindPay: destino por unidade de origem, já com as taxas. O basePrice
+        // da Avenia é o inverso (origem por unidade de destino) e não inclui taxas.
         return new ProviderQuoteResult(
                 provider(),
                 null,
                 response.source().amount(),
                 response.destination().amount(),
-                response.exchangeRate().rate(),
+                response.destination().amount().divide(response.source().amount(), 10, RoundingMode.HALF_UP),
                 response.fee().amount(),
                 response.fee().amount(),
                 OffsetDateTime.now(ZoneOffset.UTC).plus(confirmationWindow),
