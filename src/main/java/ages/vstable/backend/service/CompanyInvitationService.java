@@ -242,13 +242,9 @@ public class CompanyInvitationService {
 
     /** O pedido perdeu a corrida para outro do mesmo e-mail: devolve o conflito com o convite que ganhou. */
     private RuntimeException conflictAfterRace(UUID companyId, String email, DataIntegrityViolationException ex) {
-        CompanyInvitationEntity winner = transactions.execute(status -> invitationRepository
-                .findFirstByCompanyIdAndStatusAndEmailIgnoreCase(companyId, InvitationStatus.PENDING, email)
-                .orElse(null));
-        if (winner == null) {
-            return ex;
-        }
-        return alreadyInvited(winner);
+        Optional<CompanyInvitationEntity> winner = transactions.execute(status -> invitationRepository
+                .findFirstByCompanyIdAndStatusAndEmailIgnoreCase(companyId, InvitationStatus.PENDING, email));
+        return winner.<RuntimeException>map(CompanyInvitationService::alreadyInvited).orElse(ex);
     }
 
     private static ConflictException alreadyInvited(CompanyInvitationEntity existing) {
