@@ -15,8 +15,17 @@
    - **Avenia**: recota na subconta do usuário; se o preço piorou, responde 409 e não cria ticket. O
      `quoteToken` da Avenia vale 15 s, por isso a oferta exibida tem uma janela própria de confirmação
      (`QUOTE_AVENIA_CONFIRMATION_WINDOW`, padrão 60 s); a cotação nova da execução protege o preço.
-   - **BlindPay, origem BRL**: cria o payin e devolve `fundingInstructions` (código PIX) com status
-     `AWAITING_FUNDS`. O payout só é enviado depois que a BlindPay confirma o payin (`completed`).
+     Ticket `UNPAID` fica em `AWAITING_FUNDS` com o `brCode` da Avenia em `fundingInstructions`.
+     **Limitação:** execuções da Avenia não são conciliadas; depois do pagamento o status não avança
+     sozinho.
+   - **BlindPay, origem BRL**: cria o payin e fica em `AWAITING_FUNDS`. O payout só é enviado depois que a
+     BlindPay confirma o payin (`completed`).
+   - As instruções de pagamento seguem `fundingMethod` e só aparecem em `AWAITING_FUNDS`:
+     - `PIX`: `fundingInstructions` com o código copia e cola (`pix_code` da BlindPay ou `brCode` da Avenia).
+     - `TED`: `fundingBankTransfer` com `memoCode` e os dados de `blindpay_bank_details` documentados pela
+       BlindPay (`routing_number`, `account_number`, `account_type`, `beneficiary`, `receiving_bank`).
+       Campos ausentes ficam nulos. TED exige o recurso `ted_payin` na instância BlindPay; sem ele a
+       BlindPay recusa o payin e a execução termina em `FAILED`.
    - **BlindPay, origem em token**: envia o payout direto do saldo da carteira gerenciada da empresa.
 3. `GET /v1/transfer-executions/{executionId}`: acompanha o estado.
 4. `POST /v1/transfer-executions/{executionId}/requote/confirm`: obrigatório quando o status é
@@ -26,7 +35,7 @@
 | Status | Significado |
 |---|---|
 | `PENDING_SUBMISSION` | Registrada; chamada ao provedor sem resultado conhecido (a conciliação repete) |
-| `AWAITING_FUNDS` | Payin criado; aguardando o pagamento PIX |
+| `AWAITING_FUNDS` | Aguardando o pagamento (PIX ou TED) com as instruções da resposta |
 | `FUNDS_RECEIVED` | Stablecoins creditadas na carteira gerenciada |
 | `REQUOTE_REQUIRED` | Preço do payout piorou; precisa de nova confirmação |
 | `PAYOUT_SUBMITTING` / `PAYOUT_PROCESSING` | Payout em envio / aceito pela BlindPay |
@@ -47,6 +56,17 @@
 - Payout sem resposta e depois recusado vai para `RECONCILIATION_REQUIRED`, nunca para uma recotação
   automática, porque o primeiro pode ter sido executado. Na Avenia, falha incerta depois do pedido de ticket
   também vai para conciliação manual: a Avenia não aceita chave de idempotência.
+
+## Configuração por ambiente
+
+| Variável | Uso |
+|---|---|
+| `QUOTE_INTERMEDIATE_TOKEN` | Stablecoin intermediária da BlindPay com origem BRL (`USDB` na instância de desenvolvimento/homologação; produção: a definir pelo time) |
+| `QUOTE_INTERMEDIATE_BLOCKCHAIN_NETWORK` | Rede dessa stablecoin (uma rede de teste, ex.: `base_sepolia`, em desenvolvimento/homologação; produção: a definir pelo time) |
+
+Sem as duas variáveis, a BlindPay fica inelegível para origem BRL e só a Avenia cota (carteira cripto).
+Os valores precisam ser aceitos pelos enums da BlindPay (`BlindPayApi.VirtualAccount.Token` e
+`BlindPayApi.BlockchainWallet.Network`); valores inválidos também deixam a BlindPay fora da cotação.
 
 ## Webhooks e conciliação
 

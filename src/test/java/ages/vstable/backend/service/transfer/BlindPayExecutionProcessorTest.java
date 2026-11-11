@@ -9,6 +9,8 @@ import ages.vstable.backend.entity.TransferExecutionEntity;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.entity.enums.TransferMethod;
+import ages.vstable.backend.dto.transfer.TransferExecutionResponse;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -26,6 +28,8 @@ import ages.vstable.backend.repository.ProviderQuoteRepository;
 import ages.vstable.backend.repository.TransferExecutionRepository;
 import ages.vstable.backend.service.quote.BlindPayProvisioningService;
 import org.junit.jupiter.api.BeforeEach;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -131,8 +135,56 @@ class BlindPayExecutionProcessorTest {
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
         assertThat(execution.getExternalPayinId()).isEqualTo("pi_000000000001");
         assertThat(execution.getFundingInstructions()).isEqualTo("pix-copy-paste");
+        assertThat(execution.getFundingBankTransfer()).isNull();
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
         verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void start_tedExecution_keepsBankTransferInstructionsInsteadOfPixCode() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PENDING_SUBMISSION);
+        execution.setFundingMethod(TransferMethod.TED);
+        JsonNode bankDetails = JsonMapper.builder().build().readTree("""
+                {"routing_number":"121145349","account_number":"31254097","account_type":"Business checking",
+                 "beneficiary":{"name":"BlindPay, Inc.","address_line_1":"8 The Green","address_line_2":null},
+                 "receiving_bank":{"name":"Column NA"}}
+                """);
+        when(blindPayGateway.createEvmPayin("pq_000000000001", key(execution, "payin")))
+                .thenReturn(tedPayin("BP-MEMO-1", bankDetails));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(execution.getFundingInstructions()).isNull();
+        TransferExecutionResponse.BankTransfer transfer =
+                BankTransferInstructions.fromJson(execution.getFundingBankTransfer());
+        assertThat(transfer.memoCode()).isEqualTo("BP-MEMO-1");
+        assertThat(transfer.beneficiaryName()).isEqualTo("BlindPay, Inc.");
+        assertThat(transfer.beneficiaryAddress()).isEqualTo("8 The Green");
+        assertThat(transfer.bankName()).isEqualTo("Column NA");
+        assertThat(transfer.routingNumber()).isEqualTo("121145349");
+        assertThat(transfer.accountNumber()).isEqualTo("31254097");
+        assertThat(transfer.accountType()).isEqualTo("Business checking");
+    }
+
+    @Test
+    void start_tedExecutionWithoutInstructions_waitsForFundsWithoutInventingBankData() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PENDING_SUBMISSION);
+        execution.setFundingMethod(TransferMethod.TED);
+        when(blindPayGateway.createEvmPayin("pq_000000000001", key(execution, "payin")))
+                .thenReturn(tedPayin(null, null));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(execution.getFundingBankTransfer()).isNull();
+        assertThat(execution.getFundingInstructions()).isNull();
     }
 
     @Test
@@ -508,6 +560,12 @@ class BlindPayExecutionProcessorTest {
     private static BlindPayPayinResponse payin(String id, String status, BigDecimal receiverCents) {
         return new BlindPayPayinResponse(id, status, "re_000000000001", "pix", "pix-copy-paste", null, null,
                 null, "BRL", "USDB", new BigDecimal("100000"), receiverCents, null, null, null, null, null,
+                null, null);
+    }
+
+    private static BlindPayPayinResponse tedPayin(String memoCode, JsonNode bankDetails) {
+        return new BlindPayPayinResponse("pi_000000000002", "processing", "re_000000000001", "ted", null, memoCode,
+                null, bankDetails, "BRL", "USDB", new BigDecimal("100000"), null, null, null, null, null, null,
                 null, null);
     }
 

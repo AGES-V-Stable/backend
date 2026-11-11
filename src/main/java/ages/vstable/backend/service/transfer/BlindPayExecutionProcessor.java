@@ -7,6 +7,7 @@ import ages.vstable.backend.entity.QuoteRequestEntity;
 import ages.vstable.backend.entity.TransferExecutionEntity;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.exception.ConflictException;
@@ -244,7 +245,13 @@ public class BlindPayExecutionProcessor {
         }
         transition(executionId, Set.of(TransferExecutionStatus.PENDING_SUBMISSION), e -> {
             e.setExternalPayinId(payin.id());
-            e.setFundingInstructions(payin.pixCode());
+            // O método confirmado decide a instrução: TED paga com referência e dados bancários;
+            // PIX (e execuções antigas, sem método) com o código copia e cola.
+            if (e.getFundingMethod() == TransferMethod.TED) {
+                e.setFundingBankTransfer(BankTransferInstructions.toJson(payin.memoCode(), payin.blindpayBankDetails()));
+            } else {
+                e.setFundingInstructions(payin.pixCode());
+            }
             e.setStatus(TransferExecutionStatus.AWAITING_FUNDS);
             clearFailure(e);
         });

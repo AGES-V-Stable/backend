@@ -951,7 +951,7 @@ class TransferCreationServiceTest {
             java.util.function.Consumer<AveniaQuoteResponse> beforeTicket = call.getArgument(2);
             beforeTicket.accept(aveniaResponse());
             return new AveniaTransferResult(
-                    aveniaResponse(), new AveniaTicketResponse(ticketId, null, null, "UNPAID", null, null));
+                    aveniaResponse(), new AveniaTicketResponse(ticketId, "avenia-br-code", null, "UNPAID", null, null));
         });
         java.util.List<ages.vstable.backend.dto.transfer.TransferQuoteResponse> seen = new java.util.ArrayList<>();
 
@@ -966,6 +966,7 @@ class TransferCreationServiceTest {
         });
         assertThat(result.status()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
         assertThat(result.ticketId()).isEqualTo(ticketId);
+        assertThat(result.brCode()).isEqualTo("avenia-br-code");
         assertThat(result.transactionId()).isNotNull();
         verify(aveniaTransferService, never()).createTransfer(any(), any());
     }

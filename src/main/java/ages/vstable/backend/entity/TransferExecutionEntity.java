@@ -2,6 +2,7 @@ package ages.vstable.backend.entity;
 
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.entity.enums.TransferMethod;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -75,9 +76,18 @@ public class TransferExecutionEntity {
     @Column(name = "external_payin_id")
     private String externalPayinId;
 
-    /** Código PIX (ou instrução equivalente) devolvido pelo payin para o usuário pagar. */
+    /** Código PIX (copia e cola) que o usuário paga quando o método é PIX. */
     @Column(name = "funding_instructions", columnDefinition = "text")
     private String fundingInstructions;
+
+    /** Método de pagamento da origem; define quais instruções valem. Nulo em execuções antigas. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "funding_method", length = 20)
+    private TransferMethod fundingMethod;
+
+    /** Instruções da TED em JSON (ver TransferExecutionResponse.BankTransfer). */
+    @Column(name = "funding_bank_transfer", columnDefinition = "text")
+    private String fundingBankTransfer;
 
     @Column(name = "external_payout_quote_id")
     private String externalPayoutQuoteId;

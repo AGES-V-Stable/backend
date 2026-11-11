@@ -151,8 +151,11 @@ public class TransferService {
         return response;
     }
 
-    /** Transferência criada na Avenia a partir de uma oferta confirmada. */
-    public record ExecutedTransfer(UUID transactionId, TransactionStatus status, UUID ticketId) {
+    /**
+     * Transferência criada na Avenia a partir de uma oferta confirmada. {@code brCode} é o
+     * PIX copia e cola que o pagador usa enquanto o ticket não foi pago.
+     */
+    public record ExecutedTransfer(UUID transactionId, TransactionStatus status, UUID ticketId, String brCode) {
     }
 
     /**
@@ -177,7 +180,7 @@ public class TransferService {
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
         ImportTransactionEntity transaction = persistTransaction(beneficiary, request, result, status, currentUserId);
-        return new ExecutedTransfer(transaction.getId(), status, result.ticket().id());
+        return new ExecutedTransfer(transaction.getId(), status, result.ticket().id(), result.ticket().brCode());
     }
 
     /**

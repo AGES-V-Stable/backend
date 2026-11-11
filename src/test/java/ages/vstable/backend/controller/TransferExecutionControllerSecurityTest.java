@@ -8,6 +8,7 @@ import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.QuotePriceChangedException;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.transfer.TransferExecutionService;
@@ -101,7 +102,8 @@ class TransferExecutionControllerSecurityTest {
                 .andExpect(jsonPath("$.executionId").value(response.executionId().toString()))
                 .andExpect(jsonPath("$.provider").value("BLINDPAY"))
                 .andExpect(jsonPath("$.status").value("AWAITING_FUNDS"))
-                .andExpect(jsonPath("$.fundingInstructions").value("pix-code"));
+                .andExpect(jsonPath("$.fundingInstructions").value("pix-code"))
+                .andExpect(jsonPath("$.fundingMethod").value("PIX"));
     }
 
     @Test
@@ -325,7 +327,7 @@ class TransferExecutionControllerSecurityTest {
             UUID offerId, TransferExecutionStatus status, String fundingInstructions) {
         return new TransferExecutionResponse(UUID.randomUUID(), offerId, UUID.randomUUID(), "BLINDPAY", status,
                 new MoneyAmount(new BigDecimal("1000.00"), "BRL"), new MoneyAmount(new BigDecimal("990.00"), "USD"),
-                new BigDecimal("2.50"), fundingInstructions, null, null,
+                new BigDecimal("2.50"), fundingInstructions, TransferMethod.PIX, null, null, null,
                 OffsetDateTime.parse("2026-10-28T12:00:00Z"), OffsetDateTime.parse("2026-10-28T12:00:00Z"));
     }
 }

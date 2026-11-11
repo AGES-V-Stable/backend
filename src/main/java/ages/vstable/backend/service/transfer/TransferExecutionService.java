@@ -197,6 +197,7 @@ public class TransferExecutionService {
             prepareBlindPay(execution, offer, request, now);
         } else {
             aveniaRequest = aveniaRequest(request);
+            execution.setFundingMethod(aveniaRequest.getPaymentMethod());
         }
 
         offer.setStatus(ProviderQuoteStatus.CONFIRMED);
@@ -214,6 +215,8 @@ public class TransferExecutionService {
             TransferExecutionEntity execution, ProviderQuoteEntity offer, QuoteRequestEntity request,
             OffsetDateTime now) {
         boolean fundedWithBrl = BRL.equalsIgnoreCase(request.getSourceCurrency());
+        execution.setFundingMethod(fundedWithBrl ? transferMethod(request.getSourcePaymentMethod())
+                : TransferMethod.ACCOUNT_BALANCE);
         if (fundedWithBrl) {
             JsonNode metadata = metadata(offer);
             execution.setExternalPayinQuoteId(requiredText(metadata, BlindPayQuoteProvider.METADATA_FUNDING_QUOTE_ID));
@@ -248,8 +251,7 @@ public class TransferExecutionService {
                 .exchangeRate(offer.getExchangeRate() == null ? null
                         : offer.getExchangeRate().setScale(6, RoundingMode.HALF_UP))
                 .beneficiaryId(execution.getBeneficiaryId())
-                .transferMethod(fundedWithBrl ? transferMethod(request.getSourcePaymentMethod())
-                        : TransferMethod.ACCOUNT_BALANCE)
+                .transferMethod(execution.getFundingMethod())
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -285,6 +287,9 @@ public class TransferExecutionService {
                 e.setStatus(aveniaStatus(result.status()));
                 e.setTransactionId(result.transactionId());
                 e.setExternalTicketId(result.ticketId() == null ? null : result.ticketId().toString());
+                // Ticket não pago: o usuário paga o brCode (PIX copia e cola) devolvido pela Avenia.
+                e.setFundingInstructions(e.getStatus() == TransferExecutionStatus.AWAITING_FUNDS
+                        ? result.brCode() : null);
                 if (e.getStatus() == TransferExecutionStatus.COMPLETED) {
                     e.setCompletedAt(now());
                 }
@@ -335,6 +340,7 @@ public class TransferExecutionService {
 
     private static TransferExecutionStatus aveniaStatus(TransactionStatus status) {
         return switch (status) {
+            case AWAITING_PAYMENT -> TransferExecutionStatus.AWAITING_FUNDS;
             case SETTLED -> TransferExecutionStatus.COMPLETED;
             case FAILED, CANCELED, EXPIRED -> TransferExecutionStatus.FAILED;
             default -> TransferExecutionStatus.SUBMITTED;
@@ -403,6 +409,7 @@ public class TransferExecutionService {
                         new MoneyAmount(execution.getPayoutQuoteReceiverAmount(), execution.getTargetCurrency()),
                         execution.getPayoutQuoteExpiresAt())
                 : null;
+        boolean awaitingFunds = execution.getStatus() == TransferExecutionStatus.AWAITING_FUNDS;
         return new TransferExecutionResponse(
                 execution.getId(),
                 execution.getProviderQuoteId(),
@@ -412,7 +419,9 @@ public class TransferExecutionService {
                 new MoneyAmount(execution.getSourceAmount(), execution.getSourceCurrency()),
                 new MoneyAmount(execution.getTargetAmount(), execution.getTargetCurrency()),
                 execution.getTotalFee(),
-                execution.getStatus() == TransferExecutionStatus.AWAITING_FUNDS ? execution.getFundingInstructions() : null,
+                awaitingFunds ? execution.getFundingInstructions() : null,
+                execution.getFundingMethod(),
+                awaitingFunds ? BankTransferInstructions.fromJson(execution.getFundingBankTransfer()) : null,
                 requote,
                 execution.getFailureCode(),
                 execution.getCreatedAt(),

@@ -248,14 +248,18 @@ class TransferExecutionServiceTest {
                 .thenAnswer(call -> {
                     Consumer<TransferQuoteResponse> guard = call.getArgument(3);
                     guard.accept(aveniaQuote("1000.00", "180.50"));
-                    return new TransferService.ExecutedTransfer(transactionId, TransactionStatus.AWAITING_PAYMENT, ticketId);
+                    return new TransferService.ExecutedTransfer(
+                            transactionId, TransactionStatus.AWAITING_PAYMENT, ticketId, "avenia-br-code");
                 });
 
         // Act
         TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
 
-        // Assert
-        assertThat(response.status()).isEqualTo(TransferExecutionStatus.SUBMITTED);
+        // Assert: ticket não pago fica aguardando o PIX, com o brCode da Avenia para pagar.
+        assertThat(response.status()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(response.fundingMethod()).isEqualTo(TransferMethod.PIX);
+        assertThat(response.fundingInstructions()).isEqualTo("avenia-br-code");
+        assertThat(response.fundingBankTransfer()).isNull();
         assertThat(response.transactionId()).isEqualTo(transactionId);
         assertThat(executions.get(response.executionId()).getExternalTicketId()).isEqualTo(ticketId.toString());
         ArgumentCaptor<CreateTransferRequest> request = ArgumentCaptor.forClass(CreateTransferRequest.class);
@@ -275,14 +279,47 @@ class TransferExecutionServiceTest {
             Consumer<TransferQuoteResponse> guard = call.getArgument(3);
             guard.accept(aveniaQuote("1000.00", "180.50"));
             return new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.AWAITING_PAYMENT,
-                    UUID.randomUUID());
+                    UUID.randomUUID(), "avenia-br-code");
         });
 
         // Act
         TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
 
         // Assert
+        assertThat(response.status()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+    }
+
+    @Test
+    void confirm_aveniaTicketAlreadyProcessing_isSubmittedWithoutPaymentCode() {
+        // Arrange
+        aveniaOffer();
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenReturn(
+                new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.PROCESSING,
+                        UUID.randomUUID(), "avenia-br-code"));
+
+        // Act
+        TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
+
+        // Assert: fora de AWAITING_FUNDS nenhum código de pagamento é exibido nem guardado.
         assertThat(response.status()).isEqualTo(TransferExecutionStatus.SUBMITTED);
+        assertThat(response.fundingInstructions()).isNull();
+        assertThat(executions.get(response.executionId()).getFundingInstructions()).isNull();
+    }
+
+    @Test
+    void confirm_blindPayTedOffer_recordsTedAsFundingMethod() {
+        // Arrange
+        quoteRequest.setSourcePaymentMethod("ted");
+
+        // Act
+        TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        // Assert
+        assertThat(executions.get(response.executionId()).getFundingMethod()).isEqualTo(TransferMethod.TED);
+        assertThat(response.fundingMethod()).isEqualTo(TransferMethod.TED);
+        ArgumentCaptor<ImportTransactionEntity> transaction = ArgumentCaptor.forClass(ImportTransactionEntity.class);
+        verify(importTransactionRepository).save(transaction.capture());
+        assertThat(transaction.getValue().getTransferMethod()).isEqualTo(TransferMethod.TED);
     }
 
     @Test
@@ -353,7 +390,48 @@ class TransferExecutionServiceTest {
         TransferExecutionResponse response = service.find(user, execution.getId());
 
         assertThat(response.fundingInstructions()).isEqualTo("pix-copy-paste");
+        assertThat(response.fundingMethod()).isEqualTo(TransferMethod.PIX);
         assertThat(response.requote()).isNull();
+    }
+
+    @Test
+    void find_awaitingTedFunds_exposesBankTransferInstructions() {
+        // Arrange
+        quoteRequest.setSourcePaymentMethod("ted");
+        TransferExecutionResponse confirmed = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+        TransferExecutionEntity execution = executions.get(confirmed.executionId());
+        execution.setStatus(TransferExecutionStatus.AWAITING_FUNDS);
+        execution.setFundingBankTransfer("""
+                {"memoCode":"BP123","beneficiaryName":"BlindPay, Inc.","accountNumber":"31254097"}
+                """);
+
+        // Act
+        TransferExecutionResponse response = service.find(user, execution.getId());
+
+        // Assert
+        assertThat(response.fundingMethod()).isEqualTo(TransferMethod.TED);
+        assertThat(response.fundingInstructions()).isNull();
+        assertThat(response.fundingBankTransfer().memoCode()).isEqualTo("BP123");
+        assertThat(response.fundingBankTransfer().beneficiaryName()).isEqualTo("BlindPay, Inc.");
+        assertThat(response.fundingBankTransfer().accountNumber()).isEqualTo("31254097");
+        assertThat(response.fundingBankTransfer().routingNumber()).isNull();
+    }
+
+    @Test
+    void find_afterFundsReceived_hidesPaymentInstructions() {
+        // Arrange
+        quoteRequest.setSourcePaymentMethod("ted");
+        TransferExecutionResponse confirmed = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+        TransferExecutionEntity execution = executions.get(confirmed.executionId());
+        execution.setStatus(TransferExecutionStatus.FUNDS_RECEIVED);
+        execution.setFundingBankTransfer("{\"memoCode\":\"BP123\"}");
+
+        // Act
+        TransferExecutionResponse response = service.find(user, execution.getId());
+
+        // Assert: pagar de novo não deve ser sugerido depois que os fundos chegaram.
+        assertThat(response.fundingBankTransfer()).isNull();
+        assertThat(response.fundingInstructions()).isNull();
     }
 
     private void aveniaOffer() {
