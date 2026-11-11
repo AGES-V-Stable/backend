@@ -11,6 +11,7 @@ import ages.vstable.backend.external.ai.SupportChatClient;
 import ages.vstable.backend.external.ai.SupportChatProperties;
 import ages.vstable.backend.repository.CompanyRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,157 +34,252 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SupportChatServiceTest {
 
-        @Mock
-        private CompanyRepository companyRepository;
+    @Mock
+    private CompanyRepository companyRepository;
 
-        private SupportChatService supportChatService;
+    private SupportChatService supportChatService;
 
-        @BeforeEach
-        void setUp() {
-                SupportChatProperties properties = new SupportChatProperties();
-                properties.setProvider("local");
-                SupportChatClient client = new SupportChatClient(
-                                properties,
-                                new ObjectMapper(),
-                                RestClient.builder());
-                supportChatService = new SupportChatService(client, companyRepository);
+    @BeforeEach
+    void setUp() {
+        SupportChatProperties properties = new SupportChatProperties();
+        properties.setProvider("local");
+        SupportChatClient client = new SupportChatClient(
+                properties,
+                new ObjectMapper(),
+                RestClient.builder());
+        supportChatService = new SupportChatService(client, companyRepository);
+    }
+
+    @Test
+    @DisplayName("User with company tradeName and 2FA active should include enriched context")
+    void chat_colombiaQuestion_returnsDomainReplyWithCompanyContext() {
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .companyId(companyId)
+                .fullName("Rodrigo")
+                .email("rodrigo@vstable.com")
+                .twoFactorEnabled(true)
+                .build();
+
+        CompanyEntity company = CompanyEntity.builder()
+                .id(companyId)
+                .legalName("V-Stable Pagamentos LTDA")
+                .tradeName("V-Stable Tech")
+                .kybStatus(ComplianceStatus.APPROVED)
+                .amlStatus(ComplianceStatus.APPROVED)
+                .build();
+
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Por que não consigo fazer transações com a Colômbia? Por que está bloqueada?")
+                .build();
+
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
+
+        assertThat(response.getReply())
+                .contains("COP (Peso Colombiano)")
+                .contains("Wallet Cripto")
+                .contains("V-Stable Tech")
+                .contains("APPROVED");
+        assertThat(response.getProvider()).isEqualTo("vstable-assistant");
+        assertThat(response.getSuggestedQuestions()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("When requests exceed per-minute rate limit, should throw LockedException")
+    void chat_whenRateLimitExceeded_throwsLockedException() {
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Teste Rate Limit")
+                .email("ratelimit@vstable.com")
+                .twoFactorEnabled(false)
+                .build();
+
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o 2FA?")
+                .build();
+
+        for (int i = 0; i < SupportChatService.MAX_REQUESTS_PER_MINUTE; i++) {
+            supportChatService.chat(auth, request);
         }
 
-        @Test
-        void chat_colombiaQuestion_returnsDomainReplyWithCompanyContext() {
-                UUID companyId = UUID.randomUUID();
-                UserEntity user = UserEntity.builder()
-                                .id(UUID.randomUUID())
-                                .companyId(companyId)
-                                .fullName("Rodrigo")
-                                .email("rodrigo@vstable.com")
-                                .twoFactorEnabled(true)
-                                .build();
+        assertThatThrownBy(() -> supportChatService.chat(auth, request))
+                .isInstanceOf(LockedException.class)
+                .hasMessageContaining("Limite de mensagens atingido");
+    }
 
-                CompanyEntity company = CompanyEntity.builder()
-                                .id(companyId)
-                                .legalName("V-Stable Pagamentos LTDA")
-                                .tradeName("V-Stable Tech")
-                                .kybStatus(ComplianceStatus.APPROVED)
-                                .amlStatus(ComplianceStatus.APPROVED)
-                                .build();
+    @Test
+    @DisplayName("Admin with 2FA enabled: includes admin context without leaking secrets")
+    void chat_whenAdminAuthenticated_includesAdmin2faStatusAndNeverLeaksSecrets() {
+        AdministratorEntity admin = AdministratorEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Admin Segurança")
+                .email("admin.sec@vstable.com")
+                .twoFactorEnabled(true)
+                .twoFactorSecret("JBSWY3DPEHPK3PXP")
+                .passwordHash("$2a$10$secretHashValue")
+                .build();
 
-                when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        Authentication auth = new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona a integração com Avenia e BlindPay?")
+                .history(List.of(new SupportChatMessageDTO("user", "Olá")))
+                .build();
 
-                Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                SupportChatRequestDTO request = SupportChatRequestDTO.builder()
-                                .message("Por que não consigo fazer transações com a Colômbia? Por que está bloqueada?")
-                                .build();
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
 
-                SupportChatResponseDTO response = supportChatService.chat(auth, request);
+        assertThat(response.getReply())
+                .contains("Avenia")
+                .contains("BlindPay")
+                .contains("Status da sua sessão (Administrador):")
+                .contains("2FA = Ativo")
+                .doesNotContain("JBSWY3DPEHPK3PXP")
+                .doesNotContain("$2a$10$secretHashValue");
+    }
 
-                assertThat(response.getReply())
-                                .contains("COP (Peso Colombiano)")
-                                .contains("Wallet Cripto")
-                                .contains("V-Stable Tech")
-                                .contains("APPROVED");
-                assertThat(response.getProvider()).isEqualTo("vstable-assistant");
-                assertThat(response.getSuggestedQuestions()).isNotEmpty();
-        }
+    @Test
+    @DisplayName("Admin with 2FA disabled: includes 2FA = Inativo")
+    void chat_whenAdmin2faDisabled_includesInactiveStatus() {
+        AdministratorEntity admin = AdministratorEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Admin Sem 2FA")
+                .email("admin.no2fa@vstable.com")
+                .twoFactorEnabled(false)
+                .build();
 
-        @Test
-        void chat_whenRateLimitExceeded_throwsLockedException() {
-                UserEntity user = UserEntity.builder()
-                                .id(UUID.randomUUID())
-                                .fullName("Teste Rate Limit")
-                                .email("ratelimit@vstable.com")
-                                .twoFactorEnabled(false)
-                                .build();
+        Authentication auth = new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como ativar 2FA?")
+                .build();
 
-                Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                SupportChatRequestDTO request = SupportChatRequestDTO.builder()
-                                .message("Como funciona o 2FA?")
-                                .build();
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
 
-                for (int i = 0; i < SupportChatService.MAX_REQUESTS_PER_MINUTE; i++) {
-                        supportChatService.chat(auth, request);
-                }
+        assertThat(response.getReply())
+                .contains("Status da sua sessão (Administrador):")
+                .contains("2FA = Inativo");
+    }
 
-                assertThatThrownBy(() -> supportChatService.chat(auth, request))
-                                .isInstanceOf(LockedException.class)
-                                .hasMessageContaining("Limite de mensagens atingido");
-        }
+    @Test
+    @DisplayName("User without company link: includes status indicating company not linked")
+    void chat_whenUserHasNoCompany_includesUnlinkedStatus() {
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("User Sem Empresa")
+                .email("no.company@vstable.com")
+                .companyId(null)
+                .twoFactorEnabled(false)
+                .build();
 
-        @Test
-        void chat_whenAdminAuthenticated_includesAdmin2faStatusAndNeverLeaksSecrets() {
-                AdministratorEntity admin = AdministratorEntity.builder()
-                                .id(UUID.randomUUID())
-                                .fullName("Admin Segurança")
-                                .email("admin.sec@vstable.com")
-                                .twoFactorEnabled(true)
-                                .twoFactorSecret("JBSWY3DPEHPK3PXP")
-                                .passwordHash("$2a$10$secretHashValue")
-                                .build();
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o onboarding?")
+                .build();
 
-                Authentication auth = new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities());
-                SupportChatRequestDTO request = SupportChatRequestDTO.builder()
-                                .message("Como funciona a integração com Avenia e BlindPay?")
-                                .history(List.of(new SupportChatMessageDTO("user", "Olá")))
-                                .build();
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
 
-                SupportChatResponseDTO response = supportChatService.chat(auth, request);
+        assertThat(response.getReply())
+                .contains("Empresa ainda não vinculada")
+                .contains("Pendente de ativação");
+    }
 
-                assertThat(response.getReply())
-                                .contains("Avenia")
-                                .contains("BlindPay")
-                                .contains("Status da sua sessão (Administrador):")
-                                .contains("2FA = Ativo")
-                                .doesNotContain("JBSWY3DPEHPK3PXP")
-                                .doesNotContain("$2a$10$secretHashValue");
-        }
+    @Test
+    @DisplayName("User with companyId not found in repository: falls back to unlinked status")
+    void chat_whenUserCompanyNotFound_includesUnlinkedStatus() {
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("User Empresa Inexistente")
+                .email("missing.company@vstable.com")
+                .companyId(companyId)
+                .twoFactorEnabled(true)
+                .build();
 
-        @Test
-        void chat_whenCompanyContextLoaded_neverExposesCnpjCpfOrTotpSecret() {
-                UUID companyId = UUID.randomUUID();
-                UserEntity user = UserEntity.builder()
-                                .id(UUID.randomUUID())
-                                .companyId(companyId)
-                                .fullName("Marina")
-                                .email("marina@vstable.com")
-                                .passwordHash("$2a$10$hashUser")
-                                .twoFactorEnabled(false)
-                                .twoFactorSecret("SECRETBASE32KEY")
-                                .build();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.empty());
 
-                CompanyEntity company = CompanyEntity.builder()
-                                .id(companyId)
-                                .legalName("Empresa Confidencial S.A.")
-                                .cnpj("12345678000199")
-                                .kybStatus(ComplianceStatus.PENDING)
-                                .amlStatus(ComplianceStatus.UNDER_REVIEW)
-                                .build();
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o onboarding?")
+                .build();
 
-                when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
 
-                Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                SupportChatRequestDTO request = SupportChatRequestDTO.builder()
-                                .message("Como funciona o compliance KYB e AML?")
-                                .build();
+        assertThat(response.getReply())
+                .contains("Empresa ainda não vinculada")
+                .contains("2FA = Ativo");
+    }
 
-                SupportChatResponseDTO response = supportChatService.chat(auth, request);
+    @Test
+    @DisplayName("Company without tradeName: falls back to legalName in context summary")
+    void chat_whenCompanyContextLoaded_usesLegalNameWhenTradeNameBlank() {
+        UUID companyId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .companyId(companyId)
+                .fullName("Marina")
+                .email("marina@vstable.com")
+                .passwordHash("$2a$10$hashUser")
+                .twoFactorEnabled(false)
+                .twoFactorSecret("SECRETBASE32KEY")
+                .build();
 
-                assertThat(response.getReply())
-                                .contains("Empresa Confidencial S.A.")
-                                .contains("Pendente de ativação")
-                                .contains("PENDING")
-                                .contains("UNDER_REVIEW")
-                                .doesNotContain("12345678000199")
-                                .doesNotContain("$2a$10$hashUser")
-                                .doesNotContain("SECRETBASE32KEY");
-        }
+        CompanyEntity company = CompanyEntity.builder()
+                .id(companyId)
+                .legalName("Empresa Confidencial S.A.")
+                .tradeName(null)
+                .cnpj("12345678000199")
+                .kybStatus(ComplianceStatus.PENDING)
+                .amlStatus(ComplianceStatus.UNDER_REVIEW)
+                .build();
 
-        @Test
-        void chat_whenUnauthenticated_throwsBadCredentialsException() {
-                SupportChatRequestDTO request = SupportChatRequestDTO.builder()
-                                .message("Olá")
-                                .build();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
 
-                assertThatThrownBy(() -> supportChatService.chat(null, request))
-                                .isInstanceOf(BadCredentialsException.class);
-        }
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o compliance KYB e AML?")
+                .build();
+
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
+
+        assertThat(response.getReply())
+                .contains("Empresa Confidencial S.A.")
+                .contains("Pendente de ativação")
+                .contains("PENDING")
+                .contains("UNDER_REVIEW")
+                .doesNotContain("12345678000199")
+                .doesNotContain("$2a$10$hashUser")
+                .doesNotContain("SECRETBASE32KEY");
+    }
+
+    @Test
+    @DisplayName("Generic principal type: resolves rate limit key and builds empty summary")
+    void chat_withCustomPrincipal_resolvesKey() {
+        Authentication auth = new UsernamePasswordAuthenticationToken("system-service-account", null, List.of());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Quais são as moedas suportadas?")
+                .build();
+
+        SupportChatResponseDTO response = supportChatService.chat(auth, request);
+
+        assertThat(response.getReply()).contains("América do Norte e Europa");
+        assertThat(response.getProvider()).isEqualTo("vstable-assistant");
+    }
+
+    @Test
+    @DisplayName("Unauthenticated or null principal: throws BadCredentialsException")
+    void chat_whenUnauthenticated_throwsBadCredentialsException() {
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Olá")
+                .build();
+
+        assertThatThrownBy(() -> supportChatService.chat(null, request))
+                .isInstanceOf(BadCredentialsException.class);
+
+        Authentication authWithNullPrincipal = new UsernamePasswordAuthenticationToken(null, null);
+        assertThatThrownBy(() -> supportChatService.chat(authWithNullPrincipal, request))
+                .isInstanceOf(BadCredentialsException.class);
+    }
 }

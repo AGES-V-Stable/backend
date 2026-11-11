@@ -34,10 +34,7 @@ public class SupportChatClient implements SupportChatGateway {
     ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(java.time.Duration.ofSeconds(5));
-        requestFactory.setReadTimeout(java.time.Duration.ofSeconds(20));
-        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+        this.restClient = restClientBuilder.build();
     }
 
     @Override
@@ -48,7 +45,7 @@ public class SupportChatClient implements SupportChatGateway {
             String userContextSummary
     ) {
         String rawKey = properties.getApiKey() != null ? properties.getApiKey().trim() : "";
-        String apiKey = rawKey.replaceAll("^[\"']+|[\"']+$", "").trim();
+        String apiKey = stripQuotes(rawKey);
         String provider = properties.getProvider() != null
                 ? properties.getProvider().trim().toLowerCase(Locale.ROOT)
                 : "gemini";
@@ -395,5 +392,19 @@ public class SupportChatClient implements SupportChatGateway {
         }
         String trimmed = url.trim();
         return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    }
+
+    private static String stripQuotes(String text) {
+        if (text == null) {
+            return "";
+        }
+        String s = text.trim();
+        while (s.startsWith("\"") || s.startsWith("'")) {
+            s = s.substring(1).trim();
+        }
+        while (s.endsWith("\"") || s.endsWith("'")) {
+            s = s.substring(0, s.length() - 1).trim();
+        }
+        return s;
     }
 }
