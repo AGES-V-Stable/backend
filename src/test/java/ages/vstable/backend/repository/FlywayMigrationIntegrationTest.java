@@ -82,7 +82,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
@@ -91,6 +91,25 @@ class FlywayMigrationIntegrationTest {
         assertThat(columnExists("beneficiaries", "counterparty_country")).isTrue();
         assertThat(tableExists("company_memberships")).isTrue();
         assertThat(tableExists("company_invitations")).isTrue();
+    }
+
+    @Test
+    void migrate_v12_keepsTheCompanyOfExistingUsersAndAllowsAccountsWithoutCompany() throws SQLException {
+        // Arrange: usuário criado antes da V12, quando a empresa era obrigatória.
+        flyway("11").migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "a1@example.com", "'2026-01-01T00:00:00Z'");
+
+        // Act
+        flyway(null).migrate();
+        execute("INSERT INTO users (id, company_id, full_name, email, password_hash, password_salt) "
+                + "VALUES ('" + USER_A2 + "', NULL, 'Sem empresa', 'nova@example.com', 'h', 's')");
+
+        // Assert
+        assertThat(rows("SELECT company_id FROM users WHERE id = '" + USER_A1 + "'")).containsExactly(COMPANY_A);
+        assertThat(rows("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
+                + "AND table_name = 'users' AND column_name = 'company_id'")).containsExactly("YES");
+        assertThat(rows("SELECT count(*) FROM users WHERE company_id IS NULL")).containsExactly("1");
     }
 
     @Test
@@ -107,7 +126,8 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10", "11");
+        assertThat(result.migrations).extracting(migration -> migration.version)
+                .containsExactly("6", "7", "8", "9", "10", "11", "12");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
