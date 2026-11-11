@@ -3,6 +3,7 @@ package ages.vstable.backend.exception;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.logging.OperationalLog;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -19,6 +20,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -96,10 +98,14 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<Map<String, String>> handleConflict(ConflictException ex) {
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(Map.of("code", "CONFLICT", "message", ex.getMessage()));
+    public ResponseEntity<Map<String, Object>> handleConflict(ConflictException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        if (!ex.getDetails().isEmpty()) {
+            body.put("details", ex.getDetails());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(ForbiddenException.class)
@@ -113,7 +119,43 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleNotFound(NotFoundException ex) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
-                .body(Map.of("code", "NOT_FOUND", "message", ex.getMessage()));
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(GoneException.class)
+    public ResponseEntity<Map<String, String>> handleGone(GoneException ex) {
+        return ResponseEntity
+                .status(HttpStatus.GONE)
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PreconditionFailedException.class)
+    public ResponseEntity<Map<String, String>> handlePreconditionFailed(PreconditionFailedException ex) {
+        return ResponseEntity
+                .status(HttpStatus.PRECONDITION_FAILED)
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PreconditionRequiredException.class)
+    public ResponseEntity<Map<String, String>> handlePreconditionRequired(PreconditionRequiredException ex) {
+        return ResponseEntity
+                .status(HttpStatus.PRECONDITION_REQUIRED)
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, String>> handleTooManyRequests(TooManyRequestsException ex) {
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidParameterException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidParameter(InvalidParameterException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("code", "INVALID_PARAMETER", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(UnprocessableEntityException.class)

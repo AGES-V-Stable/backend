@@ -38,6 +38,14 @@ Defina `JWT_SECRET` com uma chave própria antes de iniciar a aplicação. O pro
 inclui mais uma chave JWT padrão. O PostgreSQL local usa `DB_SSL_MODE=disable` por
 padrão; fora do perfil `lambda`, configure TLS ao conectar a um banco remoto.
 
+Os convites de membros exigem duas variáveis, sem valor padrão, que no desenvolvimento local
+vão no `.env` (não versionado; o Docker Compose o repassa ao container) ou na configuração
+de execução do IDE: `INVITATION_ENCRYPTION_KEY`
+(chave AES de 32 bytes em Base64, por exemplo `openssl rand -base64 32`; cifra a cópia
+recuperável do token e nunca vai para o banco nem para o Git) e `INVITATION_FRONTEND_ORIGIN`
+(origem pública do frontend do ambiente, usada para montar o link do convite).
+`INVITATION_KEY_VERSION` (padrão `v1`) identifica a chave em uso e deve mudar quando ela for trocada.
+
 ## API na AWS Lambda
 
 `Dockerfile.lambda` empacota a mesma aplicação Spring Boot com o [AWS Lambda Web
@@ -125,7 +133,7 @@ nesse momento interrompe a inicialização com uma mensagem de configuração.
 
 Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, preservando os status HTTP existentes. Códigos: `INVALID_ARGUMENT`, `VALIDATION_ERROR`, `MALFORMED_PAYLOAD`, `MISSING_HEADER`, `INVALID_PARAMETER`, `CONFLICT`, `FORBIDDEN`, `NOT_FOUND`, `UNPROCESSABLE_ENTITY`, `PROVIDER_ERROR`, `ACCESS_DENIED` e `INTERNAL_ERROR`. Login inválido retorna 401 com `INVALID_CREDENTIALS`; conta bloqueada retorna 423 com `ACCOUNT_LOCKED`. Contratos especializados de detalhes/comprovantes e códigos da camada de segurança são preservados. Clientes antigos podem continuar consumindo somente `message`.
 
-Acesso à empresa usa códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário).
+Acesso à empresa e convites usam códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário). Convites: 404 `INVITATION_NOT_FOUND`, 410 `INVITATION_REVOKED` e 409 `INVITATION_ALREADY_USED`, `MEMBER_ALREADY_EXISTS`, `INVITATION_ALREADY_EXISTS` (o corpo traz `details.invitationId` do convite pendente), `USER_IN_OTHER_COMPANY`, `EMAIL_RESERVED` e `INVITATION_NOT_REGENERABLE`. Gerar novo link e revogar exigem a versão do convite em `If-Match`, a mesma do `ETag` e entre aspas: ausente retorna 428 `VERSION_REQUIRED` e desatualizada, 412 `RESOURCE_VERSION_MISMATCH`. Entre duas gerações de link passam no mínimo 60 segundos, e são no máximo cinco por hora contando a criação; acima disso a resposta é 429 `INVITATION_RATE_LIMITED` com `Retry-After` em segundos. Página ou tamanho fora do permitido na lista de membros retorna 400 `INVALID_PARAMETER`.
 
 ## 4. Testes e análise de mutação (PITest)
 

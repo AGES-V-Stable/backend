@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -73,10 +74,53 @@ class GlobalExceptionHandlerTest {
     @Test
     void handleConflict_returns409() {
         ConflictException ex = new ConflictException("Conflict");
-        ResponseEntity<Map<String, String>> response = handler.handleConflict(ex);
+        ResponseEntity<Map<String, Object>> response = handler.handleConflict(ex);
         assertThat(response.getBody()).containsEntry("code", "CONFLICT");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).containsEntry("message", "Conflict");
+        assertThat(response.getBody()).doesNotContainKey("details");
+    }
+
+    @Test
+    void handleConflict_withDetails_addsThemWithoutChangingCodeAndMessage() {
+        UUID invitationId = UUID.randomUUID();
+        ConflictException ex = new ConflictException("INVITATION_ALREADY_EXISTS", "Já existe um convite.",
+                Map.of("invitationId", invitationId));
+
+        ResponseEntity<Map<String, Object>> response = handler.handleConflict(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).containsEntry("code", "INVITATION_ALREADY_EXISTS")
+                .containsEntry("message", "Já existe um convite.")
+                .containsEntry("details", Map.of("invitationId", invitationId));
+    }
+
+    @Test
+    void handlePreconditionRequired_returns428WithItsCode() {
+        ResponseEntity<Map<String, String>> response = handler.handlePreconditionRequired(
+                new PreconditionRequiredException("VERSION_REQUIRED", "Informe a versão."));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(428);
+        assertThat(response.getBody()).containsEntry("code", "VERSION_REQUIRED").containsEntry("message", "Informe a versão.");
+    }
+
+    @Test
+    void handlePreconditionFailed_returns412WithItsCode() {
+        ResponseEntity<Map<String, String>> response = handler.handlePreconditionFailed(
+                new PreconditionFailedException("RESOURCE_VERSION_MISMATCH", "Mudou."));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(412);
+        assertThat(response.getBody()).containsEntry("code", "RESOURCE_VERSION_MISMATCH").containsEntry("message", "Mudou.");
+    }
+
+    @Test
+    void handleTooManyRequests_returns429WithRetryAfterInSeconds() {
+        ResponseEntity<Map<String, String>> response = handler.handleTooManyRequests(
+                new TooManyRequestsException("INVITATION_RATE_LIMITED", "Aguarde.", 42));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(429);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("42");
+        assertThat(response.getBody()).containsEntry("code", "INVITATION_RATE_LIMITED").containsEntry("message", "Aguarde.");
     }
 
     @Test
