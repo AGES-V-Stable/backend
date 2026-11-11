@@ -35,6 +35,17 @@ public class QuoteOrchestratorService {
     @Value("${quotes.provider-timeout:10s}")
     private Duration providerTimeout;
 
+    /**
+     * Stablecoin e rede intermediárias usadas quando o cliente não as informa. A escolha é
+     * financeira e depende do ambiente (redes de teste em homologação), por isso vem da
+     * configuração; vazias, nada é presumido e provedores que as exigem ficam inelegíveis.
+     */
+    @Value("${quotes.intermediate-token:}")
+    private String intermediateToken;
+
+    @Value("${quotes.intermediate-blockchain-network:}")
+    private String intermediateBlockchainNetwork;
+
     public QuoteOrchestratorService(
             List<QuoteProvider> providers,
             CompanyRepository companyRepository,
@@ -63,6 +74,12 @@ public class QuoteOrchestratorService {
                 .findByIdAndCompanyId(request.beneficiaryId(), companyId)
                 .orElseThrow(() -> new NotFoundException("Beneficiary not found"));
 
+        // Gravados na solicitação: a execução relê token e rede dela, então cotação e
+        // execução usam sempre os mesmos valores.
+        String token = normalizeUpper(hasText(request.token()) ? request.token() : intermediateToken);
+        String blockchainNetwork = normalizeLower(hasText(request.blockchainNetwork())
+                ? request.blockchainNetwork() : intermediateBlockchainNetwork);
+
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         QuoteRequestEntity quoteRequest = quoteRequestRepository.save(QuoteRequestEntity.builder()
                 .company(company)
@@ -75,8 +92,8 @@ public class QuoteOrchestratorService {
                 .targetPaymentMethod(request.targetPaymentMethod())
                 .requestedAmount(request.amount())
                 .amountSide(request.amountSide())
-                .token(normalizeUpper(request.token()))
-                .blockchainNetwork(normalizeLower(request.blockchainNetwork()))
+                .token(token)
+                .blockchainNetwork(blockchainNetwork)
                 .coverFees(request.coverFees())
                 .description(request.description())
                 .status("PROCESSING")
@@ -87,7 +104,7 @@ public class QuoteOrchestratorService {
                 request.beneficiaryId(), request.direction(),
                 request.sourceCurrency().toUpperCase(), request.targetCurrency().toUpperCase(),
                 request.sourcePaymentMethod(), request.targetPaymentMethod(), request.amount(), request.amountSide(),
-                normalizeUpper(request.token()), normalizeLower(request.blockchainNetwork()),
+                token, blockchainNetwork,
                 request.coverFees(), request.description());
         QuoteContext context = new QuoteContext(
                 quoteRequest.getId(), company, beneficiary, normalized, currentUser.getId());
@@ -217,6 +234,10 @@ public class QuoteOrchestratorService {
 
     private String normalizeLower(String value) {
         return value == null || value.isBlank() ? null : value.trim().toLowerCase();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private record ProviderCall(

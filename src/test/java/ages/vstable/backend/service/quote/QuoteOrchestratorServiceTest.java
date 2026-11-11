@@ -284,6 +284,63 @@ class QuoteOrchestratorServiceTest {
         assertThat(context.getValue().requestedBy()).isEqualTo(user.getId());
     }
 
+    @Test
+    void quote_withoutTokenAndNetwork_usesConfiguredIntermediatesForProvidersAndPersistence() {
+        ReflectionTestUtils.setField(service, "intermediateToken", "usdc");
+        ReflectionTestUtils.setField(service, "intermediateBlockchainNetwork", "BASE_SEPOLIA");
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "100.00", "18.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "19.00", "2.00"));
+
+        service.quote(user, requestWith(null, " "));
+
+        ArgumentCaptor<QuoteContext> context = ArgumentCaptor.forClass(QuoteContext.class);
+        verify(blindPay).quote(context.capture(), any());
+        assertThat(context.getValue().request().token()).isEqualTo("USDC");
+        assertThat(context.getValue().request().blockchainNetwork()).isEqualTo("base_sepolia");
+        // A execução BlindPay relê token e rede da solicitação gravada.
+        ArgumentCaptor<QuoteRequestEntity> persisted = ArgumentCaptor.forClass(QuoteRequestEntity.class);
+        verify(quoteRequestRepository, atLeastOnce()).save(persisted.capture());
+        assertThat(persisted.getAllValues().getFirst().getToken()).isEqualTo("USDC");
+        assertThat(persisted.getAllValues().getFirst().getBlockchainNetwork()).isEqualTo("base_sepolia");
+    }
+
+    @Test
+    void quote_withTokenAndNetwork_keepsTheRequestedValuesOverTheConfiguration() {
+        ReflectionTestUtils.setField(service, "intermediateToken", "USDC");
+        ReflectionTestUtils.setField(service, "intermediateBlockchainNetwork", "base_sepolia");
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "100.00", "18.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "19.00", "2.00"));
+
+        service.quote(user, requestWith("usdt", "Polygon"));
+
+        ArgumentCaptor<QuoteContext> context = ArgumentCaptor.forClass(QuoteContext.class);
+        verify(blindPay).quote(context.capture(), any());
+        assertThat(context.getValue().request().token()).isEqualTo("USDT");
+        assertThat(context.getValue().request().blockchainNetwork()).isEqualTo("polygon");
+    }
+
+    @Test
+    void quote_withoutTokenAndNoConfiguration_doesNotInventIntermediates() {
+        configureSuccessfulProviders(
+                result(IntegrationProvider.AVENIA, "100.00", "18.00", "1.00"),
+                result(IntegrationProvider.BLINDPAY, "100.00", "19.00", "2.00"));
+
+        service.quote(user, requestWith(null, null));
+
+        ArgumentCaptor<QuoteContext> context = ArgumentCaptor.forClass(QuoteContext.class);
+        verify(blindPay).supports(context.capture());
+        assertThat(context.getValue().request().token()).isNull();
+        assertThat(context.getValue().request().blockchainNetwork()).isNull();
+    }
+
+    private QuoteRequest requestWith(String token, String blockchainNetwork) {
+        return new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "PIX", "international_swift",
+                new BigDecimal("100.00"), QuoteAmountSide.SOURCE, token, blockchainNetwork, false, "Invoice");
+    }
+
     private void configureSuccessfulProviders(ProviderQuoteResult aveniaResult, ProviderQuoteResult blindPayResult) {
         when(avenia.provider()).thenReturn(IntegrationProvider.AVENIA);
         when(blindPay.provider()).thenReturn(IntegrationProvider.BLINDPAY);

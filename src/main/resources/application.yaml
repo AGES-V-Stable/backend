@@ -82,6 +82,10 @@ blindpay:
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
+  # Stablecoin (ex.: USDC) e rede (ex.: polygon) intermediárias quando o frontend não as envia.
+  # Vazias, a BlindPay não cota: defina por ambiente (redes de teste em homologação).
+  intermediate-token: ${QUOTE_INTERMEDIATE_TOKEN:}
+  intermediate-blockchain-network: ${QUOTE_INTERMEDIATE_BLOCKCHAIN_NETWORK:}
   avenia:
     # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
     confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
