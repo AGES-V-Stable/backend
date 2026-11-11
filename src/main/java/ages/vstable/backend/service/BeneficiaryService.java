@@ -195,6 +195,7 @@ public class BeneficiaryService {
         response.setLegalName(entity.getAccountHolderName());
         response.setSwiftBic(entity.getSwiftBic());
         response.setCurrency(entity.getCurrency());
+        response.setPaymentRail(entity.getPaymentRail());
 
         response.setPixKey(entity.getPixKey()); // * */
         response.setAccountHolderName(entity.getAccountHolderName()); // * */

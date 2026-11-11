@@ -27,6 +27,8 @@ public class BeneficiaryResponse {
     private String branchNumber;
     private String accountNumber;
     private String currency;
+    /** Trilho de recebimento (ex.: international_swift, ach); a cotação precisa informá-lo. */
+    private String paymentRail;
     private String walletAddress;
     private BlockchainNetwork blockchainNetwork;
     private String walletMemo;
