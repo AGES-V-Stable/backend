@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.membership.MemberListResponse;
 import ages.vstable.backend.dto.membership.MemberResponse;
+import ages.vstable.backend.dto.membership.MemberRoleUpdateRequest;
 import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.service.CompanyMemberService;
@@ -12,10 +13,16 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -45,6 +52,50 @@ public class CompanyMemberController {
             @AuthenticationPrincipal UserEntity currentUser) {
         CompanyAccess.requireOwner(currentUser, companyId);
         return ResponseEntity.ok(memberService.list(companyId, page, size));
+    }
+
+    @PatchMapping("/{memberId}")
+    @Operation(summary = "Altera o perfil OPERATOR/VIEWER de um membro ativo (apenas OWNER)")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Membro atualizado; ETag com a nova versao"),
+            @ApiResponse(responseCode = "403", description = "OWNER_REQUIRED ou COMPANY_ACCESS_REVOKED"),
+            @ApiResponse(responseCode = "404", description = "MEMBER_NOT_FOUND"),
+            @ApiResponse(responseCode = "409", description = "OWNER_PROTECTED ou MEMBERSHIP_NOT_ACTIVE"),
+            @ApiResponse(responseCode = "412", description = "RESOURCE_VERSION_MISMATCH"),
+            @ApiResponse(responseCode = "428", description = "VERSION_REQUIRED"),
+    })
+    public ResponseEntity<MemberResponse> changeRole(
+            @PathVariable UUID companyId,
+            @PathVariable UUID memberId,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody MemberRoleUpdateRequest request,
+            @AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.requireOwner(currentUser, companyId);
+        long version = ages.vstable.backend.utils.IfMatchHeader.requireVersion(ifMatch);
+        MemberResponse updated = memberService.changeRole(companyId, memberId, version, request.role(),
+                currentUser.getId());
+        return ResponseEntity.ok().eTag(String.valueOf(updated.version())).body(updated);
+    }
+
+    @DeleteMapping("/{memberId}")
+    @Operation(summary = "Revoga o acesso empresarial do membro sem excluir sua identidade")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Vinculo revogado; repeticao continua 204"),
+            @ApiResponse(responseCode = "403", description = "OWNER_REQUIRED ou COMPANY_ACCESS_REVOKED"),
+            @ApiResponse(responseCode = "404", description = "MEMBER_NOT_FOUND"),
+            @ApiResponse(responseCode = "409", description = "OWNER_PROTECTED"),
+            @ApiResponse(responseCode = "412", description = "RESOURCE_VERSION_MISMATCH"),
+            @ApiResponse(responseCode = "428", description = "VERSION_REQUIRED"),
+    })
+    public ResponseEntity<Void> remove(
+            @PathVariable UUID companyId,
+            @PathVariable UUID memberId,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.requireOwner(currentUser, companyId);
+        long version = ages.vstable.backend.utils.IfMatchHeader.requireVersion(ifMatch);
+        memberService.revoke(companyId, memberId, version, currentUser.getId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")
