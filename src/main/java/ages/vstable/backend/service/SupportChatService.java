@@ -109,8 +109,9 @@ public class SupportChatService {
 
         if (principal instanceof UserEntity user) {
             boolean twoFactor = Boolean.TRUE.equals(user.getTwoFactorEnabled());
-            if (user.getCompanyId() != null) {
-                Optional<CompanyEntity> companyOpt = companyRepository.findById(user.getCompanyId());
+            java.util.UUID activeCompanyId = CompanyMembershipService.currentCompanyId(user);
+            if (activeCompanyId != null) {
+                Optional<CompanyEntity> companyOpt = companyRepository.findById(activeCompanyId);
                 if (companyOpt.isPresent()) {
                     CompanyEntity company = companyOpt.get();
                     String kyb = company.getKybStatus() != null ? company.getKybStatus().name() : "PENDING";
