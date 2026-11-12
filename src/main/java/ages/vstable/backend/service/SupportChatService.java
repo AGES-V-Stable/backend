@@ -5,7 +5,9 @@ import ages.vstable.backend.dto.support.SupportChatRequestDTO;
 import ages.vstable.backend.dto.support.SupportChatResponseDTO;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.external.ai.SupportChatGateway;
 import ages.vstable.backend.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -109,7 +112,7 @@ public class SupportChatService {
 
         if (principal instanceof UserEntity user) {
             boolean twoFactor = Boolean.TRUE.equals(user.getTwoFactorEnabled());
-            java.util.UUID activeCompanyId = CompanyMembershipService.currentCompanyId(user);
+            UUID activeCompanyId = activeMembershipCompanyId(user);
             if (activeCompanyId != null) {
                 Optional<CompanyEntity> companyOpt = companyRepository.findById(activeCompanyId);
                 if (companyOpt.isPresent()) {
@@ -132,6 +135,19 @@ public class SupportChatService {
         }
 
         return "";
+    }
+
+    /**
+     * Empresa cujos dados podem ir ao provedor de IA: somente a do vínculo ativo carregado para esta
+     * requisição. Vínculo removido, ausência de vínculo ou apenas o {@code companyId} legado da conta
+     * não expõem dados empresariais.
+     */
+    private static UUID activeMembershipCompanyId(UserEntity user) {
+        CompanyMembershipEntity membership = user.getMembership();
+        if (membership == null || membership.getStatus() != MembershipStatus.ACTIVE) {
+            return null;
+        }
+        return membership.getCompanyId();
     }
 
     private String buildSystemPrompt(String userContextSummary) {
