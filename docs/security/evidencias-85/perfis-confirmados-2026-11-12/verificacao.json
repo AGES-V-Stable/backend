@@ -1,0 +1,32 @@
+﻿{
+    "captured_at_utc":  "2026-11-12T13:47:59.9121492+00:00",
+    "backend_commit":  "61a9662c8f9d8051540bdf551b399d36c8bec719",
+    "scope":  "Perfis empresariais OWNER/OPERATOR/VIEWER; ADMIN separado; local, dados sinteticos e provedores simulados",
+    "command":  "gradlew.bat securityAssessmentTest build --continue --no-daemon --console=plain",
+    "process_exit_code":  1,
+    "failure_reason":  "16 assercoes diagnosticas; nenhuma falha de regressao",
+    "assessment_summary":  {
+                               "total":  228,
+                               "passed":  212,
+                               "failed":  16,
+                               "skipped":  0
+                           },
+    "rbac_summary":  {
+                         "failed":  2,
+                         "skipped":  0,
+                         "total":  20,
+                         "passed":  18
+                     },
+    "regression_summary":  {
+                               "total":  1241,
+                               "passed":  1235,
+                               "failed":  0,
+                               "skipped":  6
+                           },
+    "build_task_completed":  true,
+    "check_task_completed":  true,
+    "frontend_rerun":  false,
+    "production_code_changed":  false,
+    "historical_evidence_preserved":  true,
+    "supersedes_interpretation":  "Igualdade obrigatoria entre OWNER e OPERATOR e exclusao de VIEWER retiradas apos esclarecimento da equipe"
+}

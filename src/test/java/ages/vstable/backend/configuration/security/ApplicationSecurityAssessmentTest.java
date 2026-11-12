@@ -3,6 +3,7 @@ package ages.vstable.backend.configuration.security;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.AdminAccessLevel;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.blindpay.BlindPayClient;
 import ages.vstable.backend.repository.AdministratorRepository;
@@ -181,35 +182,139 @@ class ApplicationSecurityAssessmentTest {
         return cases;
     }
 
-    @ParameterizedTest(name = "TC-RBAC-01 compliance {0}")
-    @EnumSource(AdminAccessLevel.class)
-    void onlyComplianceAndSuperAdminCanApprove(AdminAccessLevel role) throws Exception {
+    @ParameterizedTest(name = "TC-RBAC-01 ADMIN nao decide compliance {0}")
+    @ValueSource(strings = {"APPROVED", "REJECTED"})
+    void adminCannotManuallyDecideCompliance(String decision) throws Exception {
+        var before = jdbc.queryForMap("SELECT kyb_status, aml_status FROM companies WHERE id = ?", companyB);
         MvcResult result = mvc.perform(authorized(patch("/v1/companies/" + companyB + "/compliance-status"),
-                        adminToken(role)).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"statusKyb\":\"APPROVED\",\"statusAml\":\"APPROVED\"}"))
+                        adminToken()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"statusKyb\":\"%s\",\"statusAml\":\"%s\"}".formatted(decision, decision)))
                 .andReturn();
-        assertThat(result.getResponse().getStatus()).as("HTTP para aprovar compliance: " + role)
-                .isEqualTo(role == AdminAccessLevel.SUPPORT ? 403 : 200);
+        org.assertj.core.api.SoftAssertions.assertSoftly(check -> {
+            check.assertThat(result.getResponse().getStatus()).as("ADMIN nao pode decidir compliance").isEqualTo(403);
+            check.assertThat(jdbc.queryForMap("SELECT kyb_status, aml_status FROM companies WHERE id = ?", companyB))
+                    .as("Decisao manual nao deve alterar o estado persistido").isEqualTo(before);
+        });
     }
 
-    @ParameterizedTest(name = "TC-RBAC-02 exclusao {0}")
-    @EnumSource(AdminAccessLevel.class)
-    void onlySuperAdminCanDelete(AdminAccessLevel role) throws Exception {
-        MvcResult result = mvc.perform(authorized(delete("/v1/companies/" + companyB), adminToken(role))).andReturn();
-        assertThat(result.getResponse().getStatus()).as("HTTP para excluir empresa: " + role)
-                .isEqualTo(role == AdminAccessLevel.SUPER_ADMIN ? 204 : 403);
+    @Test
+    @DisplayName("TC-RBAC-02 | ADMIN pode excluir empresa sintetica sem dependencias")
+    void adminCanDeleteCompany() throws Exception {
+        mvc.perform(authorized(delete("/v1/companies/" + companyB), adminToken()))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM companies WHERE id = ?", Integer.class, companyB)).isZero();
     }
 
-    @ParameterizedTest(name = "TC-RBAC-03 edicao cadastral {0}")
-    @EnumSource(AdminAccessLevel.class)
-    void onlySuperAdminCanEditCompanyRegistration(AdminAccessLevel role) throws Exception {
-        MvcResult result = mvc.perform(authorized(put("/v1/companies/" + companyB), adminToken(role))
+    @Test
+    @DisplayName("TC-RBAC-03 | ADMIN pode editar cadastro empresarial")
+    void adminCanEditCompanyRegistration() throws Exception {
+        MvcResult result = mvc.perform(authorized(put("/v1/companies/" + companyB), adminToken())
                         .contentType(MediaType.APPLICATION_JSON).content("""
                                 {"legalName":"Empresa Sintetica Atualizada", "cnpj":"%s",
                                  "country":"Brasil", "zipCode":"00000000", "state":"RS", "city":"Teste"}
                                 """.formatted(companyBCnpj))).andReturn();
-        assertThat(result.getResponse().getStatus()).as("HTTP para editar cadastro: " + role)
-                .isEqualTo(role == AdminAccessLevel.SUPER_ADMIN ? 200 : 403);
+        assertThat(result.getResponse().getStatus()).as("HTTP para editar cadastro: ADMIN").isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT legal_name FROM companies WHERE id = ?", String.class, companyB))
+                .isEqualTo("Empresa Sintetica Atualizada");
+    }
+
+    @ParameterizedTest(name = "TC-RBAC-04 consulta e isolamento {0}")
+    @EnumSource(CompanyRole.class)
+    void operationalProfilesCanReadOwnCompanyOnly(CompanyRole role) throws Exception {
+        String token = operationalToken(role);
+        mvc.perform(authorized(get("/v1/companies/" + companyA), token)).andExpect(status().isOk());
+        mvc.perform(authorized(get("/v1/companies/" + companyA + "/beneficiaries"), token))
+                .andExpect(status().isOk());
+        mvc.perform(authorized(get("/v1/companies/" + companyB), token)).andExpect(status().isForbidden());
+        mvc.perform(authorized(get("/v1/companies/" + companyB + "/beneficiaries"), token))
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest(name = "TC-RBAC-05 operacao de transferencia {0}")
+    @EnumSource(value = CompanyRole.class, names = {"OWNER", "OPERATOR"})
+    void operationalProfilesCanConfirmOwnCompanyOffer(CompanyRole role) throws Exception {
+        String token = operationalToken(role);
+        UUID offer = offer(companyA, owner.getId(), beneficiary(companyA));
+        mvc.perform(authorized(post(confirmPath(offer)), token).contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmation("100", "99"))).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transfer_executions", Integer.class)).isEqualTo(1);
+        // Este caso avalia acesso por perfil; a ausencia de TOTP e avaliada separadamente em TC-FIN-01.
+    }
+
+    @ParameterizedTest(name = "TC-RBAC-06 usuario nao decide compliance {0} {1}")
+    @CsvSource({"OWNER, APPROVED", "OWNER, REJECTED", "OPERATOR, APPROVED", "OPERATOR, REJECTED",
+            "VIEWER, APPROVED", "VIEWER, REJECTED"})
+    void operationalProfilesCannotManuallyDecideCompliance(CompanyRole role, String decision) throws Exception {
+        String token = operationalToken(role);
+        var before = jdbc.queryForMap("SELECT kyb_status, aml_status FROM companies WHERE id = ?", companyA);
+        mvc.perform(authorized(patch("/v1/companies/" + companyA + "/compliance-status"), token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"statusKyb\":\"%s\",\"statusAml\":\"%s\"}".formatted(decision, decision)))
+                .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForMap("SELECT kyb_status, aml_status FROM companies WHERE id = ?", companyA))
+                .isEqualTo(before);
+    }
+
+    @ParameterizedTest(name = "TC-RBAC-07 permissoes do perfil empresarial {0}")
+    @EnumSource(CompanyRole.class)
+    void companyProfilesAdvertiseTheirOwnPermissions(CompanyRole role) throws Exception {
+        MvcResult result = mvc.perform(authorized(get("/v1/users/me"), operationalToken(role)))
+                .andExpect(status().isOk()).andReturn();
+        var body = new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString());
+        assertThat(body.get("accountType").asString()).isEqualTo("USER");
+        assertThat(body.get("companyAccess").get("role").asString()).isEqualTo(role.name());
+        Set<String> actual = new java.util.HashSet<>();
+        body.get("companyAccess").get("permissions").forEach(value -> actual.add(value.asString()));
+        Set<String> expected = new java.util.HashSet<>(Set.of("COMPANY_READ", "BALANCE_READ",
+                "BENEFICIARY_READ", "TRANSFER_READ", "SELF_MEMBERSHIP_READ"));
+        if (role != CompanyRole.VIEWER) {
+            expected.addAll(Set.of("BENEFICIARY_WRITE", "TRANSFER_CREATE"));
+        }
+        if (role == CompanyRole.OWNER) {
+            expected.addAll(Set.of("MEMBERS_READ", "MEMBERS_MANAGE"));
+        }
+        assertThat(actual).as("Permissoes empresariais de " + role).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("TC-RBAC-08 | VIEWER nao pode confirmar transferencia nem cadastrar beneficiario")
+    void viewerCannotPerformWriteOperations() throws Exception {
+        String token = operationalToken(CompanyRole.VIEWER);
+        UUID offer = offer(companyA, owner.getId(), beneficiary(companyA));
+        int before = jdbc.queryForObject("SELECT count(*) FROM beneficiaries", Integer.class);
+        mvc.perform(authorized(post(confirmPath(offer)), token).contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmation("100", "99"))).andExpect(status().isForbidden());
+        mvc.perform(authorized(post("/v1/companies/" + companyA + "/beneficiaries"), token)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"beneficiaryType":"COMPANY", "legalName":"Beneficiario Sintetico",
+                                 "identificationDocument":"SYNTHETIC-ONLY", "country":"Brasil",
+                                 "address":"Endereco Sintetico", "receivingMethod":"CRYPTO_WALLET",
+                                 "walletAddress":"0x1111111111111111111111111111111111111111",
+                                 "blockchainNetwork":"polygon", "confirmed":true}
+                                """))
+                .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transfer_executions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM beneficiaries", Integer.class)).isEqualTo(before);
+        verifyNoInteractions(processor);
+    }
+
+    @Test
+    @DisplayName("TC-RBAC-09 | ADMIN e conta da plataforma sem vinculo empresarial")
+    void adminIsASeparatePlatformAccount() throws Exception {
+        MvcResult result = mvc.perform(authorized(get("/v1/users/me"), adminToken()))
+                .andExpect(status().isOk()).andReturn();
+        var body = new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString());
+        assertThat(body.get("accountType").asString()).isEqualTo("ADMIN");
+        List<String> roles = new ArrayList<>();
+        body.get("roles").forEach(value -> roles.add(value.asString()));
+        assertThat(roles).containsExactly("ROLE_ADMIN");
+        assertThat(body.get("companyAccess") == null || body.get("companyAccess").isNull()).isTrue();
+        assertThat(body.get("companyId") == null || body.get("companyId").isNull()).isTrue();
+    }
+
+    private String operationalToken(CompanyRole role) {
+        jdbc.update("UPDATE company_memberships SET role = ? WHERE user_id = ?", role.name(), owner.getId());
+        return jwt.generateToken(owner);
     }
 
     @Test
@@ -700,11 +805,13 @@ class ApplicationSecurityAssessmentTest {
         return user;
     }
 
-    private String adminToken(AdminAccessLevel role) {
+    private String adminToken() {
+        // O schema ainda exige access_level. Este valor legado e apenas uma fixture;
+        // a regra de negocio revisada possui um unico papel global ADMIN.
         AdministratorEntity admin = administrators.saveAndFlush(AdministratorEntity.builder()
                 .fullName("Administrador Sintetico").email(UUID.randomUUID() + "@example.test")
                 .passwordHash("unused-synthetic-hash").passwordSalt("unused-synthetic-salt")
-                .accessLevel(role).createdAt(OffsetDateTime.now(ZoneOffset.UTC))
+                .accessLevel(AdminAccessLevel.SUPER_ADMIN).createdAt(OffsetDateTime.now(ZoneOffset.UTC))
                 .updatedAt(OffsetDateTime.now(ZoneOffset.UTC)).build());
         return jwt.generateToken(admin);
     }
