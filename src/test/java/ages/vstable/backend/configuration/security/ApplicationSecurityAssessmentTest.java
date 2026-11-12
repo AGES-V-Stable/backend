@@ -736,6 +736,393 @@ class ApplicationSecurityAssessmentTest {
 
     @Autowired private org.springframework.context.ApplicationContext applicationContext;
 
+    /** Every runtime controller operation gets a bounded input/error contract case. */
+    @TestFactory
+    List<DynamicTest> endpointInputAndErrorContracts() {
+        return routes().stream().map(route -> DynamicTest.dynamicTest("LC-API-01 " + route.key(), () -> {
+            syntheticCompaniesAndOwner();
+            if(route.path().equals("/v1/blindpay/compliance/terms")) {
+                exercisesMockProvider=true;
+                when(blindpay.initiateTermsOfService(any())).thenReturn(
+                        new ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse("https://provider.example.test/terms"));
+            }
+            // Malformed JSON cannot reach a financial/provider write. GET/DELETE UUIDs are invalid.
+            String path = route.path().replaceAll("\\{[^}]+}", "invalid-uuid");
+            var call = request(HttpMethod.valueOf(route.method()), path)
+                    .contentType(MediaType.APPLICATION_JSON).content("{")
+                    .param("livenessId", "synthetic");
+            if (!route.isPublic()) authorized(call, route.adminOnly() ? adminToken() : ownerToken);
+            MvcResult result = mvc.perform(call).andReturn();
+            int code = result.getResponse().getStatus();
+            // Parameterless reads/setup need no request body; allow a legitimate 2xx or domain 4xx.
+            assertThat(code).as(route.key() + " must not crash on bounded invalid input")
+                    .isBetween(200, 499);
+            assertNoInternalData(result);
+        })).toList();
+    }
+
+    @TestFactory
+    List<DynamicTest> allBusinessProfilesAreDeniedAdministrativeFunctions() {
+        List<DynamicTest> cases = new ArrayList<>();
+        for (Route route : routes().stream().filter(Route::adminOnly).toList()) {
+            for (CompanyRole role : CompanyRole.values()) {
+                cases.add(DynamicTest.dynamicTest("LC-AUTHZ-01 " + role + " " + route.key(), () -> {
+                    syntheticCompaniesAndOwner();
+                    mvc.perform(authorized(routeRequest(route), operationalToken(role)))
+                            .andExpect(status().isForbidden());
+                }));
+            }
+        }
+        return cases;
+    }
+
+    @ParameterizedTest(name = "LC-AUTHZ-02 KYC estrangeiro {0}")
+    @ValueSource(strings = {"document-start", "document-submit", "liveness-start", "liveness-submit", "liveness-status", "kyc-submit"})
+    void everyPersonalComplianceOperationEnforcesOwnership(String operation) throws Exception {
+        UserEntity other = user(companyB);
+        UUID kyc = UUID.randomUUID();
+        jdbc.update("INSERT INTO avenia_kyc_verifications(id,user_id,status) VALUES (?,?,'PENDING')", kyc, other.getId());
+        String root = "/v1/onboarding/" + kyc + "/compliance/";
+        MockHttpServletRequestBuilder call = switch (operation) {
+            case "document-start" -> post(root + "documento").content("{\"documentType\":\"PASSPORT\"}");
+            case "document-submit" -> put(root + "documento").content("{\"documentoId\":\"synthetic-document\"}");
+            case "liveness-start" -> post(root + "liveness");
+            case "liveness-submit" -> put(root + "liveness").content("{\"livenessId\":\"synthetic-liveness\"}");
+            case "liveness-status" -> get(root + "liveness/status").param("livenessId", "synthetic-liveness");
+            default -> post(root + "kyc").content("""
+                    {"fullName":"Synthetic Person","dateOfBirth":"1990-01-01","taxIdNumber":"SYNTHETIC",
+                     "email":"kyc@example.test","phone":"SYNTHETIC","country":"Brasil","state":"RS",
+                     "city":"Teste","zipCode":"00000000","streetAddress":"Synthetic"}
+                    """);
+        };
+        mvc.perform(authorized(call.contentType(MediaType.APPLICATION_JSON), ownerToken)).andExpect(status().isForbidden());
+        verifyNoInteractions(avenia, blindpay);
+        assertThat(jdbc.queryForObject("SELECT document_id FROM avenia_kyc_verifications WHERE id=?", String.class, kyc)).isNull();
+    }
+
+    @ParameterizedTest(name = "LC-FIN-01 associacao alterada {0}")
+    @ValueSource(strings = {"foreign-beneficiary", "moved-beneficiary", "unselected", "expired", "expiry-margin"})
+    void financialAssociationAndTemporalGuardsPrecedeSubmission(String condition) throws Exception {
+        UUID beneficiary = beneficiary(companyA);
+        UUID offer = offer(companyA, owner.getId(), beneficiary);
+        switch (condition) {
+            case "foreign-beneficiary" -> jdbc.update("UPDATE quote_requests SET beneficiary_id=? WHERE id=(SELECT quote_request_id FROM provider_quotes WHERE id=?)",
+                    beneficiary(companyB), offer);
+            case "moved-beneficiary" -> jdbc.update("UPDATE beneficiaries SET company_id=? WHERE id=?", companyB, beneficiary);
+            case "unselected" -> jdbc.update("UPDATE provider_quotes SET status='AVAILABLE' WHERE id=?", offer);
+            case "expired" -> jdbc.update("UPDATE provider_quotes SET expires_at=now()-interval '1 second' WHERE id=?", offer);
+            default -> jdbc.update("UPDATE provider_quotes SET expires_at=now()+interval '1 second' WHERE id=?", offer);
+        }
+        int expected = condition.contains("beneficiary") ? 404 : 422;
+        mvc.perform(authorized(post(confirmPath(offer)), ownerToken).contentType(MediaType.APPLICATION_JSON)
+                .content(confirmation("100", "99"))).andExpect(status().is(expected));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transfer_executions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM base_transactions", Integer.class)).isZero();
+        verifyNoInteractions(processor);
+    }
+
+    @Test
+    @DisplayName("LC-FIN-02 | campos extras nao alteram proprietario moeda tarifa beneficiario ou estado")
+    void massAssignmentCannotOverrideExecutionProperties() throws Exception {
+        UUID beneficiary = beneficiary(companyA);
+        UUID foreign = beneficiary(companyB);
+        UUID offer = offer(companyA, owner.getId(), beneficiary);
+        mvc.perform(authorized(post(confirmPath(offer)), ownerToken).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"sourceAmount":100,"targetAmount":99,"companyId":"%s","beneficiaryId":"%s",
+                     "requestedBy":"%s","sourceCurrency":"XXX","targetCurrency":"XXX",
+                     "totalFee":-999,"status":"COMPLETED","provider":"AVENIA"}
+                    """.formatted(companyB, foreign, UUID.randomUUID()))).andExpect(status().isOk());
+        var row = jdbc.queryForMap("SELECT company_id,beneficiary_id,requested_by,source_currency,target_currency,total_fee,status FROM transfer_executions");
+        assertThat(row.get("company_id")).isEqualTo(companyA);
+        assertThat(row.get("beneficiary_id")).isEqualTo(beneficiary);
+        assertThat(row.get("requested_by")).isEqualTo(owner.getId());
+        assertThat(row.get("source_currency")).isEqualTo("USDB");
+        assertThat(row.get("target_currency")).isEqualTo("USD");
+        assertThat((BigDecimal) row.get("total_fee")).isEqualByComparingTo("1");
+        assertThat(row.get("status").toString()).isEqualTo("PAYOUT_SUBMITTING");
+    }
+
+    @Test
+    @DisplayName("LC-AUTHZ-03 | cadastro publico nao aceita admin empresa alheia ou compliance aprovado")
+    void publicSignupDoesNotAllowPrivilegeOrOwnershipMassAssignment() throws Exception {
+        String body = """
+                {"fullName":"Synthetic","email":"property@example.test","password":"%s","confirmPassword":"%s",
+                 "legalName":"Synthetic Signup","cnpj":"%s","country":"Brasil","zipCode":"00000000","state":"RS",
+                 "companyId":"%s","role":"ADMIN","accountType":"ADMIN","accessLevel":"SUPER_ADMIN",
+                 "kybStatus":"APPROVED","amlStatus":"APPROVED"}
+                """.formatted(password,password,syntheticCnpj(),companyB);
+        mvc.perform(post("/v1/onboarding").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated());
+        UUID actualCompany = jdbc.queryForObject("SELECT company_id FROM users WHERE email='property@example.test'", UUID.class);
+        assertThat(actualCompany).isNotEqualTo(companyB);
+        assertThat(jdbc.queryForObject("SELECT kyb_status FROM companies WHERE id=?", String.class, actualCompany)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM administrators", Integer.class)).isZero();
+    }
+
+    @ParameterizedTest(name = "LC-API-02 injecao em filtro {0}")
+    @ValueSource(strings = {"' OR 1=1 --", "${jndi:ldap://127.0.0.1/synthetic}", "<script>synthetic</script>"})
+    void filterInjectionDoesNotExpandCompanyScope(String payload) throws Exception {
+        beneficiary(companyA); UUID foreign = beneficiary(companyB);
+        MvcResult response = mvc.perform(authorized(get("/v1/companies/"+companyA+"/beneficiaries").param("search",payload),ownerToken))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(response.getResponse().getContentAsString()).doesNotContain(foreign.toString());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM beneficiaries",Integer.class)).isEqualTo(2);
+        assertNoInternalData(response);
+    }
+
+    @Test
+    @DisplayName("LC-API-03 | paginacao solicita volume extremo sem retornar acima do limite configurado")
+    void paginationIsBoundedWithoutCreatingLoad() throws Exception {
+        MvcResult result=mvc.perform(authorized(get("/v1/companies/"+companyA+"/beneficiaries")
+                .param("size","2147483647"),ownerToken)).andExpect(status().isOk()).andReturn();
+        var body=new tools.jackson.databind.ObjectMapper().readTree(result.getResponse().getContentAsString());
+        assertThat(body.get("pageable").get("pageSize").asInt()).isLessThanOrEqualTo(2000);
+    }
+
+    @Test
+    @DisplayName("LC-ABUSE-01 | dez logins incorretos preservam credenciais e nao criam sessoes")
+    void boundedLoginRepetitionRejectsCredentialsWithoutServerErrors() throws Exception {
+        for(int i=0;i<10;i++) {
+            MvcResult result=mvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"email\":\""+owner.getEmail()+"\",\"password\":\"synthetic-invalid\"}"))
+                    .andExpect(status().isUnauthorized()).andReturn();
+            assertThat(result.getResponse().getHeader("Authorization")).isNull();
+            assertNoInternalData(result);
+        }
+        assertThat(users.findById(owner.getId()).orElseThrow().getPassword()).isEqualTo(passwordHash);
+        // Sem limiar de negocio definido, nao se inventa um lockout obrigatorio apos dez tentativas.
+        // Ausencia de limitador local e documentada pela revisao de configuracao, nao por esta assercao.
+    }
+
+    @ParameterizedTest(name = "LC-INT-01 timestamp webhook {0}")
+    @ValueSource(longs={-601,601})
+    void authenticWebhookOutsideTimeWindowIsRejected(long delta) throws Exception {
+        mvc.perform(webhook("synthetic-expired",Instant.now().getEpochSecond()+delta,
+                "{\"webhook_event\":\"payin.complete\",\"id\":\"synthetic-payin\"}"))
+                .andExpect(status().isUnauthorized());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM blindpay_webhook_events",Integer.class)).isZero();
+        verifyNoInteractions(processor);
+    }
+
+    @Test
+    @DisplayName("LC-INT-02 | cinco entregas concorrentes do mesmo webhook processam uma vez")
+    void concurrentDuplicateWebhooksAreAtomic() throws Exception {
+        long timestamp=Instant.now().getEpochSecond();
+        CountDownLatch start=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(5)) {
+            var work=IntStream.range(0,5).mapToObj(i->pool.submit(()->{
+                start.await(5,TimeUnit.SECONDS);
+                return mvc.perform(webhook("synthetic-concurrent",timestamp,
+                        "{\"webhook_event\":\"payin.complete\",\"id\":\"synthetic-payin\"}"))
+                        .andReturn().getResponse().getStatus();
+            })).toList();
+            start.countDown();
+            for(var response:work) assertThat(response.get(15,TimeUnit.SECONDS)).isEqualTo(204);
+        }
+        verify(processor,times(1)).onPayinEvent("synthetic-payin");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM blindpay_webhook_events",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("LC-INT-03 | falha transacional no webhook permite uma retentativa valida")
+    void webhookFailureDoesNotPoisonDeduplication() throws Exception {
+        long stamp=Instant.now().getEpochSecond();
+        String body="{\"webhook_event\":\"payin.complete\",\"id\":\"synthetic-retry\"}";
+        when(processor.onPayinEvent("synthetic-retry")).thenThrow(new IllegalArgumentException("synthetic transient" )).thenReturn(true);
+        mvc.perform(webhook("synthetic-retry",stamp,body)).andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM blindpay_webhook_events",Integer.class)).isZero();
+        mvc.perform(webhook("synthetic-retry",stamp,body)).andExpect(status().isNoContent());
+        verify(processor,times(2)).onPayinEvent("synthetic-retry");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM blindpay_webhook_events",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("LC-CONC-01 | corrida entre confirmacao de recotacao e conciliacao usa uma chave de payout")
+    void requoteAndReconciliationUseStableIdempotencyAndAmounts() throws Exception {
+        exercisesMockProvider=true;
+        UUID execution=prepareRequote();
+        var provisioning=org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
+        when(provisioning.ensureManagedWallet(any(),any())).thenReturn(
+                new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet("synthetic-wallet","0x"+"1".repeat(40)));
+        var payout=org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
+        when(payout.id()).thenReturn("synthetic-once"); when(payout.status()).thenReturn("completed");
+        when(blindpay.createEvmPayout(any(),any())).thenReturn(payout);
+        var real=realProcessor(provisioning);
+        CountDownLatch gate=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(5)) {
+            var work=IntStream.range(0,5).mapToObj(i->pool.submit(()->{
+                gate.await(5,TimeUnit.SECONDS);
+                if(i==0) real.acceptRequote(execution,companyA,new BigDecimal("100"),new BigDecimal("98"));
+                else real.reconcile(execution);
+                return true;
+            })).toList(); gate.countDown();
+            for(var item:work) assertThat(item.get(20,TimeUnit.SECONDS)).isTrue();
+        }
+        var keys=org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(blindpay,org.mockito.Mockito.atLeastOnce()).createEvmPayout(any(),keys.capture());
+        assertThat(keys.getAllValues().stream().distinct().toList()).hasSize(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM transfer_executions WHERE id=?",String.class,execution)).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM base_transactions",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("LC-CONC-02 | expiracao durante provisionamento nao deve submeter cotacao vencida")
+    void expiryBetweenValidationAndPayoutSubmissionIsCheckedAgain() throws Exception {
+        exercisesMockProvider=true;
+        UUID execution=prepareRequote();
+        var current=new java.util.concurrent.atomic.AtomicReference<>(Instant.now());
+        java.time.Clock controlled=new java.time.Clock(){
+            public java.time.ZoneId getZone(){return ZoneOffset.UTC;}
+            public java.time.Clock withZone(java.time.ZoneId zone){return this;}
+            public Instant instant(){return current.get();}
+        };
+        var provisioning=org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
+        when(provisioning.ensureManagedWallet(any(),any())).thenAnswer(call->{
+            current.set(current.get().plusSeconds(600)); // simula provisionamento lento, sem sleep
+            return new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet("synthetic-wallet","0x"+"1".repeat(40));
+        });
+        var payout=org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
+        when(payout.id()).thenReturn("synthetic-expired-payout"); when(payout.status()).thenReturn("completed");
+        when(blindpay.createEvmPayout(any(),any())).thenReturn(payout);
+        var real=realProcessor(provisioning);
+        org.springframework.test.util.ReflectionTestUtils.setField(real,"clock",controlled);
+        real.acceptRequote(execution,companyA,new BigDecimal("100"),new BigDecimal("98"));
+        verify(blindpay,org.mockito.Mockito.never()).createEvmPayout(any(),any());
+    }
+
+    private UUID prepareRequote() throws Exception {
+        UUID offer=offer(companyA,owner.getId(),beneficiary(companyA));
+        mvc.perform(authorized(post(confirmPath(offer)),ownerToken).contentType(MediaType.APPLICATION_JSON)
+                .content(confirmation("100","99"))).andExpect(status().isOk());
+        UUID execution=jdbc.queryForObject("SELECT id FROM transfer_executions",UUID.class);
+        jdbc.update("UPDATE transfer_executions SET status='REQUOTE_REQUIRED',payout_quote_receiver_amount=98,payout_quote_expires_at=now()+interval '5 minutes' WHERE id=?",execution);
+        return execution;
+    }
+
+    @Test
+    @DisplayName("LC-FIN-03 | recotacao de outra empresa nao pode chegar ao processamento real")
+    void foreignCompanyCannotAcceptRequoteInRealProcessor() throws Exception {
+        UUID execution=prepareRequote();
+        var real=realProcessor(applicationContext.getBean(ages.vstable.backend.service.quote.BlindPayProvisioningService.class));
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->real.acceptRequote(execution,companyB,new BigDecimal("100"),new BigDecimal("98")))
+                .isInstanceOf(ages.vstable.backend.exception.NotFoundException.class);
+        assertThat(jdbc.queryForObject("SELECT status FROM transfer_executions WHERE id=?",String.class,execution)).isEqualTo("REQUOTE_REQUIRED");
+        verifyNoInteractions(avenia,blindpay);
+    }
+
+    @ParameterizedTest(name="LC-AUTHZ-04 beneficiario alheio na cotacao {0}")
+    @ValueSource(strings={"/v1/quotes","/v1/transfers/quote"})
+    void bothQuotePathsRejectForeignBeneficiaryBeforeCallingProviders(String path) throws Exception {
+        UUID foreign=beneficiary(companyB);
+        String body=path.equals("/v1/quotes")?"""
+                {"beneficiaryId":"%s","direction":"PAYOUT","sourceCurrency":"BRL","targetCurrency":"USD",
+                 "sourcePaymentMethod":"pix","targetPaymentMethod":"wire","amount":100,"amountSide":"SOURCE",
+                 "token":"USDB","blockchainNetwork":"base_sepolia","coverFees":false}
+                """.formatted(foreign):"""
+                {"beneficiaryId":"%s","amount":100,"amountType":"SOURCE","sourceCurrency":"BRL",
+                 "destinationCurrency":"USD","paymentMethod":"PIX"}
+                """.formatted(foreign);
+        jdbc.update("INSERT INTO avenia_kyc_verifications(user_id,status) VALUES (?,'APPROVED')",owner.getId());
+        mvc.perform(authorized(post(path),ownerToken).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(avenia,blindpay);
+    }
+
+    private void assertNoInternalData(MvcResult result) throws Exception {
+        assertThat(result.getResponse().getContentAsString())
+                .doesNotContain("passwordHash","password_hash","passwordSalt","password_salt",
+                        "stackTrace","java.lang.","org.hibernate.",passwordHash,signingSecret);
+    }
+
+    @Test
+    @DisplayName("LC-AUTH-01 | ativacao login com desafio uso unico e protecao de reconfiguracao 2FA")
+    void fullTwoFactorLifecycleUsesRealHttpAndDatabase() throws Exception {
+        mvc.perform(authorized(post("/v1/auth/2fa/setup"),ownerToken)).andExpect(status().isOk());
+        String secret=users.findById(owner.getId()).orElseThrow().getTwoFactorSecret();
+        assertThat(secret).isNotBlank();
+        String stored=jdbc.queryForObject("SELECT two_factor_secret FROM users WHERE id=?",String.class,owner.getId());
+        assertThat(stored).isNotEqualTo(secret); // encrypted at rest
+        long window=Instant.now().getEpochSecond()/30;
+        var totp=applicationContext.getBean(ages.vstable.backend.service.TotpService.class);
+        byte[] key=org.springframework.test.util.ReflectionTestUtils.invokeMethod(totp,"decodeBase32",secret);
+        String activation=org.springframework.test.util.ReflectionTestUtils.invokeMethod(totp,"generateCodeForWindow",key,window);
+        mvc.perform(authorized(post("/v1/auth/2fa/activate"),ownerToken).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"code\":\""+activation+"\"}")).andExpect(status().isOk());
+        MvcResult login=mvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\""+owner.getEmail()+"\",\"password\":\""+password+"\"}"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(login.getResponse().getHeader("Authorization")).isNull();
+        String challenge=new tools.jackson.databind.ObjectMapper().readTree(login.getResponse().getContentAsString())
+                .get("challengeToken").asString();
+        String next=org.springframework.test.util.ReflectionTestUtils.invokeMethod(totp,"generateCodeForWindow",key,window+1);
+        String body="{\"challengeToken\":\""+challenge+"\",\"code\":\""+next+"\"}";
+        mvc.perform(post("/v1/auth/login/verify-2fa").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        mvc.perform(post("/v1/auth/login/verify-2fa").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
+        MvcResult reset=mvc.perform(authorized(post("/v1/auth/2fa/setup"),ownerToken)).andReturn();
+        assertThat(reset.getResponse().getStatus()).isIn(401,403);
+        assertThat(users.findById(owner.getId()).orElseThrow().getTwoFactorSecret()).isEqualTo(secret);
+    }
+
+    @Test
+    @DisplayName("LC-CONFIG-01 | CORS headers sessao stateless e executor limitado")
+    void localSecurityConfigurationHasConcreteBoundaries() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/v1/users/me")
+                .header("Origin","https://untrusted.example.test").header("Access-Control-Request-Method","GET"))
+                .andExpect(status().isForbidden());
+        MvcResult result=mvc.perform(authorized(get("/v1/users/me"),ownerToken)).andExpect(status().isOk()).andReturn();
+        assertThat(result.getResponse().getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+        assertThat(result.getResponse().getHeader("X-Frame-Options")).isEqualTo("DENY");
+        assertThat(result.getResponse().getHeader("Cache-Control")).contains("no-store");
+        assertThat(result.getResponse().getCookies()).noneMatch(cookie->cookie.getName().equals("JSESSIONID"));
+        mvc.perform(get("/v1/users/me").param("token",ownerToken)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/v1/users/me").cookie(new jakarta.servlet.http.Cookie("JSESSIONID","synthetic")))
+                .andExpect(status().isUnauthorized());
+        var executor=(org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor)applicationContext.getBean("quoteProviderExecutor");
+        assertThat(executor.getMaxPoolSize()).isEqualTo(8);
+        assertThat(executor.getQueueCapacity()).isEqualTo(50);
+    }
+
+    @ParameterizedTest(name="LC-OUT-05 redirect com builder real do Spring {0}")
+    @ValueSource(strings={"avenia","blindpay"})
+    @org.junit.jupiter.api.Timeout(20)
+    void configuredHttpClientsDoNotFollowCrossOriginRedirects(String provider) throws Exception {
+        var reached=new java.util.concurrent.atomic.AtomicInteger();
+        var sink=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
+        var origin=com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1",0),0);
+        sink.createContext("/",exchange->{
+            reached.incrementAndGet(); byte[] bytes="{}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type","application/json");
+            exchange.sendResponseHeaders(200,bytes.length); exchange.getResponseBody().write(bytes); exchange.close();
+        }); sink.start();
+        origin.createContext("/",exchange->{
+            exchange.getResponseHeaders().add("Location","http://127.0.0.1:"+sink.getAddress().getPort()+"/synthetic");
+            exchange.sendResponseHeaders(302,-1); exchange.close();
+        }); origin.start();
+        try {
+            var builder=applicationContext.getBean(org.springframework.web.client.RestClient.Builder.class).clone();
+            String base="http://127.0.0.1:"+origin.getAddress().getPort();
+            try {
+                if(provider.equals("blindpay")) {
+                    var properties=new ages.vstable.backend.external.blindpay.BlindPayProperties();
+                    properties.setBaseUrl(base);properties.setApiKey(UUID.randomUUID().toString());properties.setInstanceId("synthetic");
+                    new BlindPayClient(properties,new tools.jackson.databind.ObjectMapper(),builder).getCustomer("synthetic");
+                } else {
+                    var generator=java.security.KeyPairGenerator.getInstance("RSA");generator.initialize(2048);
+                    var properties=new ages.vstable.backend.external.avenia.AveniaProperties();
+                    properties.setBaseUrl(base);properties.setApiKey(UUID.randomUUID().toString());
+                    properties.setPrivateKey("-----BEGIN PRIVATE KEY-----\n"+Base64.getEncoder().encodeToString(generator.generateKeyPair().getPrivate().getEncoded())+"\n-----END PRIVATE KEY-----");
+                    new AveniaClient(properties,new ages.vstable.backend.external.avenia.AveniaRequestSigner(),
+                            new tools.jackson.databind.ObjectMapper(),builder).consultarStatusDocumento("synthetic",null);
+                }
+            } catch(ages.vstable.backend.exception.AveniaIntegrationException|ages.vstable.backend.exception.BlindPayIntegrationException expected) {
+                // A recusa controlada e aceitavel; nao contactar a outra origem e o controle avaliado.
+            }
+            assertThat(reached.get()).as("Cliente configurado da aplicacao: nao seguir outra origem").isZero();
+        } finally { origin.stop(0);sink.stop(0); }
+    }
+
     private record Route(String method, String path, String controller, String handler, boolean adminOnly) {
         String key() { return method + " " + path; }
         boolean isPublic() { return PUBLIC_ROUTES.contains(key()); }

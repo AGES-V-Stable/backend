@@ -1,0 +1,46 @@
+﻿{
+    "captured_at_utc":  "2026-11-12T15:18:30.9740564+00:00",
+    "backend_commit":  "3983b755e412e6552a1509992fc7d7485497b3bc",
+    "backend_command":  "gradlew.bat securityAssessmentTest build --continue --no-daemon --console=plain",
+    "backend_process_exit_code":  1,
+    "exit_reason":  "21 assercoes diagnosticas; zero falhas de regressao; tarefas check/build concluidas",
+    "assessment_summary":  {
+                               "total":  385,
+                               "passed":  364,
+                               "failed":  21,
+                               "skipped":  0
+                           },
+    "new_cases":  {
+                      "failed":  5,
+                      "total":  157,
+                      "passed":  152
+                  },
+    "backend_regression":  {
+                               "total":  1241,
+                               "passed":  1235,
+                               "failed":  0,
+                               "skipped":  6
+                           },
+    "frontend_command":  "npm run test:coverage -- --maxWorkers=2 --reporter=default --reporter=junit --outputFile.junit=coverage/security-baseline.xml",
+    "frontend_process_exit_code":  0,
+    "frontend_regression":  {
+                                "total":  772,
+                                "passed":  772,
+                                "failed":  0,
+                                "skipped":  0
+                            },
+    "endpoint_count":  59,
+    "requirements_with_executed_references":  15,
+    "production_code_changed":  false,
+    "real_provider_calls":  false,
+    "max_concurrent_requests":  5,
+    "max_bad_login_attempts":  10,
+    "historical_snapshots_preserved":  true,
+    "limits":  [
+                   "Sandbox externo pendente",
+                   "Convite/cadastro de operadores em desenvolvimento",
+                   "Recuperacao/logout/troca de senha e receptor webhook Avenia ausentes",
+                   "Nao e teste de saturacao nem prova formal distribuida"
+               ],
+    "executed_backend_case_references":  1620
+}

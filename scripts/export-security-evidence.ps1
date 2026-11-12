@@ -70,7 +70,8 @@ $testChanges = @(
     'backend/src/test/java/ages/vstable/backend/service/blindpay/UploadContentAssessmentTest.java',
     'backend/src/test/java/ages/vstable/backend/service/quote/FinancialBoundaryAssessmentTest.java',
     'backend/src/test/java/ages/vstable/backend/external/avenia/ProviderFailureAssessmentTest.java',
-    'backend/scripts/export-security-evidence.ps1'
+    'backend/scripts/export-security-evidence.ps1',
+    'backend/scripts/export-security-coverage.ps1'
 )
 $hashes = [ordered]@{}
 foreach ($relativePath in $testChanges) {

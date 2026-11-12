@@ -20,6 +20,19 @@ import static org.mockito.Mockito.*;
 /** Contrato monetário do adapter real; gateway/provisionamento inteiramente simulados. */
 @Tag("security-assessment")
 class FinancialBoundaryAssessmentTest {
+    @ParameterizedTest(name="LC-OUT-04 cotacao incompleta {0}")
+    @ValueSource(strings={"null-response","null-source","zero-source","negative-target"})
+    void incompleteProviderAmountsAreRejectedWithControlledFailure(String condition) {
+        when(provisioning.ensureBankAccount(company,beneficiary)).thenReturn("synthetic-bank");
+        var response=condition.equals("null-response")?null:new BlindPayQuoteResponse("synthetic-quote",
+                Instant.now().plusSeconds(300).toEpochMilli(),BigDecimal.ONE,BigDecimal.ONE,
+                condition.equals("negative-target")?new BigDecimal("-9900"):new BigDecimal("9900"),
+                condition.equals("null-source")?null:condition.equals("zero-source")?BigDecimal.ZERO:new BigDecimal("10000"),
+                BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,null,null);
+        when(gateway.createQuote(any(),anyString())).thenReturn(response);
+        assertThatThrownBy(()->provider.quote(context("USDB","base_sepolia","USDB","USD",QuoteAmountSide.SOURCE,"100"),"synthetic"))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class);
+    }
     private final BlindPayGateway gateway = mock(BlindPayGateway.class);
     private final BlindPayProvisioningService provisioning = mock(BlindPayProvisioningService.class);
     private final BlindPayQuoteProvider provider = new BlindPayQuoteProvider(gateway, provisioning);
