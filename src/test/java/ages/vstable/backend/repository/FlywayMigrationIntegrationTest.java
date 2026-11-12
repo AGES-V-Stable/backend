@@ -20,11 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V13 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V14 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
  * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
  * invariantes de vínculos e convites, na V12 o histórico de links substituídos e, na V13,
- * contas sem empresa preservando os dados existentes.
+ * contas sem empresa preservando os dados existentes e, na V14, o cache de cotações.
  * Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -84,7 +84,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
@@ -94,6 +94,7 @@ class FlywayMigrationIntegrationTest {
         assertThat(tableExists("company_memberships")).isTrue();
         assertThat(tableExists("company_invitations")).isTrue();
         assertThat(tableExists("company_invitation_replaced_tokens")).isTrue();
+        assertThat(tableExists("exchange_rate_snapshots")).isTrue();
     }
 
     @Test
@@ -111,7 +112,7 @@ class FlywayMigrationIntegrationTest {
 
         // Assert
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13");
+                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13", "14");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
@@ -132,7 +133,7 @@ class FlywayMigrationIntegrationTest {
                 + "VALUES ('" + USER_A3 + "', NULL, 'Sem empresa', 'nova@example.com', 'h', 's')");
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13", "14");
         assertThat(rows("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
                 + "AND table_name = 'users' AND column_name = 'company_id'")).containsExactly("YES");
         assertThat(rows("SELECT id || ':' || company_id FROM users WHERE company_id IS NOT NULL"))
