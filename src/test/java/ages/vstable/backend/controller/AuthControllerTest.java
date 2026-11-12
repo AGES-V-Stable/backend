@@ -242,4 +242,16 @@ class AuthControllerTest {
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
         assertEquals("INVALID_2FA_CODE", response.getBody().get("code"));
     }
+
+    @Test
+    void shouldReturnLockedOnActivateWhenAccountIsLocked() {
+        TwoFactorActivateRequestDTO activateReq = new TwoFactorActivateRequestDTO("000000");
+        doThrow(new LockedException("Conta temporariamente bloqueada por excesso de tentativas."))
+                .when(twoFactorAuthService).activateTwoFactor(user, "000000");
+
+        ResponseEntity<Map<String, Object>> response = authController.activateTwoFactor(user, activateReq);
+
+        assertEquals(HttpStatus.LOCKED, response.getStatusCode());
+        assertEquals("ACCOUNT_LOCKED", response.getBody().get("code"));
+    }
 }

@@ -100,6 +100,15 @@ transfers:
     stale-after: ${TRANSFERS_RECONCILIATION_STALE_AFTER:30s}
     batch-size: ${TRANSFERS_RECONCILIATION_BATCH_SIZE:50}
 
+ai:
+  support:
+    provider: ${AI_SUPPORT_PROVIDER:gemini}
+    api-key: ${AI_SUPPORT_API_KEY:}
+    gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-flash-lite-latest}
+    gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    deepseek-model: ${AI_SUPPORT_DEEPSEEK_MODEL:deepseek-chat}
+    deepseek-base-url: ${AI_SUPPORT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+
 ---
 spring:
   config:
