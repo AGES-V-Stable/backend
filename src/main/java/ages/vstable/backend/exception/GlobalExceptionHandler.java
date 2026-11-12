@@ -1,6 +1,6 @@
 package ages.vstable.backend.exception;
 
-import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
+import ages.vstable.backend.dto.onboarding.AccountRequestDTO;
 import ages.vstable.backend.logging.OperationalLog;
 
 import org.springframework.http.HttpHeaders;
@@ -35,7 +35,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
-        boolean invalidOnboardingEmail = ex.getTarget() instanceof OnboardingRequestDTO
+        // Conta avulsa e cadastro em uma etapa (que estende a conta) respondem igual ao e-mail inválido.
+        boolean invalidOnboardingEmail = ex.getTarget() instanceof AccountRequestDTO
                 && ex.getBindingResult().getFieldErrors("email").stream()
                         .anyMatch(error -> error.getCodes() != null
                                 && java.util.Arrays.stream(error.getCodes())

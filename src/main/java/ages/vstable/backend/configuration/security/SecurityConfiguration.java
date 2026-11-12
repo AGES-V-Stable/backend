@@ -74,7 +74,8 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/login/verify-2fa").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
+                        // POST /v1/onboarding/company não entra aqui: exige a conta autenticada.
+                        .requestMatchers(HttpMethod.POST, "/v1/onboarding", "/v1/onboarding/account").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()

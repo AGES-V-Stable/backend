@@ -103,9 +103,7 @@ public class CompanyService {
 
         assertCnpjAvailable(data.cnpj());
 
-        CompanyEntity company = buildNewCompany(data, request.getTradeName(), OffsetDateTime.now(ZoneOffset.UTC));
-
-        return toResponse(saveOrConflict(company));
+        return toResponse(saveNewCompany(data, request.getTradeName(), OffsetDateTime.now(ZoneOffset.UTC)));
     }
 
     public CompanyResponse update(
@@ -251,7 +249,15 @@ public class CompanyService {
         }
     }
 
-    CompanyEntity buildNewCompany(CompanyNormalizedData data, String tradeName, OffsetDateTime now) {
+    /**
+     * Persiste uma empresa nova com KYB/AML pendentes. Um CNPJ gravado por outra requisição depois da
+     * verificação prévia é decidido pela restrição única do banco e vira conflito.
+     */
+    CompanyEntity saveNewCompany(CompanyNormalizedData data, String tradeName, OffsetDateTime now) {
+        return saveOrConflict(buildNewCompany(data, tradeName, now));
+    }
+
+    private CompanyEntity buildNewCompany(CompanyNormalizedData data, String tradeName, OffsetDateTime now) {
         CompanyEntity company = new CompanyEntity();
 
         applyCompanyData(company, data);
