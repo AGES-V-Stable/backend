@@ -118,10 +118,13 @@ public class SecurityConfiguration {
                 .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-                HttpHeaders.ACCEPT, "X-Requested-With", "X-Request-ID", "X-Current-Totp"));
+                HttpHeaders.ACCEPT, "X-Requested-With", "X-Request-ID", "X-Current-Totp", HttpHeaders.IF_MATCH));
         // The login token is returned in the Authorization response header; the receipt download
         // name comes from Content-Disposition, which a cross-origin frontend can only read if exposed
-        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION, "X-Request-ID"));
+        // ETag carries the version of a member or invitation, which the frontend sends back as If-Match;
+        // Retry-After tells it when an invitation link may be regenerated again.
+        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION,
+                HttpHeaders.ETAG, HttpHeaders.RETRY_AFTER, "X-Request-ID"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

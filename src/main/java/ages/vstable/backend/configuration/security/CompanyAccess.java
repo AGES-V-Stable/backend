@@ -68,6 +68,19 @@ public final class CompanyAccess {
         return membership.getCompanyId();
     }
 
+    /**
+     * The user's own membership in that company, active or removed: everyone may consult their own access,
+     * which is also how a removed member learns about the lost access. Never another person's membership.
+     */
+    public static CompanyMembershipEntity requireSelfMembership(UserEntity user, UUID companyId) {
+        CompanyMembershipEntity membership = user == null ? null : user.getMembership();
+        if (companyId == null || membership == null || !companyId.equals(membership.getCompanyId())) {
+            throw denied();
+        }
+        grant(membership, CompanyPermission.SELF_MEMBERSHIP_READ);
+        return membership;
+    }
+
     /** Only the owner of the user's own company, for routes that do not name a company. */
     public static void requireOwner(UserEntity user) {
         requireOwnerRole(activeMembership(user, null));

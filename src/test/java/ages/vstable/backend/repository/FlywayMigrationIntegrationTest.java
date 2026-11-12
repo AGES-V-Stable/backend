@@ -20,10 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V11 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V12 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
- * criados pela antiga V4 da branch BlindPay e, na V11, o backfill dos vínculos e as
- * invariantes de vínculos e convites. Ignorado quando não há Docker.
+ * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
+ * invariantes de vínculos e convites e, na V12, o histórico de links substituídos.
+ * Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class FlywayMigrationIntegrationTest {
@@ -82,7 +83,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
@@ -91,6 +92,7 @@ class FlywayMigrationIntegrationTest {
         assertThat(columnExists("beneficiaries", "counterparty_country")).isTrue();
         assertThat(tableExists("company_memberships")).isTrue();
         assertThat(tableExists("company_invitations")).isTrue();
+        assertThat(tableExists("company_invitation_replaced_tokens")).isTrue();
     }
 
     @Test
@@ -107,7 +109,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10", "11");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10", "11", "12");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
@@ -342,6 +344,45 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void replacedTokens_sameHashTwice_isRejected() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+        insertInvitation("ana@example.com", "OPERATOR", "PENDING", "hash-current", true);
+        insertReplacedToken("hash-old");
+
+        // Act / Assert
+        assertThatThrownBy(() -> insertReplacedToken("hash-old"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("company_invitation_replaced_tokens_token_hash_key");
+    }
+
+    @Test
+    void replacedTokens_unknownInvitation_isRejected() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+
+        // Act / Assert
+        assertThatThrownBy(() -> execute("INSERT INTO company_invitation_replaced_tokens (invitation_id, token_hash) "
+                + "VALUES ('00000000-0000-0000-0000-0000000000ff', 'hash-old')"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("company_invitation_replaced_tokens_invitation_fkey");
+    }
+
+    @Test
+    void deletingInvitation_removesItsReplacedTokens() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+        insertInvitation("ana@example.com", "OPERATOR", "PENDING", "hash-current", true);
+        insertReplacedToken("hash-old");
+
+        // Act
+        execute("DELETE FROM company_invitations");
+
+        // Assert
+        assertThat(rows("SELECT id FROM company_invitation_replaced_tokens")).isEmpty();
+    }
+
+    @Test
     void deletingCompany_removesItsMembershipsAndInvitations() throws SQLException {
         // Arrange
         migrateWithCompanyAndTwoUsers();
@@ -413,6 +454,12 @@ class FlywayMigrationIntegrationTest {
                 + "token_ciphertext, token_key_version, created_by) VALUES ('" + COMPANY_A + "', 'Convidado', '"
                 + email + "', '" + role + "', '" + status + "', '" + tokenHash + "', " + ciphertext + ", "
                 + keyVersion + ", '" + USER_A1 + "')");
+    }
+
+    /** Registra {@code tokenHash} como link substituído do único convite criado pelo teste. */
+    private void insertReplacedToken(String tokenHash) throws SQLException {
+        execute("INSERT INTO company_invitation_replaced_tokens (invitation_id, token_hash) "
+                + "SELECT id, '" + tokenHash + "' FROM company_invitations");
     }
 
     private List<String> rows(String sql) throws SQLException {
