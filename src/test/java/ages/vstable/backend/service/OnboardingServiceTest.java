@@ -1,5 +1,7 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.dto.onboarding.AccountRequestDTO;
+import ages.vstable.backend.dto.onboarding.CompanyRegistrationRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
@@ -78,7 +80,7 @@ class OnboardingServiceTest {
         CompanyService companyService = new CompanyService(
                 companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
         onboardingService = new OnboardingService(
-                userRepository, administratorRepository, companyRepository, aveniaKycVerificationRepository,
+                userRepository, administratorRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
                 companyMembershipService);
     }
@@ -239,13 +241,50 @@ class OnboardingServiceTest {
 
     @Test
     void performOnboarding_emailConstraintRaceCondition_returnsConflict() {
+        // Arrange: outra requisição gravou o mesmo e-mail depois da verificação prévia.
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(userRepository.saveAndFlush(any()))
-                .thenThrow(new DataIntegrityViolationException("unique constraint"));
-        when(userRepository.existsByEmail("joao@example.com")).thenReturn(false, true);
+        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(OnboardingService.EMAIL_UNIQUE_CONSTRAINT));
+
+        // Act / Assert
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Email already registered");
+        verify(companyMembershipService, never()).assignOwner(any(), any(), any());
+    }
+
+    @Test
+    void performOnboarding_cnpjConstraintRaceCondition_returnsConflictWithoutCreatingTheUser() {
+        when(companyRepository.saveAndFlush(any())).thenThrow(uniqueViolation("companies_cnpj_key"));
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
-                .isInstanceOf(ConflictException.class);
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("CNPJ already registered");
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void performOnboarding_unexpectedIntegrityViolation_isNotReportedAsConflict() {
+        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        DataIntegrityViolationException failure = uniqueViolation("users_full_name_check");
+        when(userRepository.saveAndFlush(any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest())).isSameAs(failure);
+    }
+
+    @Test
+    void performOnboarding_withTwoFactor_returnsTheSetupUriWithoutEnablingIt() {
+        stubCompanyAndUserPersistence(UUID.randomUUID(), UUID.randomUUID());
+        OnboardingRequestDTO request = validRequest();
+        request.setEnableTwoFactor(true);
+
+        OnboardingResponseDTO response = onboardingService.performOnboarding(request);
+
+        assertThat(response.isTwoFactorSetupRequired()).isTrue();
+        assertThat(response.getOtpauthUri()).startsWith("otpauth://");
+        ArgumentCaptor<UserEntity> saved = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getTwoFactorEnabled()).isFalse();
+        assertThat(saved.getValue().getTwoFactorSecret()).isNotBlank();
     }
 
     @Test
@@ -285,6 +324,257 @@ class OnboardingServiceTest {
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    // --- Conta e empresa em etapas separadas (backend#64) ---
+
+    @Test
+    void createAccount_savesUserWithoutCompanyMembershipOrKyc_andReturnsAToken() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        stubCompanyAndUserPersistence(UUID.randomUUID(), userId);
+
+        // Act
+        OnboardingResponseDTO response = onboardingService.createAccount(accountRequest());
+
+        // Assert
+        assertThat(response.getUserId()).isEqualTo(userId);
+        assertThat(response.getCompanyId()).isNull();
+        assertThat(response.getKycVerificationId()).isNull();
+        assertThat(response.getAccessToken()).isEqualTo("jwt-token-123");
+        assertThat(response.isTwoFactorSetupRequired()).isFalse();
+        ArgumentCaptor<UserEntity> saved = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getCompanyId()).isNull();
+        assertThat(saved.getValue().getFullName()).isEqualTo("Joao da Silva");
+        assertThat(saved.getValue().getPasswordHash()).isEqualTo("hash-bcrypt");
+        assertThat(saved.getValue().getPasswordSalt()).isNotBlank();
+        verify(companyRepository, never()).saveAndFlush(any());
+        verify(companyMembershipService, never()).assignOwner(any(), any(), any());
+        verify(aveniaKycVerificationRepository, never()).save(any());
+    }
+
+    @Test
+    void createAccount_withTwoFactor_returnsTheSetupUri() {
+        stubCompanyAndUserPersistence(UUID.randomUUID(), UUID.randomUUID());
+        AccountRequestDTO request = accountRequest();
+        request.setEnableTwoFactor(true);
+
+        OnboardingResponseDTO response = onboardingService.createAccount(request);
+
+        assertThat(response.isTwoFactorSetupRequired()).isTrue();
+        assertThat(response.getOtpauthUri()).startsWith("otpauth://");
+    }
+
+    @Test
+    void createAccount_emailAlreadyRegistered_throwsConflictWithoutSaving() {
+        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Email already registered");
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createAccount_emailBelongsToAdministrator_throwsConflictWithoutSaving() {
+        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
+                .isInstanceOf(ConflictException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createAccount_concurrentSameEmail_throwsConflict() {
+        when(passwordEncoder.encode(any())).thenReturn("hash-bcrypt");
+        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(OnboardingService.EMAIL_UNIQUE_CONSTRAINT));
+
+        assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Email already registered");
+    }
+
+    @Test
+    void createAccount_passwordAndConfirmationMismatch_throwsUnprocessableWithoutSaving() {
+        AccountRequestDTO request = accountRequest();
+        request.setConfirmPassword("Outra@123");
+
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createAccount_weakPassword_throwsUnprocessable() {
+        AccountRequestDTO request = accountRequest();
+        request.setPassword("fraca");
+        request.setConfirmPassword("fraca");
+
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @Test
+    void registerCompany_userWithoutCompany_createsCompanyOwnerMembershipAndPendingKyc() {
+        // Arrange
+        UUID companyId = UUID.randomUUID();
+        UUID kycId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        stubCompanyAndUserPersistence(companyId, user.getId());
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(aveniaKycVerificationRepository.save(any())).thenAnswer(invocation -> {
+            AveniaKycVerificationEntity kyc = invocation.getArgument(0);
+            kyc.setId(kycId);
+            return kyc;
+        });
+
+        // Act
+        OnboardingResponseDTO response = onboardingService.registerCompany(user, companyRequest());
+
+        // Assert
+        assertThat(response.getCompanyId()).isEqualTo(companyId);
+        assertThat(response.getUserId()).isEqualTo(user.getId());
+        assertThat(response.getKycVerificationId()).isEqualTo(kycId);
+        assertThat(response.getAccessToken()).isNull();
+        assertThat(user.getCompanyId()).isEqualTo(companyId);
+        InOrder order = inOrder(companyRepository, userRepository, companyMembershipService,
+                aveniaKycVerificationRepository);
+        order.verify(companyRepository).saveAndFlush(any());
+        order.verify(userRepository).saveAndFlush(user);
+        order.verify(companyMembershipService).assignOwner(eq(user.getId()), eq(companyId), any());
+        order.verify(aveniaKycVerificationRepository).save(any());
+        verify(jwtTokenUtils, never()).generateToken(any());
+    }
+
+    @Test
+    void registerCompany_userWithActiveMembership_throwsConflictWithoutCreatingAnything() {
+        UserEntity user = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OPERATOR);
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("User already belongs to a company")
+                .extracting("code").isEqualTo("USER_ALREADY_IN_COMPANY");
+        verify(companyRepository, never()).saveAndFlush(any());
+        verify(companyMembershipService, never()).assignOwner(any(), any(), any());
+    }
+
+    @Test
+    void registerCompany_legacyUserWithCompanyAndNoMembership_throwsConflict() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(ConflictException.class);
+        verify(companyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void registerCompany_userWhoseMembershipWasRemoved_canRegisterANewCompany() {
+        UUID newCompanyId = UUID.randomUUID();
+        UserEntity user = TestCompanyUsers.removedMember(UUID.randomUUID(), CompanyRole.OPERATOR);
+        stubCompanyAndUserPersistence(newCompanyId, user.getId());
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        OnboardingResponseDTO response = onboardingService.registerCompany(user, companyRequest());
+
+        assertThat(response.getCompanyId()).isEqualTo(newCompanyId);
+        verify(companyMembershipService).assignOwner(eq(user.getId()), eq(newCompanyId), any());
+    }
+
+    @Test
+    void registerCompany_cnpjAlreadyRegistered_isAConflictAndNeverJoinsTheExistingCompany() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        when(companyRepository.existsByCnpj("11222333000181")).thenReturn(true);
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("CNPJ already registered");
+        verify(companyMembershipService, never()).assignOwner(any(), any(), any());
+        verify(userRepository, never()).saveAndFlush(any());
+        assertThat(user.getCompanyId()).isNull();
+    }
+
+    @Test
+    void registerCompany_invalidCnpj_throwsUnprocessableWithoutCreatingAnything() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        CompanyRegistrationRequestDTO request = companyRequest();
+        request.setCnpj("11.222.333/0001-00");
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, request))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(companyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void registerCompany_userNoLongerExists_throwsNotFound() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(NotFoundException.class);
+        verify(companyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void registerCompany_concurrentSameCnpj_throwsConflictForTheCnpj() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(companyRepository.saveAndFlush(any())).thenThrow(uniqueViolation("companies_cnpj_key"));
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("CNPJ already registered");
+        verify(companyMembershipService, never()).assignOwner(any(), any(), any());
+    }
+
+    @Test
+    void registerCompany_concurrentSecondCompanyForSameUser_throwsConflictForTheMembership() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        stubCompanyAndUserPersistence(UUID.randomUUID(), user.getId());
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(companyMembershipService.assignOwner(any(), any(), any()))
+                .thenThrow(uniqueViolation(OnboardingService.ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT));
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest()))
+                .isInstanceOf(ConflictException.class)
+                .extracting("code").isEqualTo("USER_ALREADY_IN_COMPANY");
+        verify(aveniaKycVerificationRepository, never()).save(any());
+    }
+
+    @Test
+    void registerCompany_unexpectedMembershipIntegrityViolation_isNotReportedAsConflict() {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).build();
+        stubCompanyAndUserPersistence(UUID.randomUUID(), user.getId());
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("no cause message");
+        when(companyMembershipService.assignOwner(any(), any(), any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> onboardingService.registerCompany(user, companyRequest())).isSameAs(failure);
+    }
+
+    private static DataIntegrityViolationException uniqueViolation(String constraint) {
+        return new DataIntegrityViolationException("could not execute statement",
+                new RuntimeException("duplicate key value violates unique constraint \"" + constraint + "\""));
+    }
+
+    private AccountRequestDTO accountRequest() {
+        AccountRequestDTO request = new AccountRequestDTO();
+        request.setFullName("Joao da Silva");
+        request.setEmail("joao@example.com");
+        request.setPassword("Senha@123");
+        request.setConfirmPassword("Senha@123");
+        return request;
+    }
+
+    private CompanyRegistrationRequestDTO companyRequest() {
+        CompanyRegistrationRequestDTO request = new CompanyRegistrationRequestDTO();
+        request.setLegalName("Empresa Exemplo Ltda");
+        request.setCnpj("11.222.333/0001-81");
+        request.setCountry("Brasil");
+        request.setZipCode("90000-000");
+        request.setCity("Porto Alegre");
+        request.setState("RS");
+        return request;
     }
 
     private void stubCompanyAndUserPersistence(UUID companyId, UUID userId) {

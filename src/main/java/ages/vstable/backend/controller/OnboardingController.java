@@ -1,5 +1,7 @@
 package ages.vstable.backend.controller;
 
+import ages.vstable.backend.dto.onboarding.AccountRequestDTO;
+import ages.vstable.backend.dto.onboarding.CompanyRegistrationRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
@@ -40,6 +42,37 @@ public class OnboardingController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(onboardingService.performOnboarding(request));
+    }
+
+    @PostMapping("/account")
+    @Operation(summary = "Creates only the access account; the company is registered later by the authenticated user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Account created without company; the token does not reach company data until a company is registered"),
+            @ApiResponse(responseCode = "400", description = "Missing required field"),
+            @ApiResponse(responseCode = "409", description = "Email already registered"),
+            @ApiResponse(responseCode = "422", description = "Password and confirmation mismatch, weak password or invalid email format"),
+    })
+    public ResponseEntity<OnboardingResponseDTO> createAccount(@Valid @RequestBody AccountRequestDTO request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(onboardingService.createAccount(request));
+    }
+
+    @PostMapping("/company")
+    @Operation(summary = "Registers the company of the authenticated user without an active membership and makes the user its owner")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Company registered; owner membership and pending KYC created. The same token now reaches the company"),
+            @ApiResponse(responseCode = "400", description = "Missing required field"),
+            @ApiResponse(responseCode = "401", description = "Not authenticated"),
+            @ApiResponse(responseCode = "403", description = "Authenticated account is not a company user"),
+            @ApiResponse(responseCode = "409", description = "CNPJ already registered (CONFLICT) or the user already belongs to a company (USER_ALREADY_IN_COMPANY)"),
+            @ApiResponse(responseCode = "422", description = "Invalid CNPJ/zip code format"),
+    })
+    public ResponseEntity<OnboardingResponseDTO> registerCompany(
+            @AuthenticationPrincipal UserEntity currentUser,
+            @Valid @RequestBody CompanyRegistrationRequestDTO request) {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(onboardingService.registerCompany(currentUser, request));
     }
 
     @GetMapping("/me")
