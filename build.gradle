@@ -101,6 +101,8 @@ tasks.named('test') {
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
+	systemProperty 'INVITATION_ENCRYPTION_KEY', 'dGVzdC1vbmx5LWludml0ZS1rZXktMzItYnl0ZXMhISE='
+	systemProperty 'INVITATION_FRONTEND_ORIGIN', 'https://frontend.example'
 	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
 		agentJar.from(configurations.mockitoAgent)
 	})
@@ -184,6 +186,7 @@ pitest {
 		'ages.vstable.backend.sandbox.*',
 		'ages.vstable.backend.repository.*IntegrationTest',
 		'ages.vstable.backend.service.*IntegrationTest',
+		'ages.vstable.backend.controller.*IntegrationTest',
 		'ages.vstable.backend.configuration.security.CompanyAuthorizationIntegrationTest',
 		'ages.vstable.backend.external.*ContextTest',
 		'ages.vstable.backend.logging.LoggingFormatTest'

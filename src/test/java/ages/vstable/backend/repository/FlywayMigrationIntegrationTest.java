@@ -20,10 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V11 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V13 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
- * criados pela antiga V4 da branch BlindPay e, na V11, o backfill dos vínculos e as
- * invariantes de vínculos e convites. Ignorado quando não há Docker.
+ * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
+ * invariantes de vínculos e convites, na V12 o histórico de links substituídos e, na V13,
+ * contas sem empresa preservando os dados existentes.
+ * Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class FlywayMigrationIntegrationTest {
@@ -82,7 +84,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
@@ -91,6 +93,7 @@ class FlywayMigrationIntegrationTest {
         assertThat(columnExists("beneficiaries", "counterparty_country")).isTrue();
         assertThat(tableExists("company_memberships")).isTrue();
         assertThat(tableExists("company_invitations")).isTrue();
+        assertThat(tableExists("company_invitation_replaced_tokens")).isTrue();
     }
 
     @Test
@@ -107,9 +110,45 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("6", "7", "8", "9", "10", "11");
+        assertThat(result.migrations).extracting(migration -> migration.version)
+                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
+    }
+
+    @Test
+    void migrate_v13_keepsExistingUsersAndMembershipsAndAllowsAccountsWithoutCompany() throws SQLException {
+        // Arrange: dados gravados antes da V13, quando a empresa era obrigatória na conta.
+        flyway("12").migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "a1@example.com", "'2026-01-01T00:00:00Z'");
+        insertUser(USER_A2, COMPANY_A, "a2@example.com", "'2026-02-01T00:00:00Z'");
+        insertMembership(USER_A1, COMPANY_A, "OWNER", "ACTIVE");
+        insertMembership(USER_A2, COMPANY_A, "OPERATOR", "REMOVED");
+
+        // Act
+        MigrateResult result = flyway(null).migrate();
+        execute("INSERT INTO users (id, company_id, full_name, email, password_hash, password_salt) "
+                + "VALUES ('" + USER_A3 + "', NULL, 'Sem empresa', 'nova@example.com', 'h', 's')");
+
+        // Assert
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13");
+        assertThat(rows("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
+                + "AND table_name = 'users' AND column_name = 'company_id'")).containsExactly("YES");
+        assertThat(rows("SELECT id || ':' || company_id FROM users WHERE company_id IS NOT NULL"))
+                .containsExactlyInAnyOrder(USER_A1 + ":" + COMPANY_A, USER_A2 + ":" + COMPANY_A);
+        assertThat(rows("SELECT user_id || ':' || role || ':' || status FROM company_memberships"))
+                .containsExactlyInAnyOrder(USER_A1 + ":OWNER:ACTIVE", USER_A2 + ":OPERATOR:REMOVED");
+        assertThat(rows("SELECT id FROM users WHERE company_id IS NULL")).containsExactly(USER_A3);
+    }
+
+    @Test
+    void users_companyThatDoesNotExist_isStillRejectedAfterV13() throws SQLException {
+        flyway(null).migrate();
+
+        assertThatThrownBy(() -> insertUser(USER_A1, COMPANY_B, "a1@example.com", "NULL"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("users_company_id_fkey");
     }
 
     @Test
@@ -342,6 +381,45 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void replacedTokens_sameHashTwice_isRejected() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+        insertInvitation("ana@example.com", "OPERATOR", "PENDING", "hash-current", true);
+        insertReplacedToken("hash-old");
+
+        // Act / Assert
+        assertThatThrownBy(() -> insertReplacedToken("hash-old"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("company_invitation_replaced_tokens_token_hash_key");
+    }
+
+    @Test
+    void replacedTokens_unknownInvitation_isRejected() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+
+        // Act / Assert
+        assertThatThrownBy(() -> execute("INSERT INTO company_invitation_replaced_tokens (invitation_id, token_hash) "
+                + "VALUES ('00000000-0000-0000-0000-0000000000ff', 'hash-old')"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("company_invitation_replaced_tokens_invitation_fkey");
+    }
+
+    @Test
+    void deletingInvitation_removesItsReplacedTokens() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+        insertInvitation("ana@example.com", "OPERATOR", "PENDING", "hash-current", true);
+        insertReplacedToken("hash-old");
+
+        // Act
+        execute("DELETE FROM company_invitations");
+
+        // Assert
+        assertThat(rows("SELECT id FROM company_invitation_replaced_tokens")).isEmpty();
+    }
+
+    @Test
     void deletingCompany_removesItsMembershipsAndInvitations() throws SQLException {
         // Arrange
         migrateWithCompanyAndTwoUsers();
@@ -413,6 +491,12 @@ class FlywayMigrationIntegrationTest {
                 + "token_ciphertext, token_key_version, created_by) VALUES ('" + COMPANY_A + "', 'Convidado', '"
                 + email + "', '" + role + "', '" + status + "', '" + tokenHash + "', " + ciphertext + ", "
                 + keyVersion + ", '" + USER_A1 + "')");
+    }
+
+    /** Registra {@code tokenHash} como link substituído do único convite criado pelo teste. */
+    private void insertReplacedToken(String tokenHash) throws SQLException {
+        execute("INSERT INTO company_invitation_replaced_tokens (invitation_id, token_hash) "
+                + "SELECT id, '" + tokenHash + "' FROM company_invitations");
     }
 
     private List<String> rows(String sql) throws SQLException {

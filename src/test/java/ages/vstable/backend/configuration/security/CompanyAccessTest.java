@@ -207,6 +207,33 @@ class CompanyAccessTest {
                 "COMPANY_ACCESS_DENIED");
     }
 
+    @ParameterizedTest
+    @EnumSource(CompanyRole.class)
+    void requireSelfMembership_anyActiveMemberSeesTheirOwnMembership(CompanyRole role) {
+        UserEntity member = TestCompanyUsers.member(companyId, role);
+
+        assertThat(CompanyAccess.requireSelfMembership(member, companyId)).isSameAs(member.getMembership());
+    }
+
+    @Test
+    void requireSelfMembership_removedMemberStillSeesTheirOwnMembershipToLearnAboutTheLostAccess() {
+        UserEntity removed = TestCompanyUsers.removedMember(companyId, CompanyRole.OPERATOR);
+
+        assertThat(CompanyAccess.requireSelfMembership(removed, companyId).getStatus())
+                .isEqualTo(MembershipStatus.REMOVED);
+    }
+
+    @Test
+    void requireSelfMembership_otherCompanyNoMembershipAndMissingData_areDenied() {
+        assertForbiddenWith(() -> CompanyAccess.requireSelfMembership(
+                TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OWNER), companyId), "COMPANY_ACCESS_DENIED");
+        assertForbiddenWith(() -> CompanyAccess.requireSelfMembership(userWithoutMembership(), companyId),
+                "COMPANY_ACCESS_DENIED");
+        assertForbiddenWith(() -> CompanyAccess.requireSelfMembership(null, companyId), "COMPANY_ACCESS_DENIED");
+        assertForbiddenWith(() -> CompanyAccess.requireSelfMembership(
+                TestCompanyUsers.member(companyId, CompanyRole.OWNER), null), "COMPANY_ACCESS_DENIED");
+    }
+
     @Test
     void requireOwner_onlyTheOwnerOfThatCompanyPasses() {
         UserEntity owner = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
