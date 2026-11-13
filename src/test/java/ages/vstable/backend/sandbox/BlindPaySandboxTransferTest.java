@@ -26,6 +26,7 @@ import ages.vstable.backend.repository.ProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderQuoteRepository;
 import ages.vstable.backend.repository.TransferExecutionRepository;
 import ages.vstable.backend.repository.UserRepository;
+import ages.vstable.backend.service.TotpTestCodes;
 import ages.vstable.backend.service.quote.QuoteOrchestratorService;
 import ages.vstable.backend.service.transfer.BlindPayExecutionProcessor;
 import ages.vstable.backend.service.transfer.TransferExecutionService;
@@ -108,8 +109,11 @@ class BlindPaySandboxTransferTest {
     @Autowired private ProviderAccountRepository providerAccountRepository;
     @Autowired private BeneficiaryProviderAccountRepository beneficiaryProviderAccountRepository;
 
-    private record Fixture(UserEntity user, BeneficiaryEntity beneficiary) {
+    private record Fixture(UserEntity user, BeneficiaryEntity beneficiary, String totpSecret) {
     }
+
+    /** Último código enviado: cada confirmação usa outro, pois um código consumido é recusado como replay. */
+    private static String lastTotpCode;
 
     @BeforeEach
     void requireDevelopmentInstanceAndSeed() {
@@ -193,7 +197,7 @@ class BlindPaySandboxTransferTest {
             assertThat(settled.getPayoutQuoteReceiverAmount()).isLessThan(settled.getTargetAmount());
             assertThat(settled.getExternalPayoutId()).isNull();
             executionService.confirmRequote(fixture.user(), settled.getId(), new ConfirmOfferRequest(
-                    settled.getSourceAmount(), settled.getPayoutQuoteReceiverAmount()));
+                    settled.getSourceAmount(), settled.getPayoutQuoteReceiverAmount(), nextTotpCode()));
             settled = awaitTerminal(settled.getId());
         }
         assertThat(settled.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
@@ -229,7 +233,12 @@ class BlindPaySandboxTransferTest {
 
     private TransferExecutionResponse confirm(QuoteResponse quote) {
         return executionService.confirm(fixture.user(), quote.offer().offerId(),
-                new ConfirmOfferRequest(quote.offer().sourceAmount(), quote.offer().targetAmount()));
+                new ConfirmOfferRequest(quote.offer().sourceAmount(), quote.offer().targetAmount(), nextTotpCode()));
+    }
+
+    private static String nextTotpCode() {
+        lastTotpCode = TotpTestCodes.freshCode(fixture.totpSecret(), lastTotpCode);
+        return lastTotpCode;
     }
 
     private TransferExecutionEntity awaitTerminal(UUID executionId) {
@@ -258,11 +267,13 @@ class BlindPaySandboxTransferTest {
     private Fixture seed() {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         String unique = UUID.randomUUID().toString().substring(0, 8);
+        String totpSecret = TotpTestCodes.newSecret();
         CompanyEntity company = companyRepository.save(CompanyEntity.builder()
                 .legalName("V-Stable Sandbox " + unique).cnpj("sandbox-" + unique).country("Brasil").build());
         UserEntity user = userRepository.save(UserEntity.builder()
                 .companyId(company.getId()).fullName("Sandbox User").email("sandbox-" + unique + "@example.com")
-                .passwordHash("not-used").passwordSalt("not-used").build());
+                .passwordHash("not-used").passwordSalt("not-used")
+                .twoFactorSecret(totpSecret).twoFactorEnabled(true).build());
         BeneficiaryEntity beneficiary = beneficiaryRepository.save(BeneficiaryEntity.builder()
                 .company(company).nickname("Sandbox beneficiary").accountHolderName("Sandbox beneficiary")
                 .receivingMethod(ReceivingMethod.BANK_ACCOUNT).currency(TARGET_CURRENCY).paymentRail(PAYMENT_RAIL)
@@ -273,7 +284,7 @@ class BlindPaySandboxTransferTest {
         beneficiaryProviderAccountRepository.save(BeneficiaryProviderAccountEntity.builder()
                 .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY).externalBankAccountId(BANK_ACCOUNT_ID)
                 .status("APPROVED").createdAt(now).updatedAt(now).build());
-        return new Fixture(user, beneficiary);
+        return new Fixture(user, beneficiary, totpSecret);
     }
 
     private static String describe(TransferExecutionEntity execution) {

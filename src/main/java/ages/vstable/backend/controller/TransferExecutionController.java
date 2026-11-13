@@ -28,13 +28,16 @@ public class TransferExecutionController {
 
     @PostMapping("/v1/quotes/offers/{offerId}/confirm")
     @PreAuthorize("hasRole('USER')")
-    @Operation(summary = "Confirma a melhor oferta da cotação agregada e executa a transferência pelo provedor vencedor. Repetir a confirmação devolve a mesma transferência.")
+    @Operation(summary = "Confirma a melhor oferta da cotação agregada com o código TOTP do usuário e executa a transferência pelo provedor vencedor. Repetir a confirmação pelo mesmo usuário devolve a mesma transferência sem consumir outro código.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transferência registrada; retorna o estado atual e, se houver, o código PIX a pagar"),
-            @ApiResponse(responseCode = "400", description = "Valores confirmados ausentes ou inválidos"),
+            @ApiResponse(responseCode = "400", description = "Valores confirmados ou código TOTP ausentes ou com formato inválido"),
+            @ApiResponse(responseCode = "401", description = "Código TOTP incorreto, expirado ou já utilizado"),
+            @ApiResponse(responseCode = "403", description = "Perfil sem permissão de criar transferências ou vínculo com a empresa removido"),
             @ApiResponse(responseCode = "404", description = "Oferta não encontrada para a empresa do usuário"),
-            @ApiResponse(responseCode = "409", description = "O preço mudou no provedor; peça uma nova cotação"),
-            @ApiResponse(responseCode = "422", description = "Oferta expirada, não selecionada, valores diferentes dos da oferta ou compliance pendente"),
+            @ApiResponse(responseCode = "409", description = "O preço mudou no provedor (peça uma nova cotação) ou a oferta já foi confirmada por outro membro"),
+            @ApiResponse(responseCode = "422", description = "Oferta expirada, não selecionada, valores diferentes dos da oferta, compliance pendente ou usuário sem 2FA ativo"),
+            @ApiResponse(responseCode = "423", description = "Verificação 2FA bloqueada temporariamente por tentativas incorretas"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com o provedor"),
             @ApiResponse(responseCode = "503", description = "Falha temporária no provedor"),
     })
@@ -62,12 +65,16 @@ public class TransferExecutionController {
 
     @PostMapping("/v1/transfer-executions/{executionId}/requote/confirm")
     @PreAuthorize("hasRole('USER')")
-    @Operation(summary = "Confirma a nova cotação de payout exigida quando o preço mudou durante o financiamento (status REQUOTE_REQUIRED)")
+    @Operation(summary = "Confirma com o código TOTP do usuário a nova cotação de payout exigida quando o preço mudou durante o financiamento (status REQUOTE_REQUIRED)")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Nova cotação aceita; retorna o estado atual (pode exigir nova confirmação se ela expirou)"),
+            @ApiResponse(responseCode = "400", description = "Valores confirmados ou código TOTP ausentes ou com formato inválido"),
+            @ApiResponse(responseCode = "401", description = "Código TOTP incorreto, expirado ou já utilizado"),
+            @ApiResponse(responseCode = "403", description = "Perfil sem permissão de criar transferências ou vínculo com a empresa removido"),
             @ApiResponse(responseCode = "404", description = "Transferência não encontrada para a empresa do usuário"),
             @ApiResponse(responseCode = "409", description = "Não há recotação pendente"),
-            @ApiResponse(responseCode = "422", description = "Valores diferentes dos da nova cotação"),
+            @ApiResponse(responseCode = "422", description = "Valores diferentes dos da nova cotação ou usuário sem 2FA ativo"),
+            @ApiResponse(responseCode = "423", description = "Verificação 2FA bloqueada temporariamente por tentativas incorretas"),
     })
     public ResponseEntity<TransferExecutionResponse> confirmRequote(
             @AuthenticationPrincipal UserEntity currentUser,

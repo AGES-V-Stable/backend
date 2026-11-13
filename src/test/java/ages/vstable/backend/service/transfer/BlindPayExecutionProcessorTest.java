@@ -11,6 +11,7 @@ import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -29,10 +30,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
@@ -40,7 +43,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -257,7 +263,8 @@ class BlindPayExecutionProcessorTest {
         when(blindPayGateway.createEvmPayout(any(), anyString())).thenReturn(payout("po_000000000001", "processing"));
 
         // Act
-        processor.acceptRequote(execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"));
+        processor.acceptRequote(execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"),
+                () -> { });
 
         // Assert
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
@@ -271,7 +278,7 @@ class BlindPayExecutionProcessorTest {
         TransferExecutionEntity execution = requoteRequired();
 
         assertThatThrownBy(() -> processor.acceptRequote(
-                execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("990.00")))
+                execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("990.00"), () -> { }))
                 .isInstanceOf(UnprocessableEntityException.class);
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REQUOTE_REQUIRED);
@@ -283,7 +290,7 @@ class BlindPayExecutionProcessorTest {
         TransferExecutionEntity execution = awaitingFunds();
 
         assertThatThrownBy(() -> processor.acceptRequote(
-                execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("990.00")))
+                execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("990.00"), () -> { }))
                 .isInstanceOf(ConflictException.class);
     }
 
@@ -294,11 +301,70 @@ class BlindPayExecutionProcessorTest {
         when(blindPayGateway.createQuote(any(), anyString()))
                 .thenReturn(payoutQuote("qu_000000000003", "18012", "97000"));
 
-        processor.acceptRequote(execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"));
+        processor.acceptRequote(execution.getId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"),
+                () -> { });
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REQUOTE_REQUIRED);
         assertThat(execution.getPayoutQuoteReceiverAmount()).isEqualByComparingTo("970.00");
         verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void acceptRequote_authorizationRejected_keepsRequotePendingWithoutPaying() {
+        // Arrange
+        TransferExecutionEntity execution = requoteRequired();
+        Runnable rejectedAuthorization = () -> {
+            throw new BadCredentialsException("Invalid 2FA verification code");
+        };
+
+        // Act / Assert
+        assertThatThrownBy(() -> processor.acceptRequote(execution.getId(), company.getId(),
+                new BigDecimal("1000.00"), new BigDecimal("980.00"), rejectedAuthorization))
+                .isInstanceOf(BadCredentialsException.class);
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REQUOTE_REQUIRED);
+        assertThat(execution.getTargetAmount()).isEqualByComparingTo("990.00");
+        verify(executionRepository, never()).save(any());
+        verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+        verify(blindPayGateway, never()).createQuote(any(), anyString());
+    }
+
+    @Test
+    void acceptRequote_authorizationRunsUnderLockAfterValidationAndBeforeStateChange() {
+        // Arrange
+        TransferExecutionEntity execution = requoteRequired();
+        when(blindPayGateway.createEvmPayout(any(), anyString())).thenReturn(payout("po_000000000001", "processing"));
+        List<TransferExecutionStatus> statusDuringAuthorization = new ArrayList<>();
+
+        // Act
+        processor.acceptRequote(execution.getId(), company.getId(), new BigDecimal("1000.00"),
+                new BigDecimal("980.00"), () -> statusDuringAuthorization.add(execution.getStatus()));
+
+        // Assert
+        assertThat(statusDuringAuthorization).containsExactly(TransferExecutionStatus.REQUOTE_REQUIRED);
+        InOrder order = inOrder(executionRepository, blindPayGateway);
+        order.verify(executionRepository).findForUpdate(execution.getId());
+        order.verify(executionRepository).save(execution);
+        order.verify(blindPayGateway).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void acceptRequote_rejectedBeforeAuthorization_doesNotAskForTheCode() {
+        // Arrange: valores diferentes, sem recotação pendente e de outra empresa.
+        TransferExecutionEntity pending = requoteRequired();
+        TransferExecutionEntity notPending = awaitingFunds();
+        Runnable authorization = mock(Runnable.class);
+
+        // Act / Assert
+        assertThatThrownBy(() -> processor.acceptRequote(pending.getId(), company.getId(),
+                new BigDecimal("1000.00"), new BigDecimal("990.00"), authorization))
+                .isInstanceOf(UnprocessableEntityException.class);
+        assertThatThrownBy(() -> processor.acceptRequote(notPending.getId(), company.getId(),
+                new BigDecimal("1000.00"), new BigDecimal("990.00"), authorization))
+                .isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> processor.acceptRequote(pending.getId(), UUID.randomUUID(),
+                new BigDecimal("1000.00"), new BigDecimal("980.00"), authorization))
+                .isInstanceOf(NotFoundException.class);
+        verify(authorization, never()).run();
     }
 
     @Test
