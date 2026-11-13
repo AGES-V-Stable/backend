@@ -17,7 +17,7 @@ class SecurityConfigurationCorsTest {
 
     @BeforeEach
     void setUp() {
-        SecurityConfiguration configuration = new SecurityConfiguration(null, null, null);
+        SecurityConfiguration configuration = new SecurityConfiguration(null, null, null, null);
         ReflectionTestUtils.setField(configuration, "allowedOrigins", "https://app.vstable.test, http://localhost:*");
         cors = configuration.corsConfigurationSource()
                 .getCorsConfiguration(new MockHttpServletRequest("GET", "/v1/companies"));

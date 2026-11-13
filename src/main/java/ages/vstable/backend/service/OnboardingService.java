@@ -201,30 +201,9 @@ public class OnboardingService {
         if (password == null || !password.equals(request.getConfirmPassword())) {
             throw new UnprocessableEntityException("Password and confirmation do not match");
         }
-        if (!isStrongPassword(password)) {
+        if (!PasswordPolicy.isStrong(password)) {
             throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
         }
-    }
-
-    private static boolean isStrongPassword(String password) {
-        if (password.length() < 8) {
-            return false;
-        }
-
-        boolean hasNumber = false;
-        boolean hasSpecialCharacter = false;
-        for (int i = 0; i < password.length(); i++) {
-            char character = password.charAt(i);
-            if (character == '\n' || character == '\r' || character == '\u0085'
-                    || character == '\u2028' || character == '\u2029') {
-                return false;
-            }
-            hasNumber |= character >= '0' && character <= '9';
-            hasSpecialCharacter |= !((character >= 'a' && character <= 'z')
-                    || (character >= 'A' && character <= 'Z')
-                    || (character >= '0' && character <= '9'));
-        }
-        return hasNumber && hasSpecialCharacter;
     }
 
     private static boolean isPresent(String value) {

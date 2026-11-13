@@ -151,6 +151,20 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleUnprocessableEntity_withRuleCode_returns422WithThatCode() {
+        // Arrange
+        UnprocessableEntityException ex = new UnprocessableEntityException("PASSWORD_TOO_WEAK", "Senha fraca");
+
+        // Act
+        ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
+
+        // Assert
+        assertThat(response.getStatusCode().value()).isEqualTo(422);
+        assertThat(response.getBody()).containsEntry("code", "PASSWORD_TOO_WEAK");
+        assertThat(response.getBody()).containsEntry("message", "Senha fraca");
+    }
+
+    @Test
     void handleAccessDenied_returns403() {
         AccessDeniedException ex = new AccessDeniedException("Denied");
         ResponseEntity<Map<String, String>> response = handler.handleAccessDenied(ex);

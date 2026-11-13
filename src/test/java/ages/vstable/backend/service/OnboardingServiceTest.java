@@ -416,6 +416,20 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void createAccount_passwordLongerThan72Utf8Bytes_throwsUnprocessableWithoutSaving() {
+        // Arrange: 37 caracteres "é" ocupam 74 bytes, acima do limite do BCrypt
+        AccountRequestDTO request = accountRequest();
+        String tooLong = "1@" + "é".repeat(36);
+        request.setPassword(tooLong);
+        request.setConfirmPassword(tooLong);
+
+        // Act / Assert
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void registerCompany_userWithoutCompany_createsCompanyOwnerMembershipAndPendingKyc() {
         // Arrange
         UUID companyId = UUID.randomUUID();
