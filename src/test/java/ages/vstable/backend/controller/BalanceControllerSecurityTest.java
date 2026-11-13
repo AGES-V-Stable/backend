@@ -23,14 +23,18 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.http.MediaType;
 
 import java.util.UUID;
+
+import java.math.BigDecimal;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,4 +121,34 @@ class BalanceControllerSecurityTest {
     private static RequestPostProcessor authenticated(UserEntity user) {
         return authentication(new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities()));
     }
+
+    @Test
+    void addSimulatedBalance_withoutAuthenticationReturns401() throws Exception {
+        mockMvc.perform(post("/v1/balance/simulated-deposits")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount": "20.50"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(balanceService);
+    }
+
+    @Test
+    void addSimulatedBalance_withAuthenticatedCompanyUserReturnsUpdatedBalance() throws Exception {
+        UserEntity user = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OWNER);
+
+        when(balanceService.addBalance(user, new BigDecimal("20.50")))
+                .thenReturn(new BalanceResponse("120.50"));
+
+        mockMvc.perform(post("/v1/balance/simulated-deposits")
+                        .with(authenticated(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount": "20.50"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableBalanceBrl").value("120.50"));
+    }
+
 }

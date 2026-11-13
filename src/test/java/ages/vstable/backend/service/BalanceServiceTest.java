@@ -2,8 +2,15 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.balance.BalanceResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
+import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.exception.NotFoundException;
+import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,12 +26,16 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class BalanceServiceTest {
 
     @Mock
     private CompanyRepository companyRepository;
+
+    @Mock
+    private AveniaKycVerificationRepository kycRepository;
 
     @InjectMocks
     private BalanceService service;
@@ -63,5 +74,61 @@ class BalanceServiceTest {
 
         assertThatThrownBy(() -> service.getBalance(companyId))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void addBalance_updatesBalanceForVerifiedUser() {
+        UserEntity user = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
+        UUID userId = user.getId();
+        CompanyEntity company = CompanyEntity.builder()
+                .id(companyId)
+                .availableBalanceBrl(new BigDecimal("100.00"))
+                .build();
+        AveniaKycVerificationEntity verification = AveniaKycVerificationEntity.builder()
+                .status(ComplianceStatus.APPROVED)
+                .build();
+
+        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(userId))
+                .thenReturn(Optional.of(verification));
+        when(companyRepository.findByIdForUpdate(companyId))
+                .thenReturn(Optional.of(company));
+
+        BalanceResponse response = service.addBalance(user, new BigDecimal("20.50"));
+
+        assertThat(response.availableBalanceBrl()).isEqualTo("120.50");
+        assertThat(company.getAvailableBalanceBrl()).isEqualByComparingTo("120.50");
+    }
+
+    @Test
+    void addBalance_rejectsUserWithPendingKyc() {
+        UserEntity user = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
+        UUID userId = user.getId();
+        AveniaKycVerificationEntity verification = AveniaKycVerificationEntity.builder()
+                .status(ComplianceStatus.PENDING)
+                .build();
+
+        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(userId))
+                .thenReturn(Optional.of(verification));
+
+        assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
+                .isInstanceOf(ForbiddenException.class);
+
+        verifyNoInteractions(companyRepository);
+    }
+
+    @Test
+    void addBalance_rejectsRemovedOwnerBeforeLookingUpKycOrBalance() {
+        UserEntity user = TestCompanyUsers.removedMember(companyId, CompanyRole.OWNER);
+        assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(kycRepository, companyRepository);
+    }
+
+    @Test
+    void addBalance_rejectsViewerBeforeLookingUpKycOrBalance() {
+        UserEntity user = TestCompanyUsers.member(companyId, CompanyRole.VIEWER);
+        assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
+                .isInstanceOf(ForbiddenException.class);
+        verifyNoInteractions(kycRepository, companyRepository);
     }
 }
