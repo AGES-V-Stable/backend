@@ -19,6 +19,7 @@ import ages.vstable.backend.entity.enums.TransferExecutionStatus;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
+import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.QuotePriceChangedException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -26,6 +27,7 @@ import ages.vstable.backend.repository.ImportTransactionRepository;
 import ages.vstable.backend.repository.ProviderQuoteRepository;
 import ages.vstable.backend.repository.TransferExecutionRepository;
 import ages.vstable.backend.service.TransferService;
+import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.service.quote.BlindPayQuoteProvider;
 import ages.vstable.backend.service.quote.ProviderQuoteStatus;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -45,6 +49,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -55,8 +60,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <ul>
  *   <li>só a oferta vencedora ({@code SELECTED}) da empresa do usuário, ainda válida e com
  *       os mesmos valores exibidos, pode ser confirmada;</li>
- *   <li>cada oferta gera no máximo uma execução (unicidade em banco); repetir a confirmação
- *       devolve a execução existente em vez de executar de novo;</li>
+ *   <li>a confirmação de uma oferta e a de uma recotação exigem um código TOTP válido e
+ *       ainda não usado, verificado antes de qualquer gravação ou chamada a provedor; o
+ *       código só é consumido quando a transação que muda o estado é confirmada;</li>
+ *   <li>cada oferta gera no máximo uma execução (bloqueio da oferta e unicidade em banco);
+ *       repetir a confirmação pelo mesmo usuário devolve a execução existente em vez de
+ *       executar de novo, sem consumir outro código, pois nada muda;</li>
  *   <li>a Avenia recota no momento da execução: se o preço piorou, nada é criado e o
  *       usuário precisa de uma nova cotação;</li>
  *   <li>a BlindPay segue a máquina de estados de {@link BlindPayExecutionProcessor}.</li>
@@ -79,6 +88,7 @@ public class TransferExecutionService {
     private final ImportTransactionRepository importTransactionRepository;
     private final TransferService transferService;
     private final BlindPayExecutionProcessor blindPayProcessor;
+    private final TwoFactorAuthService twoFactorAuthService;
     private final TransactionTemplate transactions;
     private final Clock clock;
 
@@ -89,9 +99,10 @@ public class TransferExecutionService {
             ImportTransactionRepository importTransactionRepository,
             TransferService transferService,
             BlindPayExecutionProcessor blindPayProcessor,
+            TwoFactorAuthService twoFactorAuthService,
             PlatformTransactionManager transactionManager) {
         this(providerQuoteRepository, executionRepository, importTransactionRepository, transferService,
-                blindPayProcessor, transactionManager, Clock.systemUTC());
+                blindPayProcessor, twoFactorAuthService, transactionManager, Clock.systemUTC());
     }
 
     TransferExecutionService(
@@ -100,6 +111,7 @@ public class TransferExecutionService {
             ImportTransactionRepository importTransactionRepository,
             TransferService transferService,
             BlindPayExecutionProcessor blindPayProcessor,
+            TwoFactorAuthService twoFactorAuthService,
             PlatformTransactionManager transactionManager,
             Clock clock) {
         this.providerQuoteRepository = providerQuoteRepository;
@@ -107,6 +119,7 @@ public class TransferExecutionService {
         this.importTransactionRepository = importTransactionRepository;
         this.transferService = transferService;
         this.blindPayProcessor = blindPayProcessor;
+        this.twoFactorAuthService = twoFactorAuthService;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.clock = clock;
@@ -118,8 +131,9 @@ public class TransferExecutionService {
             registration = transactions.execute(status -> register(user, offerId, confirmation));
         } catch (DataIntegrityViolationException ex) {
             // Confirmação concorrente da mesma oferta: a outra requisição já registrou a execução.
-            return toResponse(executionRepository.findByProviderQuoteId(offerId)
-                    .orElseThrow(() -> ex));
+            // A transação desta foi desfeita, então o código TOTP dela foi devolvido.
+            return toResponse(requireOwnConfirmation(user, executionRepository.findByProviderQuoteId(offerId)
+                    .orElseThrow(() -> ex)));
         }
         TransferExecutionEntity execution = registration.execution();
         if (!registration.created()) {
@@ -141,7 +155,8 @@ public class TransferExecutionService {
     public TransferExecutionResponse confirmRequote(
             UserEntity user, UUID executionId, ConfirmOfferRequest confirmation) {
         blindPayProcessor.acceptRequote(executionId, CompanyMembershipService.currentCompanyId(user),
-                confirmation.sourceAmount(), confirmation.targetAmount());
+                confirmation.sourceAmount(), confirmation.targetAmount(),
+                () -> authorizeWithTotp(user, confirmation.totpCode()));
         return find(user, executionId);
     }
 
@@ -151,7 +166,7 @@ public class TransferExecutionService {
     }
 
     private Registration register(UserEntity user, UUID offerId, ConfirmOfferRequest confirmation) {
-        ProviderQuoteEntity offer = providerQuoteRepository.findById(offerId)
+        ProviderQuoteEntity offer = providerQuoteRepository.findForUpdate(offerId)
                 .orElseThrow(() -> new NotFoundException("Offer not found"));
         QuoteRequestEntity request = offer.getQuoteRequest();
         UUID companyId = CompanyMembershipService.currentCompanyId(user);
@@ -161,6 +176,7 @@ public class TransferExecutionService {
 
         TransferExecutionEntity existing = executionRepository.findByProviderQuoteId(offerId).orElse(null);
         if (existing != null) {
+            requireOwnConfirmation(user, existing);
             requireConfirmedAmounts(confirmation, existing.getSourceAmount(), offer.getTargetAmount());
             return new Registration(existing, false, request.getAmountSide(), null);
         }
@@ -176,6 +192,7 @@ public class TransferExecutionService {
         if (!request.getCompany().getId().equals(beneficiary.getCompany().getId())) {
             throw new NotFoundException("Beneficiary not found");
         }
+        authorizeWithTotp(user, confirmation.totpCode());
 
         TransferExecutionEntity execution = TransferExecutionEntity.builder()
                 .providerQuoteId(offer.getId())
@@ -203,6 +220,35 @@ public class TransferExecutionService {
         providerQuoteRepository.save(offer);
         executionRepository.saveAndFlush(execution);
         return new Registration(execution, true, request.getAmountSide(), aveniaRequest);
+    }
+
+    /**
+     * Exige o TOTP do usuário dentro da transação que muda o estado da execução, antes de
+     * qualquer gravação. O código fica consumido somente se essa transação for confirmada;
+     * se ela for desfeita (regra violada, unicidade, falha de banco), o código é devolvido.
+     */
+    private void authorizeWithTotp(UserEntity user, String totpCode) {
+        TwoFactorAuthService.TotpReservation reservation =
+                twoFactorAuthService.reserveTransferTotp(user.getId(), totpCode);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    reservation.release();
+                }
+            }
+        });
+    }
+
+    /**
+     * A repetição só devolve a execução a quem a confirmou; outro membro da empresa a
+     * consulta pelo endpoint de leitura.
+     */
+    private TransferExecutionEntity requireOwnConfirmation(UserEntity user, TransferExecutionEntity existing) {
+        if (!Objects.equals(user.getId(), existing.getRequestedBy())) {
+            throw new ConflictException("OFFER_ALREADY_CONFIRMED", "The offer was already confirmed by another member");
+        }
+        return existing;
     }
 
     /**

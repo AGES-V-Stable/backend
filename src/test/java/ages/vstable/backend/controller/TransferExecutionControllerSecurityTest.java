@@ -2,24 +2,32 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.configuration.security.AuthenticationConfigurer;
 import ages.vstable.backend.configuration.security.SecurityConfiguration;
+import ages.vstable.backend.dto.transfer.ConfirmOfferRequest;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
 import ages.vstable.backend.dto.transfer.TransferExecutionResponse;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.QuotePriceChangedException;
+import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.service.transfer.TransferExecutionService;
 import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,9 +38,11 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -47,7 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TransferExecutionControllerSecurityTest {
 
     private static final String CONFIRMATION = """
-            {"sourceAmount": 1000.00, "targetAmount": 990.00}
+            {"sourceAmount": 1000.00, "targetAmount": 990.00, "totpCode": "123456"}
             """;
 
     @Autowired
@@ -113,6 +123,155 @@ class TransferExecutionControllerSecurityTest {
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirm_withoutTotpCode_returns400WithoutCallingTheService() throws Exception {
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceAmount\": 1000.00, \"targetAmount\": 990.00}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("totpCode: TOTP code is required"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "12345", "1234567", "12a456", " 123456", "１２３４５６"})
+    void confirm_malformedTotpCode_returns400WithoutCallingTheService(String totpCode) throws Exception {
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmationWith(totpCode)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirm_incorrectOrReusedTotp_returns401() throws Exception {
+        when(executionService.confirm(any(), any(), any()))
+                .thenThrow(new BadCredentialsException("TOTP code has already been used"));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void confirm_totpVerificationLocked_returns423() throws Exception {
+        when(executionService.confirm(any(), any(), any()))
+                .thenThrow(new LockedException("Too many failed 2FA attempts. Try again later."));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+    }
+
+    @Test
+    void confirm_accountWithoutTwoFactor_returns422() throws Exception {
+        when(executionService.confirm(any(), any(), any()))
+                .thenThrow(new UnprocessableEntityException("Usuário não possui 2FA ativo"));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
+    void confirm_offerAlreadyConfirmedByAnotherMember_returns409() throws Exception {
+        when(executionService.confirm(any(), any(), any()))
+                .thenThrow(new ConflictException("OFFER_ALREADY_CONFIRMED", "The offer was already confirmed by another member"));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("OFFER_ALREADY_CONFIRMED"));
+    }
+
+    @Test
+    void confirm_passesTheTotpCodeToTheService() throws Exception {
+        UUID offerId = UUID.randomUUID();
+        when(executionService.confirm(same(principal), eq(offerId), any()))
+                .thenReturn(response(offerId, TransferExecutionStatus.AWAITING_FUNDS, "pix-code"));
+
+        mockMvc.perform(post("/v1/quotes/offers/{offerId}/confirm", offerId)
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ConfirmOfferRequest> request = ArgumentCaptor.forClass(ConfirmOfferRequest.class);
+        verify(executionService).confirm(same(principal), eq(offerId), request.capture());
+        assertThat(request.getValue().totpCode()).isEqualTo("123456");
+    }
+
+    @Test
+    void confirmRequote_withoutTotpCode_returns400WithoutCallingTheService() throws Exception {
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceAmount\": 1000.00, \"targetAmount\": 990.00}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("totpCode: TOTP code is required"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirmRequote_malformedTotpCode_returns400WithoutCallingTheService() throws Exception {
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmationWith("12345")))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(executionService);
+    }
+
+    @Test
+    void confirmRequote_incorrectTotp_returns401() throws Exception {
+        when(executionService.confirmRequote(any(), any(), any()))
+                .thenThrow(new BadCredentialsException("Invalid 2FA verification code"));
+
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void confirmRequote_userWithoutMembership_returns403AccessDeniedWithoutExecuting() throws Exception {
+        UserEntity withoutMembership = UserEntity.builder().id(UUID.randomUUID()).companyId(UUID.randomUUID()).build();
+
+        mockMvc.perform(post("/v1/transfer-executions/{id}/requote/confirm", UUID.randomUUID())
+                        .with(user(withoutMembership))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONFIRMATION))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_DENIED"));
+
+        verifyNoInteractions(executionService);
+    }
+
+    private static String confirmationWith(String totpCode) {
+        return """
+                {"sourceAmount": 1000.00, "targetAmount": 990.00, "totpCode": "%s"}
+                """.formatted(totpCode);
     }
 
     @Test

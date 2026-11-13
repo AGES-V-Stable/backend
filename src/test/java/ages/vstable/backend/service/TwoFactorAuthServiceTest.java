@@ -20,8 +20,16 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -355,5 +363,184 @@ class TwoFactorAuthServiceTest {
 
                 assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, "000000"))
                                 .isInstanceOf(BadCredentialsException.class);
+        }
+
+        @Test
+        void reserveTransferTotp_codigoValido_reservaEBloqueiaReplay() {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String validCode = codeForWindow(secret, 0);
+
+                // Act
+                twoFactorAuthService.reserveTransferTotp(userId, validCode);
+
+                // Assert
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, validCode))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("already been used");
+                assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, validCode))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("already been used");
+        }
+
+        @Test
+        void reserveTransferTotp_aposRelease_devolveOCodigoParaNovaTentativa() {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String validCode = codeForWindow(secret, 0);
+                TwoFactorAuthService.TotpReservation reservation =
+                                twoFactorAuthService.reserveTransferTotp(userId, validCode);
+
+                // Act
+                reservation.release();
+
+                // Assert
+                twoFactorAuthService.reserveTransferTotp(userId, validCode);
+        }
+
+        @Test
+        void reserveTransferTotp_releaseRestauraOCodigoConsumidoAnteriormente() {
+                // Arrange: o código A foi consumido; uma reserva de B é devolvida em seguida.
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String consumed = codeForWindow(secret, 0);
+                String rejected = codeForWindow(secret, 1);
+                twoFactorAuthService.reserveTransferTotp(userId, consumed);
+                TwoFactorAuthService.TotpReservation reservation =
+                                twoFactorAuthService.reserveTransferTotp(userId, rejected);
+
+                // Act
+                reservation.release();
+
+                // Assert: A continua bloqueado e B volta a ser aceito.
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, consumed))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("already been used");
+                twoFactorAuthService.reserveTransferTotp(userId, rejected);
+        }
+
+        @Test
+        void reserveTransferTotp_releaseTardioNaoDesbloqueiaCodigoMaisRecente() {
+                // Arrange: A é reservado, B é reservado depois e só então A é devolvido.
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String first = codeForWindow(secret, 0);
+                String second = codeForWindow(secret, 1);
+                TwoFactorAuthService.TotpReservation firstReservation =
+                                twoFactorAuthService.reserveTransferTotp(userId, first);
+                twoFactorAuthService.reserveTransferTotp(userId, second);
+
+                // Act
+                firstReservation.release();
+
+                // Assert
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, second))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("already been used");
+        }
+
+        @Test
+        void reserveTransferTotp_requisicoesSimultaneasComMesmoCodigo_apenasUmaReserva() throws Exception {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String validCode = codeForWindow(secret, 0);
+                int attempts = 8;
+                ExecutorService executor = Executors.newFixedThreadPool(attempts);
+                CountDownLatch start = new CountDownLatch(1);
+                AtomicInteger reserved = new AtomicInteger();
+                AtomicInteger replayed = new AtomicInteger();
+                List<Future<?>> results = new ArrayList<>();
+
+                // Act
+                try {
+                        for (int i = 0; i < attempts; i++) {
+                                results.add(executor.submit(() -> {
+                                        start.await();
+                                        try {
+                                                twoFactorAuthService.reserveTransferTotp(userId, validCode);
+                                                reserved.incrementAndGet();
+                                        } catch (BadCredentialsException ex) {
+                                                replayed.incrementAndGet();
+                                        }
+                                        return null;
+                                }));
+                        }
+                        start.countDown();
+                        for (Future<?> result : results) {
+                                result.get(10, TimeUnit.SECONDS);
+                        }
+                } finally {
+                        executor.shutdownNow();
+                }
+
+                // Assert
+                assertThat(reserved.get()).isEqualTo(1);
+                assertThat(replayed.get()).isEqualTo(attempts - 1);
+        }
+
+        @Test
+        void reserveTransferTotp_codigoIncorreto_naoReservaEContaTentativaFalha() {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                String secret = transferUserWith2fa(userId);
+                String wrongCode = differentCode(codeForWindow(secret, 0));
+
+                // Act / Assert: cinco erros bloqueiam a verificação, inclusive de um código correto.
+                for (int i = 0; i < 5; i++) {
+                        assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, wrongCode))
+                                        .isInstanceOf(BadCredentialsException.class)
+                                        .hasMessageContaining("Invalid");
+                }
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, codeForWindow(secret, 0)))
+                                .isInstanceOf(LockedException.class);
+        }
+
+        @Test
+        void reserveTransferTotp_usuarioSem2faAtivo_lancaUnprocessableEntityException() {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                String secret = totpService.generateSecret();
+                when(userRepository.findById(userId)).thenReturn(Optional.of(UserEntity.builder()
+                                .id(userId).email("pending-2fa@vstable.com")
+                                .twoFactorSecret(secret).twoFactorEnabled(false).build()));
+
+                // Act / Assert
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, codeForWindow(secret, 0)))
+                                .isInstanceOf(UnprocessableEntityException.class)
+                                .hasMessageContaining("2FA");
+        }
+
+        @Test
+        void reserveTransferTotp_usuarioNaoEncontrado_lancaBadCredentialsException() {
+                // Arrange
+                UUID userId = UUID.randomUUID();
+                when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+                // Act / Assert
+                assertThatThrownBy(() -> twoFactorAuthService.reserveTransferTotp(userId, "123456"))
+                                .isInstanceOf(BadCredentialsException.class);
+        }
+
+        private String transferUserWith2fa(UUID userId) {
+                String secret = totpService.generateSecret();
+                when(userRepository.findById(userId)).thenReturn(Optional.of(UserEntity.builder()
+                                .id(userId)
+                                .email(userId + "@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(true)
+                                .build()));
+                return secret;
+        }
+
+        private String codeForWindow(String secret, int offset) {
+                long window = FIXED_INSTANT.getEpochSecond() / 30L + offset;
+                return totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+        }
+
+        private String differentCode(String code) {
+                return code.equals("000000") ? "111111" : "000000";
         }
 }

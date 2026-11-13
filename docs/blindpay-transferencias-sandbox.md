@@ -10,8 +10,12 @@
      com rota de execução: a Avenia só cota BRL via PIX para carteira cripto; a BlindPay só cota payout para
      conta bancária, com origem em BRL (pix/ted) ou em token.
    - A vencedora fica com `provider_quotes.status = SELECTED`. Só ela pode ser confirmada.
-2. `POST /v1/quotes/offers/{offerId}/confirm` com `{"sourceAmount": ..., "targetAmount": ...}`. Os valores
-   precisam ser exatamente os exibidos na oferta.
+2. `POST /v1/quotes/offers/{offerId}/confirm` com `{"sourceAmount": ..., "targetAmount": ..., "totpCode": "123456"}`. Os valores
+   precisam ser exatamente os exibidos na oferta. `totpCode` é o código de 6 dígitos do aplicativo autenticador
+   (o usuário precisa ter 2FA ativo): ausente ou malformado responde 400; incorreto, expirado ou já usado, 401;
+   conta sem 2FA, 422; verificação bloqueada por tentativas, 423. O código é verificado antes de qualquer
+   gravação ou chamada a provedor e só é consumido quando a confirmação é registrada. Repetir a confirmação
+   pelo mesmo usuário devolve a mesma execução sem consumir outro código; outro membro recebe 409.
    - **Avenia**: recota na subconta do usuário; se o preço piorou, responde 409 e não cria ticket. O
      `quoteToken` da Avenia vale 15 s, por isso a oferta exibida tem uma janela própria de confirmação
      (`QUOTE_AVENIA_CONFIRMATION_WINDOW`, padrão 60 s); a cotação nova da execução protege o preço.
@@ -21,7 +25,7 @@
 3. `GET /v1/transfer-executions/{executionId}`: acompanha o estado.
 4. `POST /v1/transfer-executions/{executionId}/requote/confirm`: obrigatório quando o status é
    `REQUOTE_REQUIRED`, ou seja, a cotação de payout expirou durante o financiamento e a nova entrega menos
-   do que o confirmado. O corpo traz os valores de `requote`.
+   do que o confirmado. O corpo traz os valores de `requote` e um `totpCode` novo, com as mesmas regras.
 
 | Status | Significado |
 |---|---|
@@ -141,7 +145,7 @@ curl -X POST localhost:8080/v1/quotes -H "Authorization: Bearer $TOKEN" -H 'Cont
 
 # 2. Confirmação com os valores exibidos
 curl -X POST localhost:8080/v1/quotes/offers/<offerId>/confirm -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"sourceAmount":100.00,"targetAmount":<offer.targetAmount>}'
+  -H 'Content-Type: application/json' -d '{"sourceAmount":100.00,"targetAmount":<offer.targetAmount>,"totpCode":"<código do autenticador>"}'
 
 # 3. Acompanhamento (a conciliação avança sem webhook em até ~1 min)
 curl localhost:8080/v1/transfer-executions/<executionId> -H "Authorization: Bearer $TOKEN"

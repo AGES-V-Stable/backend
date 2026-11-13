@@ -21,6 +21,8 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @RequiredArgsConstructor
@@ -188,6 +190,50 @@ public class TwoFactorAuthService {
      * {@link #consumeTransferTotp(UUID, String)}.
      */
     public void validateTransferTotp(UUID userId, String code) {
+        validateTransferUserTotp(userId, code);
+    }
+
+    /** Código de uma operação crítica reservado por {@link #reserveTransferTotp(UUID, String)}. */
+    @FunctionalInterface
+    public interface TotpReservation {
+
+        /** Devolve o código quando a operação é rejeitada sem mudar estado. */
+        void release();
+    }
+
+    /**
+     * Valida o código TOTP como {@link #validateTransferTotp(UUID, String)} e o marca como
+     * usado de forma atômica, para que requisições simultâneas com o mesmo código não sejam
+     * aceitas ao mesmo tempo. Se a operação for rejeitada antes de mudar estado, o chamador
+     * deve chamar {@link TotpReservation#release()}.
+     *
+     * <p>Assim como as demais proteções deste serviço, a reserva vale somente para a instância
+     * atual da aplicação.
+     */
+    public TotpReservation reserveTransferTotp(UUID userId, String code) {
+        UserEntity user = validateTransferUserTotp(userId, code);
+        String email = user.getEmail();
+        String normalizedCode = code.trim();
+        AtomicReference<String> previousCode = new AtomicReference<>();
+        AtomicBoolean reserved = new AtomicBoolean(false);
+        lastUsedCodeByAccount.compute(email, (account, currentCode) -> {
+            if (normalizedCode.equals(currentCode)) {
+                return currentCode;
+            }
+            previousCode.set(currentCode);
+            reserved.set(true);
+            return normalizedCode;
+        });
+        if (!reserved.get()) {
+            throw new BadCredentialsException("TOTP code has already been used");
+        }
+        failedAttemptsByAccount.remove(email);
+        lockedUntilByAccount.remove(email);
+        return () -> lastUsedCodeByAccount.computeIfPresent(email,
+                (account, currentCode) -> normalizedCode.equals(currentCode) ? previousCode.get() : currentCode);
+    }
+
+    private UserEntity validateTransferUserTotp(UUID userId, String code) {
         UserEntity user = loadAuthenticatedUserForTotp(userId);
         assertNotLocked(user.getEmail());
 
@@ -202,6 +248,7 @@ public class TwoFactorAuthService {
                     "O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
         }
         validateTotpWithoutConsuming(user.getEmail(), user.getTwoFactorSecret(), code);
+        return user;
     }
 
     /**
