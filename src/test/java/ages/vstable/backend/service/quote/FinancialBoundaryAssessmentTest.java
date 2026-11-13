@@ -59,7 +59,8 @@ class FinancialBoundaryAssessmentTest {
     void precisionAndOverflowCannotBeSilentlyRounded(String amount) {
         when(provisioning.ensureBankAccount(company, beneficiary)).thenReturn("synthetic-bank");
         assertThatThrownBy(() -> provider.quote(context("USDB", "base_sepolia", "USDB", "USD", QuoteAmountSide.SOURCE, amount), "synthetic"))
-                .isInstanceOf(ArithmeticException.class);
+                .isInstanceOfAny(IllegalArgumentException.class,
+                        ages.vstable.backend.exception.UnprocessableEntityException.class);
         verifyNoInteractions(gateway);
     }
 

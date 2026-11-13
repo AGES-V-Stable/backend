@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,12 +24,14 @@ import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * Diagnóstico opt-in: asserções expressam o controle seguro esperado, portanto
@@ -107,15 +111,54 @@ class TwoFactorStateAssessmentTest {
     @Test
     @DisplayName("TC-CONC-01 | validar e consumir TOTP deve autorizar no maximo uma operacao")
     void validationAndConsumptionMustBeAtomicAcrossFiveOperations() throws Exception {
-        TwoFactorAuthService instance = instance();
+        assertThat(acceptedTransferAttempts(instance()))
+                .as("Operacoes autorizadas pelo mesmo TOTP").isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "LC-HARNESS-01 recusa atomica em {0}")
+    @ValueSource(strings = {"validate", "consume"})
+    void concurrentHarnessAcceptsCredentialRejectionsWithoutDeadlock(String rejectionPoint) throws Exception {
+        TwoFactorAuthService secured = mock(TwoFactorAuthService.class);
+        AtomicBoolean consumed = new AtomicBoolean();
+        var claim = (org.mockito.stubbing.Answer<Void>) call -> {
+            if (!consumed.compareAndSet(false, true)) {
+                throw new BadCredentialsException("Synthetic replay rejection");
+            }
+            return null;
+        };
+        if (rejectionPoint.equals("validate")) {
+            doAnswer(claim).when(secured).validateTransferTotp(user.getId(), code);
+        } else {
+            doAnswer(claim).when(secured).consumeTransferTotp(user.getId(), code);
+        }
+        // Contraprova da ferramenta: uma implementacao atomica simulada deve passar.
+        assertThat(acceptedTransferAttempts(secured)).isEqualTo(1);
+    }
+
+    private int acceptedTransferAttempts(TwoFactorAuthService instance) throws Exception {
+        CyclicBarrier start = new CyclicBarrier(5);
         CyclicBarrier validated = new CyclicBarrier(5);
         try (var pool = Executors.newFixedThreadPool(5)) {
             var futures = IntStream.range(0, 5).mapToObj(index -> pool.submit(() -> {
-                instance.validateTransferTotp(user.getId(), code);
-                // Intercalacao deterministica da API de validacao/consumo; nao envia transferencias.
-                validated.await(10, TimeUnit.SECONDS);
-                instance.consumeTransferTotp(user.getId(), code);
-                return true;
+                start.await(10, TimeUnit.SECONDS);
+                boolean valid = false;
+                try {
+                    instance.validateTransferTotp(user.getId(), code);
+                    valid = true;
+                } catch (BadCredentialsException rejected) {
+                    // Recusa esperada do controle; nao e erro de infraestrutura.
+                } finally {
+                    // Todos chegam aqui, inclusive quem foi recusado na validacao.
+                    // Preserva a intercalacao deterministica do contrato dividido.
+                    validated.await(10, TimeUnit.SECONDS);
+                }
+                if (!valid) return false;
+                try {
+                    instance.consumeTransferTotp(user.getId(), code);
+                    return true;
+                } catch (BadCredentialsException rejected) {
+                    return false;
+                }
             })).toList();
             int accepted = 0;
             for (var future : futures) {
@@ -123,7 +166,7 @@ class TwoFactorStateAssessmentTest {
                     accepted++;
                 }
             }
-            assertThat(accepted).as("Operacoes autorizadas pelo mesmo TOTP").isEqualTo(1);
+            return accepted;
         }
     }
 

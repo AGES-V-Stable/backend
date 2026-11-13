@@ -9,6 +9,7 @@ import ages.vstable.backend.external.blindpay.BlindPayClient;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.transfer.BlindPayExecutionProcessor;
+import ages.vstable.backend.support.ProviderClientFixture;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -130,9 +131,12 @@ class ApplicationSecurityAssessmentTest {
     private String password;
     private String passwordHash;
     private boolean exercisesMockProvider;
+    private final java.util.Map<UUID, Set<String>> issuedTotpCodes = new java.util.HashMap<>();
 
     @BeforeEach
     void syntheticCompaniesAndOwner() {
+        exercisesMockProvider = false;
+        issuedTotpCodes.clear();
         // A URL é obrigatoriamente a do container desta classe, nunca a de um banco existente.
         jdbc.execute("TRUNCATE companies, administrators, blindpay_webhook_events CASCADE");
         password = UUID.randomUUID() + "aA1!";
@@ -164,6 +168,7 @@ class ApplicationSecurityAssessmentTest {
                     String.valueOf(route.isPublic()), String.valueOf(route.adminOnly())));
         }
         Files.write(inventory, rows, StandardCharsets.UTF_8);
+        writeConditionalJobInventory(inventory.resolveSibling("endpoints-perfis.csv"));
 
         String challenge = jwt.generateChallengeToken(owner);
         List<DynamicTest> cases = new ArrayList<>();
@@ -174,10 +179,7 @@ class ApplicationSecurityAssessmentTest {
                 cases.add(DynamicTest.dynamicTest("TC-AUTH-05 challenge " + route.key(), () ->
                         mvc.perform(authorized(routeRequest(route), challenge)).andExpect(status().isUnauthorized())));
             }
-            if (route.adminOnly()) {
-                cases.add(DynamicTest.dynamicTest("TC-AUTHZ-01 USER em rota ADMIN " + route.key(), () ->
-                        mvc.perform(authorized(routeRequest(route), ownerToken)).andExpect(status().isForbidden())));
-            }
+            // OWNER/OPERATOR/VIEWER em rotas administrativas: somente LC-AUTHZ-01.
         }
         return cases;
     }
@@ -238,7 +240,7 @@ class ApplicationSecurityAssessmentTest {
         mvc.perform(authorized(post(confirmPath(offer)), token).contentType(MediaType.APPLICATION_JSON)
                         .content(confirmation("100", "99"))).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM transfer_executions", Integer.class)).isEqualTo(1);
-        // Este caso avalia acesso por perfil; a ausencia de TOTP e avaliada separadamente em TC-FIN-01.
+        // Fixture envia segundo fator valido; sua exigencia e avaliada em TC-FIN-01.
     }
 
     @ParameterizedTest(name = "TC-RBAC-06 usuario nao decide compliance {0} {1}")
@@ -317,15 +319,19 @@ class ApplicationSecurityAssessmentTest {
         return jwt.generateToken(owner);
     }
 
-    @Test
-    @DisplayName("TC-FIN-01 | confirmacao de oferta deve exigir segundo fator antes da submissao")
-    void offerConfirmationMustRequireTotp() throws Exception {
+    @ParameterizedTest(name = "TC-FIN-01 sem TOTP com 2FA ativo={0}")
+    @CsvSource({"false,422", "true,401"})
+    void offerConfirmationMustRequireTotp(boolean enabled, int expectedStatus) throws Exception {
+        if (enabled) enableTwoFactor(owner);
         UUID offer = offer(companyA, owner.getId(), beneficiary(companyA));
         MvcResult result = mvc.perform(authorized(post(confirmPath(offer)), ownerToken)
-                .contentType(MediaType.APPLICATION_JSON).content(confirmation("100", "99"))).andReturn();
-        assertThat(result.getResponse().getStatus()).as("Confirmacao sem TOTP e com 2FA desativado")
-                .isEqualTo(422);
-        verifyNoInteractions(processor);
+                .contentType(MediaType.APPLICATION_JSON).content(confirmationWithoutTotp("100", "99"))).andReturn();
+        org.assertj.core.api.SoftAssertions.assertSoftly(check -> {
+            check.assertThat(result.getResponse().getStatus()).as("Confirmacao sem TOTP")
+                    .isEqualTo(expectedStatus);
+            check.assertThatCode(() -> verifyNoInteractions(processor)).doesNotThrowAnyException();
+            check.assertThat(jdbc.queryForObject("SELECT count(*) FROM transfer_executions", Integer.class)).isZero();
+        });
     }
 
     @Test
@@ -379,14 +385,21 @@ class ApplicationSecurityAssessmentTest {
     @DisplayName("TC-CONC-02 | cinco confirmacoes simultaneas criam uma unica execucao")
     void fiveConcurrentConfirmationsAreIdempotentInPostgres() throws Exception {
         UUID offer = offer(companyA, owner.getId(), beneficiary(companyA));
+        // Cinco fatores independentes da mesma empresa: a corrida de negocio nao
+        // depende de permitir replay do mesmo TOTP (avaliado em TC-CONC-01).
+        List<MockHttpServletRequestBuilder> requests = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            UserEntity actor = user(companyA, CompanyRole.OPERATOR);
+            requests.add(authorized(post(confirmPath(offer)), jwt.generateToken(actor))
+                    .contentType(MediaType.APPLICATION_JSON).content(confirmation(actor, "100", "99")));
+        }
         CountDownLatch ready = new CountDownLatch(5);
         CountDownLatch start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(5)) {
             var futures = IntStream.range(0, 5).mapToObj(index -> pool.submit(() -> {
                 ready.countDown();
                 assertThat(start.await(15, TimeUnit.SECONDS)).isTrue();
-                return mvc.perform(authorized(post(confirmPath(offer)), ownerToken)
-                        .contentType(MediaType.APPLICATION_JSON).content(confirmation("100", "99"))).andReturn();
+                return mvc.perform(requests.get(index)).andReturn();
             })).toList();
             try {
                 assertThat(ready.await(15, TimeUnit.SECONDS)).isTrue();
@@ -483,7 +496,7 @@ class ApplicationSecurityAssessmentTest {
         UserEntity other = user(companyB);
         UUID otherOffer = offer(companyB, other.getId(), beneficiary(companyB));
         mvc.perform(authorized(post(confirmPath(otherOffer)), jwt.generateToken(other))
-                        .contentType(MediaType.APPLICATION_JSON).content(confirmation("100", "99")))
+                        .contentType(MediaType.APPLICATION_JSON).content(confirmation(other, "100", "99")))
                 .andExpect(status().isOk());
         UUID executionId = jdbc.queryForObject("SELECT id FROM transfer_executions", UUID.class);
         UUID transactionId = jdbc.queryForObject("SELECT transaction_id FROM transfer_executions", UUID.class);
@@ -494,8 +507,11 @@ class ApplicationSecurityAssessmentTest {
         mvc.perform(authorized(get("/api/transferencias/" + transactionId + "/comprovante"), ownerToken))
                 .andExpect(status().isNotFound());
         MvcResult history = mvc.perform(authorized(get("/api/transferencias").param("companyId", companyB.toString()),
-                ownerToken)).andExpect(status().isOk()).andReturn();
-        assertThat(history.getResponse().getContentAsString()).doesNotContain(transactionId.toString());
+                ownerToken)).andReturn();
+        assertThat(history.getResponse().getStatus()).as("Negar empresa alheia ou filtrar pelo principal")
+                .isIn(200, 403, 404);
+        assertThat(history.getResponse().getContentAsString())
+                .doesNotContain(transactionId.toString(), executionId.toString(), companyB.toString());
     }
 
     @Test
@@ -673,32 +689,43 @@ class ApplicationSecurityAssessmentTest {
         verify(processor, times(1)).start(any());
     }
 
-    @Test
-    @DisplayName("TC-FIN-20 | recotacao nao deve concluir payout sem TOTP")
-    void requoteMustRequireTotpBeforeSimulatedSettlement() throws Exception {
+    @ParameterizedTest(name = "TC-FIN-20 recotacao sem TOTP com 2FA ativo={0}")
+    @CsvSource({"false,422", "true,401"})
+    void requoteMustRequireTotpBeforeSimulatedSettlement(boolean enabled, int expectedStatus) throws Exception {
         exercisesMockProvider = true;
-        UUID offer = offer(companyA, owner.getId(), beneficiary(companyA));
-        mvc.perform(authorized(post(confirmPath(offer)), ownerToken).contentType(MediaType.APPLICATION_JSON)
-                .content(confirmation("100", "99"))).andExpect(status().isOk());
-        UUID execution = jdbc.queryForObject("SELECT id FROM transfer_executions", UUID.class);
-        jdbc.update("UPDATE transfer_executions SET status='REQUOTE_REQUIRED', payout_quote_receiver_amount=98, payout_quote_expires_at=now()+interval '5 minutes' WHERE id=?", execution);
-        var provisioning = org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
-        when(provisioning.ensureManagedWallet(any(), any())).thenReturn(
-                new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet("synthetic-wallet", "0x" + "1".repeat(40)));
-        var payout = org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
-        when(payout.id()).thenReturn("synthetic-payout");
-        when(payout.status()).thenReturn("completed");
-        when(blindpay.createEvmPayout(any(), any())).thenReturn(payout);
-        var real = realProcessor(provisioning);
+        UUID execution = prepareRequote();
+        owner.setTwoFactorEnabled(enabled);
+        users.saveAndFlush(owner);
+        var real = stubbedRequoteProcessor("synthetic-payout", () -> { });
         org.mockito.Mockito.doAnswer(call -> {
             real.acceptRequote(call.getArgument(0), call.getArgument(1), call.getArgument(2), call.getArgument(3));
             return null;
         }).when(processor).acceptRequote(any(), any(), any(), any());
         MvcResult result = mvc.perform(authorized(post("/v1/transfer-executions/" + execution + "/requote/confirm"), ownerToken)
-                .contentType(MediaType.APPLICATION_JSON).content(confirmation("100", "98"))).andReturn();
-        verify(blindpay, times(1)).createEvmPayout(any(), any());
-        assertThat(jdbc.queryForObject("SELECT status FROM transfer_executions WHERE id=?", String.class, execution)).isEqualTo("COMPLETED");
-        assertThat(result.getResponse().getStatus()).as("Recotacao sem segundo fator chegou ao payout simulado concluido").isEqualTo(422);
+                .contentType(MediaType.APPLICATION_JSON).content(confirmationWithoutTotp("100", "98"))).andReturn();
+        org.assertj.core.api.SoftAssertions.assertSoftly(check -> {
+            check.assertThat(result.getResponse().getStatus()).as("Recotacao sem segundo fator")
+                    .isEqualTo(expectedStatus);
+            check.assertThatCode(() -> verifyNoInteractions(avenia, blindpay)).doesNotThrowAnyException();
+            check.assertThatCode(() -> verify(processor, org.mockito.Mockito.never())
+                    .acceptRequote(any(), any(), any(), any())).doesNotThrowAnyException();
+            check.assertThat(jdbc.queryForObject("SELECT status FROM transfer_executions WHERE id=?", String.class, execution))
+                    .isEqualTo("REQUOTE_REQUIRED");
+        });
+    }
+
+    private BlindPayExecutionProcessor stubbedRequoteProcessor(String payoutId, Runnable onProvisioning) {
+        var provisioning = org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
+        when(provisioning.ensureManagedWallet(any(), any())).thenAnswer(call -> {
+            onProvisioning.run();
+            return new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet(
+                    "synthetic-wallet", "0x" + "1".repeat(40));
+        });
+        var payout = org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
+        when(payout.id()).thenReturn(payoutId);
+        when(payout.status()).thenReturn("completed");
+        when(blindpay.createEvmPayout(any(), any())).thenReturn(payout);
+        return realProcessor(provisioning);
     }
 
     private BlindPayExecutionProcessor realProcessor(ages.vstable.backend.service.quote.BlindPayProvisioningService provisioning) {
@@ -740,8 +767,11 @@ class ApplicationSecurityAssessmentTest {
     @TestFactory
     List<DynamicTest> endpointInputAndErrorContracts() {
         return routes().stream().map(route -> DynamicTest.dynamicTest("LC-API-01 " + route.key(), () -> {
+            // JUnit nao executa BeforeEach/AfterEach por DynamicTest.
+            org.mockito.Mockito.reset(avenia, blindpay, processor);
             syntheticCompaniesAndOwner();
-            if(route.path().equals("/v1/blindpay/compliance/terms")) {
+            boolean terms = route.path().equals("/v1/blindpay/compliance/terms");
+            if(terms) {
                 exercisesMockProvider=true;
                 when(blindpay.initiateTermsOfService(any())).thenReturn(
                         new ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse("https://provider.example.test/terms"));
@@ -752,12 +782,21 @@ class ApplicationSecurityAssessmentTest {
                     .contentType(MediaType.APPLICATION_JSON).content("{")
                     .param("livenessId", "synthetic");
             if (!route.isPublic()) authorized(call, route.adminOnly() ? adminToken() : ownerToken);
-            MvcResult result = mvc.perform(call).andReturn();
-            int code = result.getResponse().getStatus();
-            // Parameterless reads/setup need no request body; allow a legitimate 2xx or domain 4xx.
-            assertThat(code).as(route.key() + " must not crash on bounded invalid input")
-                    .isBetween(200, 499);
-            assertNoInternalData(result);
+            try {
+                MvcResult result = mvc.perform(call).andReturn();
+                int code = result.getResponse().getStatus();
+                // Leituras/setup sem parametros podem responder 2xx sem consumir o corpo.
+                assertThat(code).as(route.key() + " must not crash on bounded invalid input")
+                        .isBetween(200, 499);
+                assertNoInternalData(result);
+            } finally {
+                if (terms) {
+                    verify(blindpay).initiateTermsOfService(any());
+                    org.mockito.Mockito.verifyNoMoreInteractions(avenia, blindpay);
+                } else {
+                    verifyNoInteractions(avenia, blindpay);
+                }
+            }
         })).toList();
     }
 
@@ -831,8 +870,8 @@ class ApplicationSecurityAssessmentTest {
                 .content("""
                     {"sourceAmount":100,"targetAmount":99,"companyId":"%s","beneficiaryId":"%s",
                      "requestedBy":"%s","sourceCurrency":"XXX","targetCurrency":"XXX",
-                     "totalFee":-999,"status":"COMPLETED","provider":"AVENIA"}
-                    """.formatted(companyB, foreign, UUID.randomUUID()))).andExpect(status().isOk());
+                     "totalFee":-999,"status":"COMPLETED","provider":"AVENIA","totpCode":"%s"}
+                    """.formatted(companyB, foreign, UUID.randomUUID(), validTotp(owner)))).andExpect(status().isOk());
         var row = jdbc.queryForMap("SELECT company_id,beneficiary_id,requested_by,source_currency,target_currency,total_fee,status FROM transfer_executions");
         assertThat(row.get("company_id")).isEqualTo(companyA);
         assertThat(row.get("beneficiary_id")).isEqualTo(beneficiary);
@@ -941,13 +980,7 @@ class ApplicationSecurityAssessmentTest {
     void requoteAndReconciliationUseStableIdempotencyAndAmounts() throws Exception {
         exercisesMockProvider=true;
         UUID execution=prepareRequote();
-        var provisioning=org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
-        when(provisioning.ensureManagedWallet(any(),any())).thenReturn(
-                new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet("synthetic-wallet","0x"+"1".repeat(40)));
-        var payout=org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
-        when(payout.id()).thenReturn("synthetic-once"); when(payout.status()).thenReturn("completed");
-        when(blindpay.createEvmPayout(any(),any())).thenReturn(payout);
-        var real=realProcessor(provisioning);
+        var real=stubbedRequoteProcessor("synthetic-once", () -> { });
         CountDownLatch gate=new CountDownLatch(1);
         try(var pool=Executors.newFixedThreadPool(5)) {
             var work=IntStream.range(0,5).mapToObj(i->pool.submit(()->{
@@ -976,15 +1009,8 @@ class ApplicationSecurityAssessmentTest {
             public java.time.Clock withZone(java.time.ZoneId zone){return this;}
             public Instant instant(){return current.get();}
         };
-        var provisioning=org.mockito.Mockito.mock(ages.vstable.backend.service.quote.BlindPayProvisioningService.class);
-        when(provisioning.ensureManagedWallet(any(),any())).thenAnswer(call->{
-            current.set(current.get().plusSeconds(600)); // simula provisionamento lento, sem sleep
-            return new ages.vstable.backend.service.quote.BlindPayProvisioningService.ManagedWallet("synthetic-wallet","0x"+"1".repeat(40));
-        });
-        var payout=org.mockito.Mockito.mock(ages.vstable.backend.external.blindpay.dto.BlindPayPayoutResponse.class);
-        when(payout.id()).thenReturn("synthetic-expired-payout"); when(payout.status()).thenReturn("completed");
-        when(blindpay.createEvmPayout(any(),any())).thenReturn(payout);
-        var real=realProcessor(provisioning);
+        // Simula provisionamento lento pelo relogio, sem sleep.
+        var real=stubbedRequoteProcessor("synthetic-expired-payout", () -> current.set(current.get().plusSeconds(600)));
         org.springframework.test.util.ReflectionTestUtils.setField(real,"clock",controlled);
         real.acceptRequote(execution,companyA,new BigDecimal("100"),new BigDecimal("98"));
         verify(blindpay,org.mockito.Mockito.never()).createEvmPayout(any(),any());
@@ -1104,18 +1130,7 @@ class ApplicationSecurityAssessmentTest {
             var builder=applicationContext.getBean(org.springframework.web.client.RestClient.Builder.class).clone();
             String base="http://127.0.0.1:"+origin.getAddress().getPort();
             try {
-                if(provider.equals("blindpay")) {
-                    var properties=new ages.vstable.backend.external.blindpay.BlindPayProperties();
-                    properties.setBaseUrl(base);properties.setApiKey(UUID.randomUUID().toString());properties.setInstanceId("synthetic");
-                    new BlindPayClient(properties,new tools.jackson.databind.ObjectMapper(),builder).getCustomer("synthetic");
-                } else {
-                    var generator=java.security.KeyPairGenerator.getInstance("RSA");generator.initialize(2048);
-                    var properties=new ages.vstable.backend.external.avenia.AveniaProperties();
-                    properties.setBaseUrl(base);properties.setApiKey(UUID.randomUUID().toString());
-                    properties.setPrivateKey("-----BEGIN PRIVATE KEY-----\n"+Base64.getEncoder().encodeToString(generator.generateKeyPair().getPrivate().getEncoded())+"\n-----END PRIVATE KEY-----");
-                    new AveniaClient(properties,new ages.vstable.backend.external.avenia.AveniaRequestSigner(),
-                            new tools.jackson.databind.ObjectMapper(),builder).consultarStatusDocumento("synthetic",null);
-                }
+                ProviderClientFixture.call(provider, base, builder).run();
             } catch(ages.vstable.backend.exception.AveniaIntegrationException|ages.vstable.backend.exception.BlindPayIntegrationException expected) {
                 // A recusa controlada e aceitavel; nao contactar a outra origem e o controle avaliado.
             }
@@ -1146,6 +1161,24 @@ class ApplicationSecurityAssessmentTest {
             }
         });
         return routes.stream().sorted(Comparator.comparing(Route::key)).toList();
+    }
+
+    private void writeConditionalJobInventory(Path path) throws Exception {
+        List<String> rows = new ArrayList<>();
+        rows.add("method,path,controller,handler,profile,application_auth,scope");
+        for (Class<?> controller : List.of(ages.vstable.backend.controller.SeedJobController.class,
+                ages.vstable.backend.controller.MigrationJobController.class)) {
+            String profile = String.join("|", controller.getAnnotation(org.springframework.context.annotation.Profile.class).value());
+            for (var method : controller.getDeclaredMethods()) {
+                var mapping = method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+                if (mapping == null) continue;
+                for (String endpoint : mapping.value()) {
+                    rows.add(String.join(",", "POST", endpoint, controller.getSimpleName(), method.getName(),
+                            profile, "permitAll", "conditional-job-not-active-in-default-profile"));
+                }
+            }
+        }
+        Files.write(path, rows, StandardCharsets.UTF_8);
     }
 
     private MockHttpServletRequestBuilder routeRequest(Route route) {
@@ -1183,12 +1216,16 @@ class ApplicationSecurityAssessmentTest {
     }
 
     private UserEntity user(UUID company) {
+        return user(company, CompanyRole.OWNER);
+    }
+
+    private UserEntity user(UUID company, CompanyRole role) {
         UserEntity user = users.saveAndFlush(UserEntity.builder().companyId(company)
                 .fullName("Pessoa Sintetica").email(UUID.randomUUID() + "@example.test")
                 .passwordHash(passwordHash).passwordSalt("unused-synthetic-salt")
                 .createdAt(OffsetDateTime.now(ZoneOffset.UTC)).updatedAt(OffsetDateTime.now(ZoneOffset.UTC)).build());
-        jdbc.update("INSERT INTO company_memberships(company_id, user_id, role, status) VALUES (?, ?, 'OWNER', 'ACTIVE')",
-                company, user.getId());
+        jdbc.update("INSERT INTO company_memberships(company_id, user_id, role, status) VALUES (?, ?, ?, 'ACTIVE')",
+                company, user.getId(), role.name());
         return user;
     }
 
@@ -1230,6 +1267,42 @@ class ApplicationSecurityAssessmentTest {
     private String confirmPath(UUID offer) { return "/v1/quotes/offers/" + offer + "/confirm"; }
 
     private String confirmation(String source, String target) {
+        return confirmation(owner, source, target);
+    }
+
+    private String confirmation(UserEntity actor, String source, String target) {
+        return "{\"sourceAmount\":" + source + ",\"targetAmount\":" + target
+                + ",\"totpCode\":\"" + validTotp(actor) + "\"}";
+    }
+
+    private void enableTwoFactor(UserEntity actor) {
+        if (!Boolean.TRUE.equals(actor.getTwoFactorEnabled())) {
+            actor.setTwoFactorSecret(applicationContext.getBean(ages.vstable.backend.service.TotpService.class).generateSecret());
+            actor.setTwoFactorEnabled(true);
+            users.saveAndFlush(actor);
+        }
+    }
+
+    private String validTotp(UserEntity actor) {
+        enableTwoFactor(actor);
+        var service = applicationContext.getBean(ages.vstable.backend.service.TotpService.class);
+        byte[] key = org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "decodeBase32", actor.getTwoFactorSecret());
+        Set<String> issued = issuedTotpCodes.computeIfAbsent(actor.getId(), ignored -> new java.util.HashSet<>());
+        long window = Instant.now().getEpochSecond() / 30;
+        // Janela atual +/-1, sem repetir codigo entre requisicoes da mesma conta.
+        // O DTO atual ainda ignora totpCode; isto prepara os demais casos para a
+        // correcao do contrato, sem fingir que a aplicacao ja exige o fator.
+        for (long offset : new long[]{0, -1, 1}) {
+            String code = org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "generateCodeForWindow", key, window + offset);
+            if (issued.add(code)) {
+                assertThat(service.verifyCode(actor.getTwoFactorSecret(), code)).isTrue();
+                return code;
+            }
+        }
+        throw new IllegalStateException("Fixture esgotou codigos TOTP distintos na janela");
+    }
+
+    private String confirmationWithoutTotp(String source, String target) {
         return "{\"sourceAmount\":" + source + ",\"targetAmount\":" + target + "}";
     }
 }

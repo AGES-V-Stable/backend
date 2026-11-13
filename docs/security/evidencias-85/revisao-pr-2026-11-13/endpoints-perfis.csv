@@ -1,0 +1,3 @@
+method,path,controller,handler,profile,application_auth,scope
+POST,/events,SeedJobController,seed,seed,permitAll,conditional-job-not-active-in-default-profile
+POST,/events,MigrationJobController,migrate,migration,permitAll,conditional-job-not-active-in-default-profile

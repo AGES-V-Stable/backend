@@ -1,0 +1,3 @@
+﻿"method","path","profile","controller","application_auth","component_evidence","coverage_status","limitation"
+"POST","/events","seed","SeedJobController","permitAll","integration-retest-0265;integration-retest-0267;integration-retest-0268","PARCIAL","Perfil seed: HTTP sem JWT exercitado em slice MVC, seeder mockado. Exposicao AWS/IAM e implantacao acidental nao avaliadas."
+"POST","/events","migration","MigrationJobController","permitAll","integration-retest-0266","PARCIAL","Perfil migration: controller unitario; contexto HTTP do perfil e exposicao AWS/IAM nao avaliados."

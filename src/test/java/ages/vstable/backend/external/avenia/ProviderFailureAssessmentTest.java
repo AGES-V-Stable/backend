@@ -2,7 +2,7 @@ package ages.vstable.backend.external.avenia;
 
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
-import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
+import ages.vstable.backend.support.ProviderClientFixture;
 import ages.vstable.backend.external.blindpay.BlindPayClient;
 import ages.vstable.backend.external.blindpay.BlindPayProperties;
 import com.sun.net.httpserver.HttpServer;
@@ -19,12 +19,9 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
-import java.security.KeyPairGenerator;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -149,19 +146,6 @@ class ProviderFailureAssessmentTest {
     }
 
     private Runnable client(String provider, String origin, RestClient.Builder builder) throws Exception {
-        if (provider.equals("blindpay")) {
-            BlindPayProperties properties = new BlindPayProperties();
-            properties.setBaseUrl(origin); properties.setApiKey(UUID.randomUUID().toString()); properties.setInstanceId("synthetic");
-            BlindPayClient client = new BlindPayClient(properties, new ObjectMapper(), builder);
-            return () -> client.getCustomer("synthetic");
-        }
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA"); generator.initialize(2048);
-        AveniaProperties properties = new AveniaProperties();
-        properties.setBaseUrl(origin); properties.setApiKey(UUID.randomUUID().toString());
-        properties.setPrivateKey("-----BEGIN PRIVATE KEY-----\n" + Base64.getEncoder().encodeToString(generator.generateKeyPair().getPrivate().getEncoded()) + "\n-----END PRIVATE KEY-----");
-        AveniaClient client = new AveniaClient(properties, new AveniaRequestSigner(), new ObjectMapper(), builder);
-        AveniaQuoteRequest request = new AveniaQuoteRequest("BRL", "PIX", "USDC", "POLYGON", new BigDecimal("100"), null,
-                false, false, null, null, null, null, null, null, null, "synthetic");
-        return () -> client.createQuote(request);
+        return ProviderClientFixture.call(provider, origin, builder);
     }
 }
