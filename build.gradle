@@ -97,7 +97,7 @@ abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
 tasks.named('test') {
 	// Testes contra a instância de desenvolvimento da BlindPay só rodam em blindpaySandboxTest.
 	useJUnitPlatform {
-		excludeTags 'blindpay-sandbox'
+		excludeTags 'blindpay-sandbox', 'security-assessment'
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
@@ -128,6 +128,32 @@ tasks.register('blindpaySandboxTest', Test) {
 	}
 }
 
+// Diagnóstico da cicd#85: afirma o comportamento seguro esperado. Falhas nesta
+// tarefa são evidências da avaliação, sem alterar o gate da suíte de regressão.
+tasks.register('securityAssessmentTest', Test) {
+	description = 'Avalia controles de segurança localmente, com PostgreSQL isolado e provedores simulados.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'security-assessment'
+	}
+	systemProperties tasks.named('test', Test).get().systemProperties
+	systemProperty 'AVENIA_BASE_URL', 'http://127.0.0.1:1'
+	systemProperty 'BLINDPAY_BASE_URL', 'http://127.0.0.1:1'
+	systemProperty 'APP_CONFIG_SECRET_ARN', ''
+	systemProperty 'TRANSFERS_RECONCILIATION_ENABLED', 'false'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	maxParallelForks = 1
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'failed', 'skipped'
+		exceptionFormat 'short'
+	}
+}
+
 tasks.named('jacocoTestReport') {
 	dependsOn tasks.named('test')
 	reports {
@@ -155,7 +181,7 @@ pitest {
 		'ages.vstable.backend.*Test',
 		'ages.vstable.backend.*Tests'
 	]
-	excludedGroups = ['blindpay-sandbox']
+	excludedGroups = ['blindpay-sandbox', 'security-assessment']
 	excludedTestClasses = [
 		'ages.vstable.backend.sandbox.*',
 		'ages.vstable.backend.repository.*IntegrationTest',

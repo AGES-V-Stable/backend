@@ -1,0 +1,1394 @@
+﻿{
+    "phase":  "assessment",
+    "captured_at_utc":  "2026-11-10T14:26:18.1783545+00:00",
+    "environment":  "local; JUnit/MockMvc/Testcontainers ou Vitest; sem chamadas aos provedores",
+    "commits":  {
+                    "backend":  "07c2302fea9434dfd107f803010a6d066efb548a",
+                    "frontend":  "49946566b6023d36ebf738b7971ecd878e530f71",
+                    "cicd":  "940f9d142e733cfdfe69f5cbd14be0a1bcd51695",
+                    "wiki":  "a853aedfc9d64b8dab452e7e1b969fbbca56a10a"
+                },
+    "assessment_files_sha256":  {
+                                    "backend/build.gradle":  "344E8ED054A86FBCC50EA268D3806C6F5F1C7EE69F05C6C486AF61B9ED17536C",
+                                    "backend/src/test/java/ages/vstable/backend/service/TwoFactorStateAssessmentTest.java":  "2EF56075E7FBAA8B80B674849F0BDF894E721C92254A0E916F4BE7CBFB93DA94",
+                                    "backend/src/test/java/ages/vstable/backend/configuration/security/ApplicationSecurityAssessmentTest.java":  "1E0F639ADFA9FE9B1145AE55F887CB5F1115D57A25230557B3E78BCE7EBE18F1",
+                                    "backend/src/test/java/ages/vstable/backend/service/blindpay/UploadContentAssessmentTest.java":  "76C853F00559227A15E39BF14AE007F1A94D4DF7809264D796424E0A708D940B",
+                                    "backend/scripts/export-security-evidence.ps1":  "1C02A1393245F0B7F64822C2A1600CE0236B2D8A2E0FC17872F6FA9AC63DBD44"
+                                },
+    "summary":  {
+                    "total":  171,
+                    "passed":  158,
+                    "failed":  13,
+                    "skipped":  0
+                },
+    "cases":  [
+                  {
+                      "evidence_id":  "assessment-0001",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-INT-04 | webhook assinado com empresa divergente nao altera conta de compliance",
+                      "status":  "PASS",
+                      "duration_seconds":  2.473,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0002",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-05 | historico detalhes execucao e comprovante nao expoem outra empresa",
+                      "status":  "PASS",
+                      "duration_seconds":  1.126,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0003",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-07 | desativacao da conta deve invalidar o acesso com JWT existente",
+                      "status":  "PASS",
+                      "duration_seconds":  0.199,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0004",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-01 | confirmacao de oferta deve exigir segundo fator antes da submissao",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.268,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0005",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-08 | login real emite JWT e recusa senha incorreta sem detalhes internos",
+                      "status":  "PASS",
+                      "duration_seconds":  0.395,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0006",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-02 exclusao SUPER_ADMIN",
+                      "status":  "PASS",
+                      "duration_seconds":  0.211,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0007",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-02 exclusao COMPLIANCE_ANALYST",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.175,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0008",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-02 exclusao SUPPORT",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.208,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0009",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-01 compliance SUPER_ADMIN",
+                      "status":  "PASS",
+                      "duration_seconds":  0.181,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0010",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-01 compliance COMPLIANCE_ANALYST",
+                      "status":  "PASS",
+                      "duration_seconds":  0.18,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0011",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-01 compliance SUPPORT",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.159,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0012",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-03 valor adulterado \"99.99\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.167,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0013",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-03 valor adulterado \"100.01\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.154,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0014",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-03 valor adulterado \"100.00000001\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.19,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0015",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-03 valor adulterado \"99999999999999999999999\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.185,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0016",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-02 valor invalido \"0\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.363,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0017",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-02 valor invalido \"-1\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.141,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0018",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-02 valor invalido \"0.001\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.144,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0019",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-02 valor invalido \"null\"",
+                      "status":  "PASS",
+                      "duration_seconds":  0.141,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0020",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-03 edicao cadastral SUPER_ADMIN",
+                      "status":  "PASS",
+                      "duration_seconds":  0.17,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0021",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-03 edicao cadastral COMPLIANCE_ANALYST",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.15,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0022",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-RBAC-03 edicao cadastral SUPPORT",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.175,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0023",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-INT-05 | webhook autentico com JSON malformado nao e persistido",
+                      "status":  "PASS",
+                      "duration_seconds":  0.139,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0024",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-INT-02 | webhook com corpo adulterado assinatura ausente ou timestamp antigo e rejeitado",
+                      "status":  "PASS",
+                      "duration_seconds":  0.14,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0025",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-04 | cadastro sintetico persiste atomico e repeticao nao duplica empresa",
+                      "status":  "PASS",
+                      "duration_seconds":  0.323,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0026",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-INT-03 | evento de compliance fora de ordem nao regride estado persistido",
+                      "status":  "PASS",
+                      "duration_seconds":  0.174,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0027",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-02 | proprietario nao pode confirmar oferta de outra empresa",
+                      "status":  "PASS",
+                      "duration_seconds":  0.166,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0028",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous DELETE /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0029",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge DELETE /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0030",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN DELETE /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.016,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0031",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /api/admin/transferencias",
+                      "status":  "PASS",
+                      "duration_seconds":  0.003,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0032",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /api/admin/transferencias",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0033",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /api/admin/transferencias",
+                      "status":  "PASS",
+                      "duration_seconds":  0.013,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0034",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /api/admin/transferencias/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0035",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /api/admin/transferencias/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0036",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /api/admin/transferencias/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.013,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0037",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /api/transferencias",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0038",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /api/transferencias",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0039",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /api/transferencias/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0040",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /api/transferencias/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0041",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /api/transferencias/{id}/comprovante",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0042",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /api/transferencias/{id}/comprovante",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0043",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/admin/dashboard/remittance-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0044",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/admin/dashboard/remittance-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0045",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/admin/dashboard/remittance-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.025,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0046",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/admin/dashboard/savings-history",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0047",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/admin/dashboard/savings-history",
+                      "status":  "PASS",
+                      "duration_seconds":  0.008,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0048",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/admin/dashboard/savings-history",
+                      "status":  "PASS",
+                      "duration_seconds":  0.014,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0049",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/admin/dashboard/settlements",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0050",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/admin/dashboard/settlements",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0051",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/admin/dashboard/settlements",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0052",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/admin/dashboard/summary",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0053",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/admin/dashboard/summary",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0054",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/admin/dashboard/summary",
+                      "status":  "PASS",
+                      "duration_seconds":  0.014,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0055",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/admin/dashboard/transaction-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0056",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/admin/dashboard/transaction-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0057",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/admin/dashboard/transaction-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.012,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0058",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/balance",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0059",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/balance",
+                      "status":  "PASS",
+                      "duration_seconds":  0.008,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0060",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0061",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.009,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0062",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0063",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/beneficiaries/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0064",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/beneficiaries/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.021,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0065",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/beneficiaries/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0066",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/blindpay/compliance",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0067",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/blindpay/compliance",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0068",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/blindpay/compliance/rfi",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0069",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/blindpay/compliance/rfi",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0070",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0071",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0072",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.011,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0073",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies/summaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0074",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies/summaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0075",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/companies/summaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.014,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0076",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies/{companyId}/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0077",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies/{companyId}/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0078",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies/{companyId}/beneficiaries/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0079",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies/{companyId}/beneficiaries/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0080",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0081",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0082",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/companies/{id}/compliance-status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0083",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/companies/{id}/compliance-status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.008,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0084",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/dashboard/remittance-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0085",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/dashboard/remittance-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0086",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/dashboard/savings-history",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0087",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/dashboard/savings-history",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0088",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/dashboard/settlements",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0089",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/dashboard/settlements",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0090",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/dashboard/summary",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0091",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/dashboard/summary",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0092",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/dashboard/transaction-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0093",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/dashboard/transaction-volume",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0094",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/onboarding/me",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0095",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/onboarding/me",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0096",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/onboarding/{kycVerificationId}/compliance/liveness/status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0097",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/onboarding/{kycVerificationId}/compliance/liveness/status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0098",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/representatives",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0099",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/representatives",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0100",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/representatives",
+                      "status":  "PASS",
+                      "duration_seconds":  0.011,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0101",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/transfer-executions/{executionId}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0102",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/transfer-executions/{executionId}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0103",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/transfers",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0104",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/transfers",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0105",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/transfers",
+                      "status":  "PASS",
+                      "duration_seconds":  0.018,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0106",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/transfers/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0107",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/transfers/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.017,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0108",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN GET /v1/transfers/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0109",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous GET /v1/users/me",
+                      "status":  "PASS",
+                      "duration_seconds":  0.003,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0110",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge GET /v1/users/me",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0111",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous PATCH /v1/companies/{id}/compliance-status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0112",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge PATCH /v1/companies/{id}/compliance-status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0113",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN PATCH /v1/companies/{id}/compliance-status",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0114",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/auth/2fa/activate",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0115",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/auth/2fa/activate",
+                      "status":  "PASS",
+                      "duration_seconds":  0.008,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0116",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/auth/2fa/setup",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0117",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/auth/2fa/setup",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0118",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/blindpay/compliance/documents",
+                      "status":  "PASS",
+                      "duration_seconds":  0.003,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0119",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/blindpay/compliance/documents",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0120",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/blindpay/compliance/kyb",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0121",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/blindpay/compliance/kyb",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0122",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/blindpay/compliance/rfi",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0123",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/blindpay/compliance/rfi",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0124",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/blindpay/compliance/terms",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0125",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/blindpay/compliance/terms",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0126",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0127",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0128",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN POST /v1/companies",
+                      "status":  "PASS",
+                      "duration_seconds":  0.027,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0129",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/companies/{companyId}/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0130",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/companies/{companyId}/beneficiaries",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0131",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/onboarding/{kycVerificationId}/compliance/documento",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0132",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/onboarding/{kycVerificationId}/compliance/documento",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0133",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/onboarding/{kycVerificationId}/compliance/kyc",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0134",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/onboarding/{kycVerificationId}/compliance/kyc",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0135",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/onboarding/{kycVerificationId}/compliance/liveness",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0136",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/onboarding/{kycVerificationId}/compliance/liveness",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0137",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/quotes",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0138",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/quotes",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0139",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/quotes/offers/{offerId}/confirm",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0140",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/quotes/offers/{offerId}/confirm",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0141",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/transfer-executions/{executionId}/requote/confirm",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0142",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/transfer-executions/{executionId}/requote/confirm",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0143",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/transfers",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0144",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/transfers",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0145",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous POST /v1/transfers/quote",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0146",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge POST /v1/transfers/quote",
+                      "status":  "PASS",
+                      "duration_seconds":  0.005,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0147",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous PUT /v1/blindpay/compliance/kyb",
+                      "status":  "PASS",
+                      "duration_seconds":  0.002,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0148",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge PUT /v1/blindpay/compliance/kyb",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0149",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous PUT /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0150",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge PUT /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0151",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-01 USER em rota ADMIN PUT /v1/companies/{id}",
+                      "status":  "PASS",
+                      "duration_seconds":  0.015,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0152",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous PUT /v1/onboarding/{kycVerificationId}/compliance/documento",
+                      "status":  "PASS",
+                      "duration_seconds":  0.001,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0153",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge PUT /v1/onboarding/{kycVerificationId}/compliance/documento",
+                      "status":  "PASS",
+                      "duration_seconds":  0.006,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0154",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-01 anonymous PUT /v1/onboarding/{kycVerificationId}/compliance/liveness",
+                      "status":  "PASS",
+                      "duration_seconds":  0.003,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0155",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-05 challenge PUT /v1/onboarding/{kycVerificationId}/compliance/liveness",
+                      "status":  "PASS",
+                      "duration_seconds":  0.007,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0156",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-04 | beneficiario de outra empresa nao pode ser consultado por caminho adulterado",
+                      "status":  "PASS",
+                      "duration_seconds":  0.167,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0157",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-API-03 | identificador com tentativa de injecao deve ser rejeitado",
+                      "status":  "PASS",
+                      "duration_seconds":  0.141,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0158",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-03 | oferta nao pode utilizar beneficiario de outra empresa",
+                      "status":  "PASS",
+                      "duration_seconds":  0.161,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0159",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-CONC-02 | cinco confirmacoes simultaneas criam uma unica execucao",
+                      "status":  "PASS",
+                      "duration_seconds":  0.276,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0160",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTH-06 | JWT expirado adulterado ou sem assinatura nao autentica",
+                      "status":  "PASS",
+                      "duration_seconds":  0.159,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0161",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-AUTHZ-06 | upload KYC de outro representante e negado antes do provedor",
+                      "status":  "PASS",
+                      "duration_seconds":  0.183,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0162",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-FIN-02 | oferta expirada nao deve iniciar processamento",
+                      "status":  "PASS",
+                      "duration_seconds":  0.162,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0163",
+                      "suite":  "ages.vstable.backend.configuration.security.ApplicationSecurityAssessmentTest",
+                      "case":  "TC-INT-01 | webhook autentico repetido e deduplicado no PostgreSQL",
+                      "status":  "PASS",
+                      "duration_seconds":  0.142,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0164",
+                      "suite":  "ages.vstable.backend.service.blindpay.UploadContentAssessmentTest",
+                      "case":  "TC-API-05 arquivo truncado \"PDF\"",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.479,
+                      "failure_type":  "java.lang.AssertionError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0165",
+                      "suite":  "ages.vstable.backend.service.blindpay.UploadContentAssessmentTest",
+                      "case":  "TC-API-05 arquivo truncado \"PNG\"",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.006,
+                      "failure_type":  "java.lang.AssertionError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0166",
+                      "suite":  "ages.vstable.backend.service.blindpay.UploadContentAssessmentTest",
+                      "case":  "TC-API-05 arquivo truncado \"JPEG\"",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.005,
+                      "failure_type":  "java.lang.AssertionError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0167",
+                      "suite":  "ages.vstable.backend.service.TwoFactorStateAssessmentTest",
+                      "case":  "TC-AUTH-01 | mesma instancia rejeita reutilizacao de TOTP",
+                      "status":  "PASS",
+                      "duration_seconds":  0.029,
+                      "failure_type":  null
+                  },
+                  {
+                      "evidence_id":  "assessment-0168",
+                      "suite":  "ages.vstable.backend.service.TwoFactorStateAssessmentTest",
+                      "case":  "TC-CONC-01 | validar e consumir TOTP deve autorizar no maximo uma operacao",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.029,
+                      "failure_type":  "org.opentest4j.AssertionFailedError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0169",
+                      "suite":  "ages.vstable.backend.service.TwoFactorStateAssessmentTest",
+                      "case":  "TC-AUTH-04 | bloqueio apos cinco erros deve valer em todas as instancias",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.018,
+                      "failure_type":  "java.lang.AssertionError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0170",
+                      "suite":  "ages.vstable.backend.service.TwoFactorStateAssessmentTest",
+                      "case":  "TC-AUTH-02 | segunda instancia deve rejeitar TOTP consumido pela primeira",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.008,
+                      "failure_type":  "java.lang.AssertionError"
+                  },
+                  {
+                      "evidence_id":  "assessment-0171",
+                      "suite":  "ages.vstable.backend.service.TwoFactorStateAssessmentTest",
+                      "case":  "TC-AUTH-03 | reinicio deve preservar o controle contra reutilizacao",
+                      "status":  "FAIL",
+                      "duration_seconds":  0.008,
+                      "failure_type":  "java.lang.AssertionError"
+                  }
+              ]
+}

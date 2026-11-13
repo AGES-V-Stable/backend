@@ -1,0 +1,22 @@
+﻿{
+    "captured_at_utc":  "2026-11-10T15:22:14.5373846+00:00",
+    "command":  ".\\gradlew.bat securityAssessmentTest build --continue --no-daemon --console=plain",
+    "process_exit_code":  1,
+    "exit_reason":  "Apenas securityAssessmentTest reprovou controles: 19 falhas de assercao, agrupadas em oito achados.",
+    "check_task":  "completed",
+    "build_task":  "completed",
+    "regression":  {
+                       "total":  1244,
+                       "passed":  1238,
+                       "failed":  0,
+                       "skipped":  6
+                   },
+    "security_assessment":  {
+                                "total":  217,
+                                "passed":  198,
+                                "failed":  19,
+                                "skipped":  0
+                            },
+    "external_business_api_calls":  "none; mocks e servidores locais",
+    "production_code_changes":  "none"
+}
