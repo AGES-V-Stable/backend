@@ -3,6 +3,8 @@ package ages.vstable.backend.external.blindpay.dto;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,12 +23,29 @@ class BlindPayRequestValidationTest {
 
         assertThatThrownBy(() -> BlindPayCreateCustomerRequest.builder()
                 .type(BlindPayApi.Customer.Type.individual)
+                .email("ana@acme.test")
+                .country("BR")
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("kycType must be provided");
+
+        assertThatThrownBy(() -> BlindPayCreateCustomerRequest.builder()
+                .type(BlindPayApi.Customer.Type.individual)
                 .kycType(BlindPayApi.Customer.KycType.standard)
                 .email(" ")
                 .country("BR")
                 .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("email must be provided");
+
+        assertThatThrownBy(() -> BlindPayCreateCustomerRequest.builder()
+                .type(BlindPayApi.Customer.Type.individual)
+                .kycType(BlindPayApi.Customer.KycType.standard)
+                .email("ana@acme.test")
+                .country(" ")
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("country must be provided");
     }
 
     @Test
@@ -37,10 +56,71 @@ class BlindPayRequestValidationTest {
 
         assertThatThrownBy(() -> BlindPayCreateCustomerRequest.Owner.builder()
                 .role(BlindPayApi.Customer.OwnerRole.beneficial_owner)
+                .ownershipPercentage(-1)
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("ownershipPercentage must be between 0 and 100");
+
+        assertThatThrownBy(() -> BlindPayCreateCustomerRequest.Owner.builder()
+                .role(BlindPayApi.Customer.OwnerRole.beneficial_owner)
                 .ownershipPercentage(101)
                 .build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("ownershipPercentage must be between 0 and 100");
+
+        assertThatCode(() -> BlindPayCreateCustomerRequest.Owner.builder()
+                .role(BlindPayApi.Customer.OwnerRole.beneficial_owner)
+                .ownershipPercentage(0)
+                .build()).doesNotThrowAnyException();
+
+        assertThatCode(() -> BlindPayCreateCustomerRequest.Owner.builder()
+                .role(BlindPayApi.Customer.OwnerRole.beneficial_owner)
+                .ownershipPercentage(100)
+                .build()).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsUpdateCustomerWithoutRequiredFieldsOrOwnerId() {
+        assertThatThrownBy(() -> BlindPayUpdateCustomerRequest.builder()
+                .email(" ")
+                .country("BR")
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("email must be provided");
+
+        assertThatThrownBy(() -> BlindPayUpdateCustomerRequest.builder()
+                .email("ana@acme.test")
+                .country(" ")
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("country must be provided");
+
+        assertThatThrownBy(() -> BlindPayUpdateCustomerRequest.builder()
+                .email("ana@acme.test")
+                .country("BR")
+                .owners(List.of(BlindPayCreateCustomerRequest.Owner.builder()
+                        .role(BlindPayApi.Customer.OwnerRole.controlling_person)
+                        .id(" ")
+                        .build()))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("owner id must be provided");
+    }
+
+    @Test
+    void rejectsWalletAndTosRequestsWithoutRequiredFields() {
+        assertThatThrownBy(() -> new BlindPayCreateWalletRequest(null, "ext-1", "Wallet"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("network must be provided");
+
+        assertThatThrownBy(() -> new BlindPayCreateWalletRequest(
+                BlindPayApi.BlockchainWallet.Network.base, "ext-1", " "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("name must be provided");
+
+        assertThatThrownBy(() -> new BlindPayInitiateTosRequest(null, "re_1", "https://example.com"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("idempotencyKey must be provided");
     }
 
     @Test
@@ -58,6 +138,10 @@ class BlindPayRequestValidationTest {
 
     @Test
     void rejectsQuoteBelowMinimumAmountOfFiveDollars() {
+        assertThatThrownBy(() -> quoteBuilder().requestAmount(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("requestAmount must be provided");
+
         assertThatThrownBy(() -> quoteBuilder().requestAmount(499L).build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("requestAmount must be at least 500 cents");
@@ -66,10 +150,25 @@ class BlindPayRequestValidationTest {
     }
 
     @Test
-    void rejectsQuoteWithoutDestinationOrWithTooLongDescription() {
+    void rejectsQuoteWithoutDestinationOrRequiredEnumsOrWithTooLongDescription() {
         assertThatThrownBy(() -> quoteBuilder().bankAccountId(null).build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("bankAccountId must be provided");
+
+        assertThatThrownBy(() -> quoteBuilder().network(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("network must be provided");
+
+        assertThatThrownBy(() -> quoteBuilder().token(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("token must be provided");
+
+        assertThatThrownBy(() -> quoteBuilder().currencyType(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currencyType must be provided");
+
+        assertThatCode(() -> quoteBuilder().description("x".repeat(128)).build())
+                .doesNotThrowAnyException();
 
         assertThatThrownBy(() -> quoteBuilder().description("x".repeat(129)).build())
                 .isInstanceOf(IllegalArgumentException.class)
@@ -77,7 +176,11 @@ class BlindPayRequestValidationTest {
     }
 
     @Test
-    void requiresExactlyOneFundingSourceForPayout() {
+    void requiresQuoteIdAndExactlyOneFundingSourceForPayout() {
+        assertThatThrownBy(() -> new BlindPayEvmPayoutRequest(" ", "0xabc", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("quoteId must be provided");
+
         // A API recusa os dois campos juntos (conferido na instância de desenvolvimento).
         assertThatThrownBy(() -> new BlindPayEvmPayoutRequest("qu_000000000001", "0xabc", "bl_000000000001"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -97,7 +200,7 @@ class BlindPayRequestValidationTest {
     }
 
     @Test
-    void requiresExactlyOneDestinationWalletForPayinQuote() {
+    void requiresDestinationWalletRequiredEnumsAndMinimumAmountForPayinQuote() {
         assertThatThrownBy(() -> payinQuoteBuilder().walletId(null).build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Exactly one of blockchainWalletId or walletId must be provided");
@@ -109,6 +212,18 @@ class BlindPayRequestValidationTest {
         assertThatThrownBy(() -> payinQuoteBuilder().paymentMethod(null).build())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("paymentMethod must be provided");
+
+        assertThatThrownBy(() -> payinQuoteBuilder().token(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("token must be provided");
+
+        assertThatThrownBy(() -> payinQuoteBuilder().currencyType(null).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currencyType must be provided");
+
+        assertThatThrownBy(() -> payinQuoteBuilder().requestAmount(499L).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("requestAmount must be at least 500 cents");
     }
 
     private BlindPayQuoteRequest.BlindPayQuoteRequestBuilder quoteBuilder() {

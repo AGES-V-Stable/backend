@@ -144,4 +144,35 @@ class ComplianceKycControllerTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.message").value("Falha ao comunicar com a Avenia"));
     }
+
+    @Test
+    void finalizar_rejeitaMembroRemovidoERepassaIdDoUsuarioAutenticado() {
+        ComplianceKycController controller = new ComplianceKycController(complianceKycService);
+        UUID kycId = UUID.randomUUID();
+        ages.vstable.backend.dto.compliance.KycSubmitRequest request =
+                new ages.vstable.backend.dto.compliance.KycSubmitRequest();
+
+        ages.vstable.backend.entity.UserEntity removed = ages.vstable.backend.support.TestCompanyUsers.removedMember(
+                UUID.randomUUID(), ages.vstable.backend.entity.enums.CompanyRole.OPERATOR);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.finalizar(kycId, removed, request))
+                .isInstanceOfSatisfying(ForbiddenException.class,
+                        ex -> org.assertj.core.api.Assertions.assertThat(ex.getCode()).isEqualTo("COMPANY_ACCESS_REVOKED"));
+        org.mockito.Mockito.verifyNoInteractions(complianceKycService);
+
+        UUID userId = UUID.randomUUID();
+        ages.vstable.backend.entity.UserEntity activeUser = ages.vstable.backend.support.TestCompanyUsers.member(
+                UUID.randomUUID(), ages.vstable.backend.entity.enums.CompanyRole.OWNER);
+        activeUser.setId(userId);
+        KycSubmitResponse response = new KycSubmitResponse();
+        response.setAveniaProcessId("kyc-process-456");
+        response.setStatus(ComplianceStatus.APPROVED);
+        when(complianceKycService.finalizar(kycId, userId, request)).thenReturn(Optional.of(response));
+
+        org.springframework.http.ResponseEntity<KycSubmitResponse> result =
+                controller.finalizar(kycId, activeUser, request);
+
+        org.assertj.core.api.Assertions.assertThat(result.getStatusCode().value()).isEqualTo(200);
+        org.assertj.core.api.Assertions.assertThat(result.getBody()).isSameAs(response);
+        org.mockito.Mockito.verify(complianceKycService).finalizar(kycId, userId, request);
+    }
 }

@@ -9,6 +9,8 @@ import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,13 +64,19 @@ class ComplianceLivenessServiceTest {
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarLiveness(SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
-        Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
 
-        assertThat(resultado).isPresent();
-        assertThat(resultado.get().getId()).isEqualTo("liveness-123");
-        assertThat(resultado.get().getSessionId()).isEqualTo("session-456");
-        assertThat(resultado.get().getLivenessUrl()).isEqualTo("https://app.sandbox.avenia.io/liveness/session-456?jwt=abc");
-        assertThat(resultado.get().getValidateLivenessToken()).isEqualTo("token-789");
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().getId()).isEqualTo("liveness-123");
+            assertThat(resultado.get().getSessionId()).isEqualTo("session-456");
+            assertThat(resultado.get().getLivenessUrl()).isEqualTo("https://app.sandbox.avenia.io/liveness/session-456?jwt=abc");
+            assertThat(resultado.get().getValidateLivenessToken()).isEqualTo("token-789");
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "liveness.started")
+                    .containsEntry("outcome", "success");
+        }
     }
 
     @Test
@@ -77,11 +85,17 @@ class ComplianceLivenessServiceTest {
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            Optional<LivenessStartResponse> resultado = service.iniciar(kycId, USER_ID);
 
-        assertThat(resultado).isEmpty();
-        verifyNoInteractions(aveniaClient);
-        verifyNoInteractions(subAccountProvisioningService);
+            assertThat(resultado).isEmpty();
+            verifyNoInteractions(aveniaClient);
+            verifyNoInteractions(subAccountProvisioningService);
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "liveness.started")
+                    .containsEntry("outcome", "unavailable");
+        }
     }
 
     @Test
@@ -166,9 +180,15 @@ class ComplianceLivenessServiceTest {
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
 
-        boolean resultado = service.concluir(kycId, USER_ID, request);
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            boolean resultado = service.concluir(kycId, USER_ID, request);
 
-        assertThat(resultado).isTrue();
+            assertThat(resultado).isTrue();
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "liveness.submission.completed")
+                    .containsEntry("outcome", "success");
+        }
 
         ArgumentCaptor<AveniaKycVerificationEntity> captor = ArgumentCaptor.forClass(AveniaKycVerificationEntity.class);
         verify(aveniaKycVerificationRepository).save(captor.capture());
@@ -184,10 +204,16 @@ class ComplianceLivenessServiceTest {
 
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        boolean resultado = service.concluir(kycId, USER_ID, request);
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            boolean resultado = service.concluir(kycId, USER_ID, request);
 
-        assertThat(resultado).isFalse();
-        verify(aveniaKycVerificationRepository, never()).save(any());
+            assertThat(resultado).isFalse();
+            verify(aveniaKycVerificationRepository, never()).save(any());
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "liveness.submission.completed")
+                    .containsEntry("outcome", "unavailable");
+        }
     }
 
     @Test

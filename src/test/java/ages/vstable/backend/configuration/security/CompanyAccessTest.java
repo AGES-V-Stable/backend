@@ -211,8 +211,12 @@ class CompanyAccessTest {
     @EnumSource(CompanyRole.class)
     void requireSelfMembership_anyActiveMemberSeesTheirOwnMembership(CompanyRole role) {
         UserEntity member = TestCompanyUsers.member(companyId, role);
+        var spyMembership = org.mockito.Mockito.spy(member.getMembership());
+        member.setMembership(spyMembership);
 
-        assertThat(CompanyAccess.requireSelfMembership(member, companyId)).isSameAs(member.getMembership());
+        assertThat(CompanyAccess.requireSelfMembership(member, companyId)).isSameAs(spyMembership);
+        org.mockito.Mockito.verify(spyMembership).getRole();
+        org.mockito.Mockito.verify(spyMembership).getStatus();
     }
 
     @Test
