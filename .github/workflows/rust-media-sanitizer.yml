@@ -1,0 +1,43 @@
+name: Rust Media Sanitizer CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'security/media-sanitizer/**'
+      - '.github/workflows/rust-media-sanitizer.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'security/media-sanitizer/**'
+      - '.github/workflows/rust-media-sanitizer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rust-check:
+    name: Format, Clippy and Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: security/media-sanitizer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run unit tests
+        run: cargo test --all-targets
