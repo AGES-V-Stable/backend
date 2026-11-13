@@ -1,0 +1,31 @@
+﻿{
+    "execution_state":  "INTERRUPTED_BY_HOST_SHUTDOWN",
+    "checkpoint_confirmed_calls":  42,
+    "additional_recovery_calls":  1,
+    "known_calls_total":  43,
+    "uncheckpointed_calls_exact_count":  "unknown",
+    "conservative_uncheckpointed_budget_reserve":  16,
+    "next_execution_prior_budget":  59,
+    "withdrawn_check_ids":  [
+                                "TC-SBX-BP-04-success-fee-currency",
+                                "TC-SBX-BP-04-payin-failed-fee-currency",
+                                "TC-SBX-BP-04-payin-refunded-fee-currency",
+                                "TC-SBX-BP-04-payout-failed-fee-currency"
+                            ],
+    "withdrawal_reason":  "Payin fee and payout fee both denominated in token cents according to current OpenAPI; original mixed-currency assertion invalid",
+    "confirmed_terminal_scenarios":  [
+                                         "success",
+                                         "payin-failed",
+                                         "payin-refunded"
+                                     ],
+    "interrupted_scenario":  "payout-failed",
+    "remaining_scenarios":  [
+                                "payout-refunded",
+                                "expired",
+                                "requote",
+                                "idempotency"
+                            ],
+    "pending_payin_provider_status":  "completed",
+    "pending_operation_resubmitted":  false,
+    "next_run_policy":  "Fresh synthetic fixtures; no replay of interrupted financial operation"
+}

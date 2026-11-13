@@ -95,7 +95,7 @@ class ApplicationSecurityAssessmentTest {
     private static final byte[] WEBHOOK_KEY = Jwts.SIG.HS256.key().build().getEncoded();
     private static final Set<String> PUBLIC_ROUTES = Set.of(
             "POST /v1/auth/login", "POST /v1/auth/login/verify-2fa",
-            "POST /v1/onboarding", "POST /v1/webhooks/blindpay");
+            "POST /v1/onboarding", "POST /v1/onboarding/account", "POST /v1/webhooks/blindpay");
 
     @Container
     static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16.4");

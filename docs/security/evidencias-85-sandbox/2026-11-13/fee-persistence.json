@@ -1,0 +1,64 @@
+﻿{
+    "source":  "Read-only query in recovered Testcontainers PostgreSQL",
+    "observed_at_utc":  "2026-11-13T12:53:00.7470293Z",
+    "rows":  [
+                 {
+                     "execution_status":  "COMPLETED",
+                     "source_currency":  "BRL",
+                     "target_currency":  "USD",
+                     "token_fee_scalar":  "15.10000000",
+                     "stored_service_fee_brl":  "15.10",
+                     "history_target":  "2.49",
+                     "execution_target":  "2.49000000",
+                     "history_source":  "100.00",
+                     "execution_source":  "100.00000000",
+                     "payin_present":  true,
+                     "payout_present":  true,
+                     "failure_code":  null
+                 },
+                 {
+                     "execution_status":  "FAILED",
+                     "source_currency":  "BRL",
+                     "target_currency":  "USD",
+                     "token_fee_scalar":  "15.10000000",
+                     "stored_service_fee_brl":  "15.10",
+                     "history_target":  "102.17",
+                     "execution_target":  "102.17000000",
+                     "history_source":  "666.00",
+                     "execution_source":  "666.00000000",
+                     "payin_present":  true,
+                     "payout_present":  false,
+                     "failure_code":  "PAYIN_FAILED"
+                 },
+                 {
+                     "execution_status":  "REFUNDED",
+                     "source_currency":  "BRL",
+                     "target_currency":  "USD",
+                     "token_fee_scalar":  "15.10000000",
+                     "stored_service_fee_brl":  "15.10",
+                     "history_target":  "121.72",
+                     "execution_target":  "121.72000000",
+                     "history_source":  "777.00",
+                     "execution_source":  "777.00000000",
+                     "payin_present":  true,
+                     "payout_present":  false,
+                     "failure_code":  "PAYIN_REFUNDED"
+                 },
+                 {
+                     "execution_status":  "AWAITING_FUNDS",
+                     "source_currency":  "BRL",
+                     "target_currency":  "USD",
+                     "token_fee_scalar":  "15.10000000",
+                     "stored_service_fee_brl":  "15.10",
+                     "history_target":  "666.00",
+                     "execution_target":  "666.00000000",
+                     "history_source":  "3867.79",
+                     "execution_source":  "3867.79000000",
+                     "payin_present":  true,
+                     "payout_present":  false,
+                     "failure_code":  null
+                 }
+             ],
+    "provider_fee_unit":  "USDB token cents per OpenAPI QuoteOut and CreatePayinQuoteOut",
+    "identifiers_included":  false
+}

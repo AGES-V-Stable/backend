@@ -1,0 +1,100 @@
+﻿{
+    "calls":  2,
+    "preceding_calls":  3,
+    "total_calls":  5,
+    "operations":  [
+                       "GET customers",
+                       "GET customer"
+                   ],
+    "list":  [
+                 {
+                     "alias":  "DEMO_1",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_2",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_3",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_4",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_5",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_6",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_7",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_8",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_9",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 },
+                 {
+                     "alias":  "DEMO_10",
+                     "type":  "individual",
+                     "kyc_status":  "approved",
+                     "aml_status":  null,
+                     "tos_id_present":  true,
+                     "tos_accepted":  null
+                 }
+             ],
+    "selected_detail":  {
+                            "id_matches":  true,
+                            "type":  "individual",
+                            "kyc_status":  "approved",
+                            "aml_status":  null,
+                            "tos_id_present":  true,
+                            "tos_accepted":  true,
+                            "instance_matches":  true
+                        }
+}

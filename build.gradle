@@ -97,7 +97,7 @@ abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
 tasks.named('test') {
 	// Testes contra a instância de desenvolvimento da BlindPay só rodam em blindpaySandboxTest.
 	useJUnitPlatform {
-		excludeTags 'blindpay-sandbox', 'security-assessment'
+		excludeTags 'blindpay-sandbox', 'blindpay-security-sandbox', 'security-assessment'
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
@@ -125,6 +125,35 @@ tasks.register('blindpaySandboxTest', Test) {
 	testLogging {
 		events 'passed', 'failed', 'skipped'
 		exceptionFormat 'full'
+	}
+}
+
+// Execução externa separada, com orçamento, evidência sanitizada e opt-in explícito.
+tasks.register('blindpaySecuritySandboxTest', Test) {
+	description = 'Avaliação controlada da cicd#85 na instância Development da BlindPay.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform { includeTags 'blindpay-security-sandbox' }
+	systemProperties tasks.named('test', Test).get().systemProperties
+	['JWT_SECRET', 'TWO_FACTOR_ENCRYPTION_KEY', 'INVITATION_ENCRYPTION_KEY'].each { name ->
+		if (System.getenv(name)) { systemProperty name, System.getenv(name) }
+	}
+	systemProperty 'AVENIA_BASE_URL', 'http://127.0.0.1:1'
+	systemProperty 'APP_CONFIG_SECRET_ARN', ''
+	systemProperty 'TRANSFERS_RECONCILIATION_ENABLED', 'false'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	maxParallelForks = 1
+	maxHeapSize = '256m'
+	jvmArgs '-XX:ActiveProcessorCount=2'
+	failFast = true
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'passed', 'failed', 'skipped'
+		exceptionFormat 'short'
+		showStandardStreams = false
 	}
 }
 
