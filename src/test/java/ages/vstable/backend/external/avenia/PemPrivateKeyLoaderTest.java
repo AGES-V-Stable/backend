@@ -13,10 +13,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PemPrivateKeyLoaderTest {
 
     @Test
-    void load_pemValido_retornaChavePrivadaEquivalente() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        KeyPair keyPair = generator.generateKeyPair();
+    void load_pemValido_retornaChavePrivadaEquivalente() {
+        KeyPair keyPair = AveniaRequestSignerTest.rsaKeyPair();
 
         String pem = "-----BEGIN PRIVATE KEY-----\n"
                 + Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded())
@@ -29,10 +27,8 @@ class PemPrivateKeyLoaderTest {
 
     // Formato usado em .env / docker-compose: newlines reais viram "\n" literal (2 caracteres)
     @Test
-    void load_pemComQuebraDeLinhaLiteralEscapada_retornaChavePrivadaEquivalente() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        KeyPair keyPair = generator.generateKeyPair();
+    void load_pemComQuebraDeLinhaLiteralEscapada_retornaChavePrivadaEquivalente() {
+        KeyPair keyPair = AveniaRequestSignerTest.rsaKeyPair();
 
         String pem = "-----BEGIN PRIVATE KEY-----\\n"
                 + Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded())

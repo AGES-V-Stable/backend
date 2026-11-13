@@ -82,6 +82,12 @@ class TwoFactorSecretConverterTest {
         // Act & Assert
         assertThatThrownBy(() -> otherConverter.convertToEntityAttribute(encrypted))
                 .isInstanceOf(IllegalStateException.class);
+
+        String exactIvLengthPayload = Base64.getEncoder().encodeToString(new byte[12]);
+        assertThatThrownBy(() -> converter.convertToEntityAttribute(exactIvLengthPayload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("Payload criptografado inválido");
     }
 
     @Test

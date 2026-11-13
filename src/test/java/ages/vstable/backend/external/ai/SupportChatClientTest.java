@@ -1,14 +1,19 @@
 package ages.vstable.backend.external.ai;
 
 import ages.vstable.backend.dto.support.SupportChatMessageDTO;
+import ages.vstable.backend.logging.LogCapture;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.json.JsonCompareMode;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
@@ -16,9 +21,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -53,20 +60,27 @@ class SupportChatClientTest {
     }
 
     @Test
-    @DisplayName("When API key is empty or whitespace, should fall back to built-in knowledge reply")
+    @DisplayName("When API key is empty or whitespace, should log warning and fall back to built-in knowledge reply")
     void generateReply_whenApiKeyEmpty_returnsBuiltInKnowledge() {
         properties.setApiKey("   ");
 
-        var result = client.generateReply("system", List.of(), "Como funciona o 2FA?", "Contexto");
+        try (var capture = new LogCapture(SupportChatClient.class)) {
+            var result = client.generateReply("system", List.of(), "Como funciona o 2FA?", "Contexto");
 
-        assertThat(result.provider()).isEqualTo("vstable-assistant");
-        assertThat(result.reply()).contains("Autenticação em Duas Etapas").contains("Contexto");
+            assertThat(result.provider()).isEqualTo("vstable-assistant");
+            assertThat(result.reply()).contains("Autenticação em Duas Etapas").contains("Contexto");
+            assertThat(capture.events()).hasSize(1);
+            assertThat(capture.events().getFirst().getLevel()).isEqualTo(Level.WARN);
+            assertThat(capture.events().getFirst().getFormattedMessage())
+                    .contains("AI_SUPPORT_API_KEY não configurada");
+        }
     }
 
     @Test
-    @DisplayName("When API key is enclosed in quotes, should strip quotes and proceed")
+    @DisplayName("When API key is enclosed in quotes and baseUrl has trailing slash, should strip both and proceed")
     void generateReply_whenApiKeyHasQuotes_stripsQuotesCorrectly() {
         properties.setApiKey("\"\"'secret-key'\"\"");
+        properties.setGeminiBaseUrl(GEMINI_BASE_URL + "/");
 
         mockServer.expect(once(), requestTo(GEMINI_BASE_URL + "/v1beta/models/gemini-flash-lite-latest:generateContent"))
                 .andExpect(method(HttpMethod.POST))
@@ -93,22 +107,39 @@ class SupportChatClientTest {
     }
 
     @Test
-    @DisplayName("When provider is set to local, should bypass external API call")
+    @DisplayName("When provider is set to local with valid API key, should bypass external API call without empty-key warning")
     void generateReply_whenProviderIsLocal_returnsBuiltInKnowledge() {
         properties.setProvider("local");
 
-        var result = client.generateReply("system", List.of(), "Qual o prazo de transferência?", "Contexto");
+        try (var capture = new LogCapture(SupportChatClient.class)) {
+            var result = client.generateReply("system", List.of(), "Qual o prazo de transferência?", "Contexto");
 
-        assertThat(result.provider()).isEqualTo("vstable-assistant");
-        assertThat(result.reply()).contains("Cotações, Taxas e Transferências");
+            assertThat(result.provider()).isEqualTo("vstable-assistant");
+            assertThat(result.reply()).contains("Cotações, Taxas e Transferências");
+            assertThat(capture.events()).isEmpty();
+        }
     }
 
     @Test
-    @DisplayName("When Gemini responds successfully, should parse and return reply with gemini provider")
+    @DisplayName("When Gemini responds successfully with null history, should send user turn and return reply")
     void generateReply_geminiSuccess_returnsGeminiReply() {
         mockServer.expect(once(), requestTo(GEMINI_BASE_URL + "/v1beta/models/gemini-flash-lite-latest:generateContent"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("x-goog-api-key", "test-gemini-key"))
+                .andExpect(content().json("""
+                        {
+                          "systemInstruction": {
+                            "parts": [{"text": "system"}]
+                          },
+                          "contents": [
+                            {"role": "user", "parts": [{"text": "Como transferir?"}]}
+                          ],
+                          "generationConfig": {
+                            "temperature": 0.2,
+                            "maxOutputTokens": 500
+                          }
+                        }
+                        """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess("""
                         {
                           "candidates": [
@@ -123,7 +154,7 @@ class SupportChatClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        var result = client.generateReply("system", List.of(), "Como transferir?", "Contexto");
+        var result = client.generateReply("system", null, "Como transferir?", "Contexto");
 
         assertThat(result.provider()).isEqualTo("gemini");
         assertThat(result.reply()).isEqualTo("Olá, você pode transferir via PIX e Avenia.");
@@ -260,20 +291,43 @@ class SupportChatClientTest {
     @DisplayName("When conversation history has complex alternation, should format roles for Gemini properly")
     void generateReply_geminiHistoryAlternationRules() {
         List<SupportChatMessageDTO> history = new ArrayList<>();
-        // 1. Assistant message first (should be ignored until first user turn)
+        // 1. Null message and null content (should be skipped)
+        history.add(null);
+        history.add(new SupportChatMessageDTO("user", null));
+        // 2. Assistant message first (should be ignored until first user turn)
         history.add(new SupportChatMessageDTO("assistant", "Olá! Como posso ajudar?"));
-        // 2. Blank message (should be skipped)
+        // 3. Blank message (should be skipped)
         history.add(new SupportChatMessageDTO("user", "   "));
-        // 3. First user turn
+        // 4. First user turn
         history.add(new SupportChatMessageDTO("user", "Primeira pergunta"));
-        // 4. Consecutive user turn (should be skipped to alternate)
+        // 5. Consecutive user turn (should be skipped to alternate)
         history.add(new SupportChatMessageDTO("user", "Segunda pergunta do mesmo turno"));
-        // 5. Assistant turn
+        // 6. Assistant turn
         history.add(new SupportChatMessageDTO("assistant", "Resposta do assistente"));
-        // 6. User turn
+        // 7. Consecutive assistant turn (should be skipped to alternate)
+        history.add(new SupportChatMessageDTO("assistant", "Segunda resposta consecutiva"));
+        // 8. User turn
         history.add(new SupportChatMessageDTO("user", "Última pergunta do histórico"));
 
         mockServer.expect(once(), requestTo(GEMINI_BASE_URL + "/v1beta/models/gemini-flash-lite-latest:generateContent"))
+                .andExpect(content().json("""
+                        {
+                          "systemInstruction": {
+                            "parts": [{"text": "system instruction"}]
+                          },
+                          "contents": [
+                            {"role": "user", "parts": [{"text": "Primeira pergunta"}]},
+                            {"role": "model", "parts": [{"text": "Resposta do assistente"}]},
+                            {"role": "user", "parts": [{"text": "Última pergunta do histórico"}]},
+                            {"role": "model", "parts": [{"text": "Entendido."}]},
+                            {"role": "user", "parts": [{"text": "Mensagem atual"}]}
+                          ],
+                          "generationConfig": {
+                            "temperature": 0.2,
+                            "maxOutputTokens": 500
+                          }
+                        }
+                        """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess("""
                         {
                           "candidates": [
@@ -295,7 +349,26 @@ class SupportChatClientTest {
     }
 
     @Test
-    @DisplayName("When DeepSeek provider is configured, should call DeepSeek chat completions endpoint")
+    @DisplayName("When all Gemini candidate models fail or return empty, callGemini returns null and generateReply falls back")
+    void callGemini_whenAllCandidatesExhausted_returnsNullAndFallsBack() {
+        for (String model : List.of(
+                "gemini-flash-lite-latest",
+                "gemini-flash-latest",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash")) {
+            mockServer.expect(once(), requestTo(GEMINI_BASE_URL + "/v1beta/models/" + model + ":generateContent"))
+                    .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        }
+
+        String directResult = ReflectionTestUtils.invokeMethod(
+                client, "callGemini", "test-gemini-key", "system", List.of(), "Pergunta");
+
+        assertThat(directResult).isNull();
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("When DeepSeek provider is configured, should filter invalid history and call DeepSeek chat completions endpoint")
     void generateReply_deepSeekProvider_success() {
         properties.setProvider("deepseek");
         properties.setApiKey("sk-deepseek-key");
@@ -303,6 +376,19 @@ class SupportChatClientTest {
         mockServer.expect(once(), requestTo(DEEPSEEK_BASE_URL + "/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Authorization", "Bearer sk-deepseek-key"))
+                .andExpect(content().json("""
+                        {
+                          "model": "deepseek-chat",
+                          "messages": [
+                            {"role": "system", "content": "system"},
+                            {"role": "user", "content": "Oi"},
+                            {"role": "assistant", "content": "Olá"},
+                            {"role": "user", "content": "Como funciona o PIX?"}
+                          ],
+                          "temperature": 0.25,
+                          "max_tokens": 600
+                        }
+                        """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess("""
                         {
                           "choices": [
@@ -316,10 +402,12 @@ class SupportChatClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<SupportChatMessageDTO> history = List.of(
-                new SupportChatMessageDTO("user", "Oi"),
-                new SupportChatMessageDTO("assistant", "Olá")
-        );
+        List<SupportChatMessageDTO> history = new ArrayList<>();
+        history.add(null);
+        history.add(new SupportChatMessageDTO("user", null));
+        history.add(new SupportChatMessageDTO("user", "   "));
+        history.add(new SupportChatMessageDTO("user", "  Oi  "));
+        history.add(new SupportChatMessageDTO("assistant", "  Olá  "));
 
         var result = client.generateReply("system", history, "Como funciona o PIX?", "Contexto");
 
@@ -329,14 +417,26 @@ class SupportChatClientTest {
     }
 
     @Test
-    @DisplayName("When provider is 'auto' and apiKey starts with 'sk-', should automatically select DeepSeek")
+    @DisplayName("When provider is 'auto', apiKey starts with 'sk-' and history is null, should select DeepSeek and trim trailing slash")
     void generateReply_autoProviderWithSkKey_usesDeepSeek() {
         properties.setProvider("auto");
         properties.setApiKey("sk-auto-detected-key");
+        properties.setDeepseekBaseUrl(DEEPSEEK_BASE_URL + "/");
 
         mockServer.expect(once(), requestTo(DEEPSEEK_BASE_URL + "/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header("Authorization", "Bearer sk-auto-detected-key"))
+                .andExpect(content().json("""
+                        {
+                          "model": "deepseek-chat",
+                          "messages": [
+                            {"role": "system", "content": "system"},
+                            {"role": "user", "content": "Pergunta"}
+                          ],
+                          "temperature": 0.25,
+                          "max_tokens": 600
+                        }
+                        """, JsonCompareMode.STRICT))
                 .andRespond(withSuccess("""
                         {
                           "choices": [
@@ -349,10 +449,23 @@ class SupportChatClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        var result = client.generateReply("system", List.of(), "Pergunta", "Contexto");
+        var result = client.generateReply("system", null, "Pergunta", "Contexto");
 
         assertThat(result.provider()).isEqualTo("deepseek");
         assertThat(result.reply()).isEqualTo("Resposta auto DeepSeek.");
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("When DeepSeek returns blank response body, callDeepSeekCompatible returns null")
+    void callDeepSeekCompatible_whenResponseBlank_returnsNull() {
+        mockServer.expect(once(), requestTo(DEEPSEEK_BASE_URL + "/v1/chat/completions"))
+                .andRespond(withSuccess("   ", MediaType.APPLICATION_JSON));
+
+        String directResult = ReflectionTestUtils.invokeMethod(
+                client, "callDeepSeekCompatible", "sk-test", "system", List.of(), "Pergunta");
+
+        assertThat(directResult).isNull();
         mockServer.verify();
     }
 
@@ -373,24 +486,48 @@ class SupportChatClientTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {
-            "Como funciona a integração com a Avenia e BlindPay?",
-            "Quais são os países, moedas e trilhos suportados como SPEI e Argentina?",
-            "Por que transações com a Colômbia em COP estão bloqueadas?",
-            "Quais redes blockchain e stablecoins são suportadas como Polygon e USDC?",
-            "Como reconfigurar meu QR Code do autenticador 2FA?",
-            "O que é necessário para aprovação de compliance KYB e AML?",
-            "Como é calculada a cotação, taxa e spread de uma transferência?",
-            "Como cadastrar um beneficiário internacional com IBAN ou wallet?",
-            "Olá, tudo bem?"
-    })
+    @MethodSource("domainTopics")
     @DisplayName("Built-in knowledge assistant should accurately match domain topics and include user context")
-    void generateBuiltInKnowledgeReply_matchesAllDomainTopics(String message) {
+    void generateBuiltInKnowledgeReply_matchesAllDomainTopics(String message, String expectedSectionSnippet) {
         properties.setProvider("local");
 
         var result = client.generateReply("system", List.of(), message, "Contexto de Teste");
 
         assertThat(result.provider()).isEqualTo("vstable-assistant");
-        assertThat(result.reply()).contains("Contexto de Teste");
+        assertThat(result.reply())
+                .contains(expectedSectionSnippet)
+                .contains("Contexto de Teste");
+    }
+
+    static Stream<Arguments> domainTopics() {
+        return Stream.of(
+                Arguments.of(
+                        "Como funciona a integração com a Avenia e BlindPay?",
+                        "multi-provedor de liquidez institucional"),
+                Arguments.of(
+                        "Quais são os países, moedas e trilhos suportados como SPEI e Argentina?",
+                        "dezenas de corredores internacionais"),
+                Arguments.of(
+                        "Por que transações com a Colômbia em COP estão bloqueadas?",
+                        "COP (Peso Colombiano)"),
+                Arguments.of(
+                        "Quais redes blockchain e stablecoins são suportadas como Polygon e USDC?",
+                        "redes blockchain e stablecoins"),
+                Arguments.of(
+                        "Como reconfigurar meu QR Code do autenticador 2FA?",
+                        "Autenticação em Duas Etapas (2FA / TOTP)"),
+                Arguments.of(
+                        "O que é necessário para aprovação de compliance KYB e AML?",
+                        "Compliance Institucional (KYB / AML)"),
+                Arguments.of(
+                        "Como é calculada a cotação, taxa e spread de uma transferência?",
+                        "Cotações, Taxas e Transferências"),
+                Arguments.of(
+                        "Como cadastrar um beneficiário internacional com IBAN ou wallet?",
+                        "Para cadastrar um **Beneficiário** na V-Stable:"),
+                Arguments.of(
+                        "Olá, tudo bem?",
+                        "Olá! Sou o **Assistente Virtual da V-Stable**.")
+        );
     }
 }
