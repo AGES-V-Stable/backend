@@ -82,6 +82,7 @@ class CompanyAuthorizationIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.update("DELETE FROM base_transactions");
         jdbcTemplate.update("DELETE FROM companies");
         jdbcTemplate.update("DELETE FROM administrators");
         companyA = insertCompany("11111111000111");
@@ -102,6 +103,24 @@ class CompanyAuthorizationIntegrationTest {
             mockMvc.perform(authorized(get("/api/transferencias"), token)).andExpect(status().isOk());
             mockMvc.perform(authorized(get("/v1/dashboard/transaction-volume"), token)).andExpect(status().isOk());
         }
+    }
+
+    @Test
+    void everyActiveProfile_readsTransferDetailsOfItsCompanyWithoutIndividualKyc() throws Exception {
+        // Arrange: nenhum usuário tem KYC individual; a transferência pertence à empresa A.
+        UUID transferId = insertTransfer(companyA);
+        String path = "/api/transferencias/" + transferId;
+
+        for (CompanyRole role : CompanyRole.values()) {
+            // Act / Assert
+            mockMvc.perform(authorized(get(path), tokenOf(companyA, role, MembershipStatus.ACTIVE)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(transferId.toString()));
+        }
+        mockMvc.perform(authorized(get(path), tokenOf(companyB, CompanyRole.OWNER, MembershipStatus.ACTIVE)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("TRANSFER_NOT_FOUND"));
+        mockMvc.perform(authorized(get(path), tokenOf(companyA, CompanyRole.OPERATOR, MembershipStatus.REMOVED)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
     }
 
     @Test
@@ -246,6 +265,13 @@ class CompanyAuthorizationIntegrationTest {
     private UUID insertCompany(String cnpj) {
         UUID id = UUID.randomUUID();
         jdbcTemplate.update("INSERT INTO companies (id, legal_name, cnpj) VALUES (?, 'Acme', ?)", id, cnpj);
+        return id;
+    }
+
+    private UUID insertTransfer(UUID companyId) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("INSERT INTO base_transactions (id, company_id, status, foreign_currency, foreign_amount) "
+                + "VALUES (?, ?, 'SETTLED', 'USD', 100.00)", id, companyId);
         return id;
     }
 

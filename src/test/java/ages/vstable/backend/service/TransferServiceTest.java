@@ -62,7 +62,7 @@ class TransferServiceTest {
 
         @BeforeEach
         void setUp() {
-                service = new TransferService(null, beneficiaryRepository, null, null, baseTransactionRepository,
+                service = new TransferService(null, beneficiaryRepository, null, baseTransactionRepository,
                                 importTransactionRepository,
                                 exportTransactionRepository, companyRepository, null);
         }

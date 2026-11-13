@@ -12,7 +12,7 @@
    - A vencedora fica com `provider_quotes.status = SELECTED`. Só ela pode ser confirmada.
 2. `POST /v1/quotes/offers/{offerId}/confirm` com `{"sourceAmount": ..., "targetAmount": ...}`. Os valores
    precisam ser exatamente os exibidos na oferta.
-   - **Avenia**: recota na subconta do usuário; se o preço piorou, responde 409 e não cria ticket. O
+   - **Avenia**: recota na subconta da empresa (ver `avenia-conta-empresarial.md`); se o preço piorou, responde 409 e não cria ticket. O
      `quoteToken` da Avenia vale 15 s, por isso a oferta exibida tem uma janela própria de confirmação
      (`QUOTE_AVENIA_CONFIRMATION_WINDOW`, padrão 60 s); a cotação nova da execução protege o preço.
    - **BlindPay, origem BRL**: cria o payin e devolve `fundingInstructions` (código PIX) com status

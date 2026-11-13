@@ -129,14 +129,15 @@ class AveniaClientTest {
                         + "?inputCurrency=BRLA&inputPaymentMethod=INTERNAL"
                         + "&outputCurrency=USD&outputPaymentMethod=SWIFT"
                         + "&inputThirdParty=false&outputThirdParty=false"
-                        + "&outputAmount=30.00&blockchainSendMethod=PERMIT"))
+                        + "&outputAmount=30.00&blockchainSendMethod=PERMIT"
+                        + "&subAccountId=sub-1"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"quoteToken\":\"output-quote\"}", MediaType.APPLICATION_JSON));
 
         AveniaQuoteResponse response = client.createQuote(new AveniaQuoteRequest(
                 "BRLA", "INTERNAL", "USD", "SWIFT",
                 null, new BigDecimal("30.00"), false, false, "PERMIT",
-                null, null, null, null, null, null, null));
+                null, null, null, null, null, null, "sub-1"));
 
         assertThat(response.quoteToken()).isEqualTo("output-quote");
         server.verify();
@@ -152,7 +153,7 @@ class AveniaClientTest {
                         + "&inputAmount=250.00"
                         + "&markupFloatingFee=0.01&markupInputFixedFee=2.00"
                         + "&markupOutputFixedFee=3.00&markupCurrency=USDC"
-                        + "&ticketRefundId=refund-1&outputBrCode=br-code"))
+                        + "&ticketRefundId=refund-1&outputBrCode=br-code&subAccountId=sub-1"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"quoteToken\":\"optional-quote\"}", MediaType.APPLICATION_JSON));
 
@@ -160,7 +161,7 @@ class AveniaClientTest {
                 "BRL", "PIX", "USDC", "POLYGON",
                 new BigDecimal("250.00"), null, null, null, " ",
                 new BigDecimal("0.01"), new BigDecimal("2.00"), new BigDecimal("3.00"),
-                "USDC", "refund-1", "br-code", " "));
+                "USDC", "refund-1", "br-code", "sub-1"));
 
         assertThat(response.quoteToken()).isEqualTo("optional-quote");
         server.verify();
@@ -227,14 +228,15 @@ class AveniaClientTest {
     }
 
     @Test
-    void createsTicketWithoutSubAccountAtMinimumDuration() {
-        server.expect(once(), requestTo("https://avenia.test/v2/account/tickets/"))
+    void createsTicketInSubAccountAtMinimumDuration() {
+        server.expect(once(), requestTo("https://avenia.test/v2/account/tickets/?subAccountId=sub-1"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{\"status\":\"UNPAID\"}", MediaType.APPLICATION_JSON));
 
         AveniaTicketResponse response = client.createTicket(AveniaTicketRequest.builder()
                 .quoteToken("quote-token")
                 .customDuration(300)
+                .subAccountId("sub-1")
                 .build());
 
         assertThat(response.status()).isEqualTo("UNPAID");
@@ -438,11 +440,12 @@ class AveniaClientTest {
 
     @Test
     void mapsPostProviderFailureWithEmptyBodyAsRetryable() {
-        server.expect(requestTo("https://avenia.test/v2/account/tickets/"))
+        server.expect(requestTo("https://avenia.test/v2/account/tickets/?subAccountId=sub-1"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
         assertThatThrownBy(() -> client.createTicket(AveniaTicketRequest.builder()
                         .quoteToken("quote-token")
+                        .subAccountId("sub-1")
                         .build()))
                 .isInstanceOf(AveniaIntegrationException.class)
                 .satisfies(e -> {
@@ -487,13 +490,14 @@ class AveniaClientTest {
                 });
 
         server.reset();
-        server.expect(requestTo("https://avenia.test/v2/account/tickets/"))
+        server.expect(requestTo("https://avenia.test/v2/account/tickets/?subAccountId=sub-1"))
                 .andRespond(request -> {
                     throw new IOException("connection reset");
                 });
 
         assertThatThrownBy(() -> client.createTicket(AveniaTicketRequest.builder()
                         .quoteToken("quote-token")
+                        .subAccountId("sub-1")
                         .build()))
                 .isInstanceOf(AveniaIntegrationException.class)
                 .satisfies(e -> assertThat(((AveniaIntegrationException) e).isRetryable()).isTrue());
@@ -549,8 +553,47 @@ class AveniaClientTest {
 
         assertThatThrownBy(() -> serializationClient.createTicket(AveniaTicketRequest.builder()
                         .quoteToken("quote-token")
+                        .subAccountId("sub-1")
                         .build()))
                 .hasMessage("Could not serialize the Avenia request");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void financialOperationsWithoutSubAccount_neverReachTheMainApiKeyAccount(String blank) {
+        // Arrange: nenhuma requisição é esperada; qualquer chamada HTTP faria server.verify() falhar.
+        for (String subAccountId : new String[]{null, blank}) {
+            // Act / Assert
+            assertThatThrownBy(() -> client.createQuote(new AveniaQuoteRequest(
+                    "BRL", "PIX", "USDC", "POLYGON",
+                    new BigDecimal("100.00"), null, false, false, null,
+                    null, null, null, null, null, null, subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("subAccountId");
+            assertThatThrownBy(() -> client.createTicket(AveniaTicketRequest.builder()
+                    .quoteToken("quote-token").subAccountId(subAccountId).build()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("subAccountId");
+            assertThatThrownBy(() -> client.createBrlBeneficiary(new AveniaBrlBeneficiaryRequest(
+                    "Fornecedor PIX", null, "pix@example.com", null, null, null, null, null, null, subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> client.createWalletBeneficiary(new AveniaWalletBeneficiaryRequest(
+                    "Wallet", null, "0xabc", "POLYGON", null, true, null, "Test Recipient", "BR", null, subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> client.createUsdBeneficiary(new AveniaUsdBeneficiaryRequest(
+                    "Supplier USD", null, "123456", "021000021", "Supplier Inc", "Test Bank", null, subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> client.createEurBeneficiary(new AveniaEurBeneficiaryRequest(
+                    "Supplier EUR", null, "FR1420041010050500013M02606", "COBADEFFXXX", "FRA",
+                    "Supplier SARL", subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> client.createSwiftBeneficiary(new AveniaSwiftBeneficiaryRequest(
+                    "Supplier GBP", null, "Supplier Ltd", "company", "iban", "GB29NWBK60161331926819",
+                    "NWBKGB2L", "NatWest", "GB", "1 King Street", "London", "England", "EC2V 8AU", "GB",
+                    "GBP", null, null, subAccountId)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        server.verify();
     }
 
     @Test

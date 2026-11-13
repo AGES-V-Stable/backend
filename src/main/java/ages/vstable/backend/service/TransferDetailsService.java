@@ -11,10 +11,8 @@ import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.ExportTransactionEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
 import ages.vstable.backend.entity.UserEntity;
-import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.exception.TransferDetailsException;
-import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -43,7 +41,6 @@ public class TransferDetailsService {
     static final String RECEIPT_FILENAME = "comprovante-transferencia.pdf";
 
     private final BaseTransactionRepository transactionRepository;
-    private final AveniaKycVerificationRepository kycRepository;
     private final TransferReceiptProvider receiptProvider;
 
     /** PDF pronto para download. */
@@ -83,27 +80,19 @@ public class TransferDetailsService {
     }
 
     /**
-     * Só uma transferência da própria empresa do usuário verificado é devolvida. Usuário sem
-     * empresa nunca cai em consulta global; transferência de outra empresa é indistinguível de
-     * uma inexistente.
+     * Só uma transferência da empresa do vínculo é devolvida. Usuário sem empresa nunca cai em consulta
+     * global; transferência de outra empresa é indistinguível de uma inexistente. A transferência é da
+     * empresa, não de quem a consulta: o acesso vem do vínculo ativo com TRANSFER_READ (validado no
+     * controller), sem exigir o KYC individual do leitor (backend#76).
      */
     private BaseTransactionEntity findOwned(UUID transferId, UserEntity user) {
         UUID companyId = user == null ? null : CompanyMembershipService.currentCompanyId(user);
         if (companyId == null) {
             throw TransferDetailsException.companyAccessRequired();
         }
-        if (!isVerified(user)) {
-            throw TransferDetailsException.userNotVerified();
-        }
         return transactionRepository.findById(transferId)
                 .filter(transaction -> companyId.equals(transaction.getCompanyId()))
                 .orElseThrow(TransferDetailsException::transferNotFound);
-    }
-
-    private boolean isVerified(UserEntity user) {
-        return kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId())
-                .map(kyc -> kyc.getStatus() == ComplianceStatus.APPROVED)
-                .orElse(false);
     }
 
     /** O comprovante só existe para operações concluídas, para não indicar conclusão indevida. */

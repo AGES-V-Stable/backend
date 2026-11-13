@@ -5,7 +5,6 @@ import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
-import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.BankAccountType;
@@ -14,7 +13,6 @@ import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
-import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,8 +33,7 @@ public class BeneficiaryService {
     private final CompanyRepository companyRepository;
     private final BeneficiaryValidator beneficiaryValidator;
     private final AveniaBeneficiaryService aveniaBeneficiaryService;
-    private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
-    private final AveniaSubAccountProvisioningService subAccountProvisioningService;
+    private final CompanyFinancialAccountService companyFinancialAccountService;
 
     @Transactional
     public BeneficiaryResponse create(UUID companyId, UUID currentUserId, BeneficiaryCreateRequest request) {
@@ -50,7 +47,12 @@ public class BeneficiaryService {
         beneficiaryValidator.validate(request);
 
         BeneficiaryEntity beneficiary = buildBeneficiary(company, request);
-        String subAccountId = resolveSubAccountId(currentUserId);
+        if (currentUserId == null) {
+            throw new UnprocessableEntityException("Usuário autenticado não identificado");
+        }
+        // O beneficiário pertence à empresa: é cadastrado na conta Avenia dela, qualquer que seja o membro
+        // autorizado. O usuário é só o ator da operação.
+        String subAccountId = companyFinancialAccountService.requireAveniaSubAccountId(company.getId());
         AveniaBeneficiaryRegistration registration = aveniaBeneficiaryService.register(beneficiary, subAccountId);
         beneficiary.setAveniaId(registration.bankAccountId());
         beneficiary.setAveniaWalletId(registration.walletId());
@@ -59,17 +61,6 @@ public class BeneficiaryService {
         BeneficiaryResponse response = toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
         OperationalLog.milestone("beneficiary.creation.completed", "success");
         return response;
-    }
-
-    private String resolveSubAccountId(UUID currentUserId) {
-        if (currentUserId == null) {
-            throw new UnprocessableEntityException("Usuário autenticado não identificado");
-        }
-        AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository
-                .findFirstByUserIdOrderByCreatedAtDesc(currentUserId)
-                .orElseThrow(() -> new UnprocessableEntityException(
-                        "Usuário não possui verificação KYC associada; conclua o KYC antes de cadastrar beneficiários"));
-        return subAccountProvisioningService.ensureSubAccountId(kyc);
     }
 
     private BeneficiaryEntity buildBeneficiary(CompanyEntity company, BeneficiaryCreateRequest request) {
