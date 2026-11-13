@@ -37,6 +37,23 @@ class InvitationRateLimitFilterTest {
         verify(limiter).tryAcquire("203.0.113.7");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"/v1/company-invitations/%72esolve", "/v1/company-invitations/accept-%6Eew-user",
+            "/v1/company-invitations/%61ccept", "/v1/company-invitations/resolve;x=1"})
+    void doFilter_encodedOrParameterizedVariantOfALimitedRoute_isAlsoCounted(String path) throws Exception {
+        // Arrange: o Spring roteia pelo caminho decodificado, então essas variações chegam ao controller.
+        MockHttpServletRequest request = post(path);
+        when(limiter.tryAcquire("203.0.113.7")).thenReturn(17L);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        // Act
+        filter.doFilter(request, response, new MockFilterChain());
+
+        // Assert
+        assertThat(response.getStatus()).isEqualTo(429);
+        verify(limiter).tryAcquire("203.0.113.7");
+    }
+
     @Test
     void doFilter_behindTheLambdaAdapter_countsTheClientResolvedFromTheTrustedHop() throws Exception {
         // Arrange

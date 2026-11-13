@@ -9,12 +9,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Clock;
-import java.util.Set;
 
 /**
  * Limite conjunto de 30 consultas ou tentativas de aceite de convite por minuto e por cliente, nas três rotas de
@@ -29,10 +31,14 @@ import java.util.Set;
 @Component
 public class InvitationRateLimitFilter extends OncePerRequestFilter {
 
-    static final Set<String> LIMITED_PATHS = Set.of(
-            "/v1/company-invitations/resolve",
-            "/v1/company-invitations/accept-new-user",
-            "/v1/company-invitations/accept");
+    /**
+     * Mesmo matcher dos {@code requestMatchers} da cadeia de segurança: compara o caminho decodificado, então
+     * variações codificadas (ex.: {@code %72esolve}) que chegam ao controller também são contadas.
+     */
+    private static final RequestMatcher LIMITED_REQUESTS = new OrRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/v1/company-invitations/resolve"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/v1/company-invitations/accept-new-user"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/v1/company-invitations/accept"));
 
     private final InvitationAttemptLimiter limiter;
     private final ClientIpResolver clientIpResolver;
@@ -50,8 +56,7 @@ public class InvitationRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI().substring(request.getContextPath().length());
-        return !HttpMethod.POST.matches(request.getMethod()) || !LIMITED_PATHS.contains(path);
+        return !LIMITED_REQUESTS.matches(request);
     }
 
     @Override

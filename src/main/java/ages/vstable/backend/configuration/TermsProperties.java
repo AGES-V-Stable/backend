@@ -51,11 +51,22 @@ public class TermsProperties {
             URI uri = new URI(value == null ? "" : value);
             String scheme = uri.getScheme();
             if (("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme)) && uri.getHost() != null) {
-                return value;
+                return withoutRepeatedSlashes(uri);
             }
         } catch (URISyntaxException e) {
             // segue para o erro abaixo
         }
         throw new IllegalStateException(property + " deve ser uma URL http(s) absoluta");
+    }
+
+    /**
+     * O padrão das URLs é {@code ${INVITATION_FRONTEND_ORIGIN}/termos-de-uso}; uma origem configurada com barra no
+     * fim geraria {@code //termos-de-uso}. Barras repetidas no caminho são reduzidas a uma.
+     */
+    private static String withoutRepeatedSlashes(URI uri) {
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath().replaceAll("/{2,}", "/");
+        return uri.getScheme() + "://" + uri.getRawAuthority() + path
+                + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery())
+                + (uri.getRawFragment() == null ? "" : "#" + uri.getRawFragment());
     }
 }

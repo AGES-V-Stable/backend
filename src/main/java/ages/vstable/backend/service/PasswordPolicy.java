@@ -26,7 +26,7 @@ public final class PasswordPolicy {
         for (int i = 0; i < password.length(); i++) {
             char character = password.charAt(i);
             if (character == '\n' || character == '\r' || character == '\u0085'
-                    || character == ' ' || character == ' ') {
+                    || character == '\u2028' || character == '\u2029') {
                 return false;
             }
             hasNumber |= character >= '0' && character <= '9';

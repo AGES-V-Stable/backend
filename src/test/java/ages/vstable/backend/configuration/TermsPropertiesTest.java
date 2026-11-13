@@ -24,6 +24,17 @@ class TermsPropertiesTest {
         assertThat(terms.privacyUrl()).isEqualTo(PRIVACY);
     }
 
+    @Test
+    void originWithTrailingSlash_doesNotProduceADoubleSlashInTheLinks() {
+        // Arrange: INVITATION_FRONTEND_ORIGIN=http://localhost:5173/ gera "//termos-de-uso" no padrão.
+        TermsProperties terms = new TermsProperties("2026-11-07", "http://localhost:5173//termos-de-uso?x=1#y",
+                "http://localhost:5173//politica-de-privacidade");
+
+        // Assert
+        assertThat(terms.termsUrl()).isEqualTo("http://localhost:5173/termos-de-uso?x=1#y");
+        assertThat(terms.privacyUrl()).isEqualTo("http://localhost:5173/politica-de-privacidade");
+    }
+
     @ParameterizedTest
     @NullSource
     @ValueSource(strings = {"", "   ", " v1", "v1 "})

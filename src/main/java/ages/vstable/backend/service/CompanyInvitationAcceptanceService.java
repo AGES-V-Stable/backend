@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,6 +52,8 @@ import java.util.regex.Pattern;
 public class CompanyInvitationAcceptanceService {
 
     static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_key";
+    /** Mesma regra sem diferenciar maiúsculas (V14); qualquer uma das duas pode ser a violada primeiro. */
+    static final String EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT = "users_email_lower_key";
     static final String ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT = "company_memberships_active_user_key";
 
     /** 32 bytes em base64url sem preenchimento, o formato gerado por {@link InvitationTokens}. */
@@ -234,7 +237,8 @@ public class CompanyInvitationAcceptanceService {
             return userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
             // Outro cadastro com o mesmo e-mail venceu a corrida; a restrição única do banco decide.
-            throw conflictOn(e, EMAIL_UNIQUE_CONSTRAINT, userAlreadyExists());
+            throw conflictOn(e, userAlreadyExists(),
+                    EMAIL_UNIQUE_CONSTRAINT, EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT);
         }
     }
 
@@ -251,7 +255,7 @@ public class CompanyInvitationAcceptanceService {
                     .build());
         } catch (DataIntegrityViolationException e) {
             // Outro pedido do mesmo usuário criou um vínculo ativo primeiro (outro convite ou cadastro de empresa).
-            throw conflictOn(e, ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT, userInOtherCompany());
+            throw conflictOn(e, userInOtherCompany(), ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT);
         }
     }
 
@@ -348,10 +352,10 @@ public class CompanyInvitationAcceptanceService {
      * Só a restrição única esperada vira conflito; qualquer outra falha de integridade é um erro real e segue
      * adiante. Nada é consultado depois da falha, porque o PostgreSQL já abortou a transação.
      */
-    private static RuntimeException conflictOn(DataIntegrityViolationException e, String constraint,
-                                               ConflictException conflict) {
+    private static RuntimeException conflictOn(DataIntegrityViolationException e, ConflictException conflict,
+                                               String... constraints) {
         String cause = e.getMostSpecificCause().getMessage();
-        return cause != null && cause.contains(constraint) ? conflict : e;
+        return cause != null && Arrays.stream(constraints).anyMatch(cause::contains) ? conflict : e;
     }
 
     private static NotFoundException invalid() {

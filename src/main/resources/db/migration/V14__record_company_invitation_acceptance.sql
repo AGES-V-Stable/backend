@@ -18,3 +18,9 @@ CREATE INDEX idx_company_invitations_accepted_by
     ON public.company_invitations(accepted_by) WHERE accepted_by IS NOT NULL;
 CREATE INDEX idx_company_invitations_membership
     ON public.company_invitations(membership_id) WHERE membership_id IS NOT NULL;
+
+-- Um e-mail identifica uma única conta, sem diferenciar maiúsculas: o aceite grava o e-mail do convite em
+-- minúsculas e o cadastro inicial grava como foi digitado, e users_email_key (sensível a maiúsculas) não
+-- impedia "maria@x.com" e "Maria@x.com" criados ao mesmo tempo. Falha se já houver contas duplicadas assim,
+-- que precisam ser resolvidas antes desta versão.
+CREATE UNIQUE INDEX users_email_lower_key ON public.users (lower(email));

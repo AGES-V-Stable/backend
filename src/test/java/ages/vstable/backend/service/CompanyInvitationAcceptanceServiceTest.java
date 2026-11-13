@@ -379,13 +379,14 @@ class CompanyInvitationAcceptanceServiceTest {
         verify(userRepository, never()).saveAndFlush(any());
     }
 
-    @Test
-    void acceptNewUser_concurrentSignupWithTheSameEmailWinsTheRace_isUserAlreadyExists() {
-        // Arrange
+    @ParameterizedTest
+    @ValueSource(strings = {"users_email_key", "users_email_lower_key"})
+    void acceptNewUser_concurrentSignupWithTheSameEmailWinsTheRace_isUserAlreadyExists(String constraint) {
+        // Arrange: a outra conta pode ter o mesmo e-mail com outras maiúsculas (índice em lower(email)).
         CompanyInvitationEntity invitation = givenInvitation(InvitationStatus.PENDING, true);
         givenNoIdentity();
         when(passwordEncoder.encode(PASSWORD)).thenReturn("bcrypt-hash");
-        when(userRepository.saveAndFlush(any(UserEntity.class))).thenThrow(uniqueViolation("users_email_key"));
+        when(userRepository.saveAndFlush(any(UserEntity.class))).thenThrow(uniqueViolation(constraint));
 
         // Act / Assert
         assertCode(() -> service.acceptNewUser(newUserRequest(PASSWORD, PASSWORD, true)),

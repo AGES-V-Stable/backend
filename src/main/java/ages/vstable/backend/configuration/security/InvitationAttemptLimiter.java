@@ -37,17 +37,23 @@ final class InvitationAttemptLimiter {
                 return WINDOW.toSeconds();
             }
         }
-        Deque<Long> log = attempts.computeIfAbsent(client, key -> new ArrayDeque<>());
-        synchronized (log) {
-            while (!log.isEmpty() && log.peekFirst() <= windowStart) {
-                log.pollFirst();
+        while (true) {
+            Deque<Long> log = attempts.computeIfAbsent(client, key -> new ArrayDeque<>());
+            synchronized (log) {
+                if (attempts.get(client) != log) {
+                    // A limpeza removeu o registro entre a busca e o lock: registrar nele perderia a tentativa.
+                    continue;
+                }
+                while (!log.isEmpty() && log.peekFirst() <= windowStart) {
+                    log.pollFirst();
+                }
+                if (log.size() >= MAX_ATTEMPTS) {
+                    long waitMillis = log.peekFirst() - windowStart;
+                    return Math.max(1, (waitMillis + 999) / 1000);
+                }
+                log.addLast(now);
+                return 0;
             }
-            if (log.size() >= MAX_ATTEMPTS) {
-                long waitMillis = log.peekFirst() - windowStart;
-                return Math.max(1, (waitMillis + 999) / 1000);
-            }
-            log.addLast(now);
-            return 0;
         }
     }
 
@@ -55,13 +61,16 @@ final class InvitationAttemptLimiter {
         return attempts.size();
     }
 
+    /** Decide e remove com o lock do registro, para não descartar uma tentativa registrada no meio do caminho. */
     private void evictIdle(long windowStart) {
-        attempts.entrySet().removeIf(entry -> {
+        for (Map.Entry<String, Deque<Long>> entry : attempts.entrySet()) {
             Deque<Long> log = entry.getValue();
             synchronized (log) {
                 Long last = log.peekLast();
-                return last == null || last <= windowStart;
+                if (last == null || last <= windowStart) {
+                    attempts.remove(entry.getKey(), log);
+                }
             }
-        });
+        }
     }
 }

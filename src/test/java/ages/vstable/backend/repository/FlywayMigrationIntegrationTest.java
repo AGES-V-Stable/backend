@@ -25,7 +25,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
  * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
  * invariantes de vínculos e convites, na V12 o histórico de links substituídos e, na V13,
- * contas sem empresa preservando os dados existentes e, na V14, o registro do aceite do convite.
+ * contas sem empresa preservando os dados existentes e, na V14, o registro do aceite do convite e
+ * a unicidade do e-mail sem diferenciar maiúsculas.
  * Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -515,6 +516,34 @@ class FlywayMigrationIntegrationTest {
         assertThat(rows("SELECT conname || ':' || confdeltype::text FROM pg_constraint WHERE conname IN "
                 + "('company_invitations_accepted_by_fkey', 'company_invitations_membership_fkey') ORDER BY conname"))
                 .containsExactly("company_invitations_accepted_by_fkey:n", "company_invitations_membership_fkey:n");
+    }
+
+    @Test
+    void migrate_v14_rejectsASecondAccountWithTheSameEmailInAnotherCase() throws SQLException {
+        // Arrange
+        flyway(null).migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "maria@example.com", "NULL");
+
+        // Act / Assert: o aceite grava em minúsculas e o cadastro como foi digitado; o banco barra os dois.
+        assertThatThrownBy(() -> insertUser(USER_A2, COMPANY_A, "Maria@Example.com", "NULL"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("users_email_lower_key");
+        assertThat(rows("SELECT count(*) FROM users")).containsExactly("1");
+    }
+
+    @Test
+    void migrate_v14_withAccountsDuplicatedByCase_failsAndLeavesTheSchemaUntouched() throws SQLException {
+        // Arrange: duplicatas que a V1 (sensível a maiúsculas) permitia precisam ser resolvidas antes da V14.
+        flyway("13").migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "maria@example.com", "NULL");
+        insertUser(USER_A2, COMPANY_A, "MARIA@example.com", "NULL");
+
+        // Act / Assert
+        assertThatThrownBy(() -> flyway(null).migrate()).isInstanceOf(FlywayException.class);
+        assertThat(columnExists("company_invitations", "accepted_by")).isFalse();
+        assertThat(rows("SELECT count(*) FROM users")).containsExactly("2");
     }
 
     @Test
