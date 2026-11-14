@@ -96,7 +96,9 @@ class ApplicationSecurityAssessmentTest {
     private static final byte[] WEBHOOK_KEY = Jwts.SIG.HS256.key().build().getEncoded();
     private static final Set<String> PUBLIC_ROUTES = Set.of(
             "POST /v1/auth/login", "POST /v1/auth/login/verify-2fa",
-            "POST /v1/onboarding", "POST /v1/webhooks/blindpay");
+            "POST /v1/onboarding", "POST /v1/onboarding/account",
+            "POST /v1/company-invitations/resolve", "POST /v1/company-invitations/accept-new-user",
+            "POST /v1/webhooks/blindpay");
 
     @Container
     static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16.4");
@@ -771,6 +773,9 @@ class ApplicationSecurityAssessmentTest {
             org.mockito.Mockito.reset(avenia, blindpay, processor);
             syntheticCompaniesAndOwner();
             boolean terms = route.path().equals("/v1/blindpay/compliance/terms");
+            // Cambio atual consulta a cotacao de referencia na leitura (cache com TTL, cicd#55).
+            boolean exchangeRates = route.path().equals("/v1/exchange-rates");
+            if (exchangeRates) exercisesMockProvider = true;
             if(terms) {
                 exercisesMockProvider=true;
                 when(blindpay.initiateTermsOfService(any())).thenReturn(
@@ -793,6 +798,11 @@ class ApplicationSecurityAssessmentTest {
                 if (terms) {
                     verify(blindpay).initiateTermsOfService(any());
                     org.mockito.Mockito.verifyNoMoreInteractions(avenia, blindpay);
+                } else if (exchangeRates) {
+                    // Somente cotacao (leitura): nenhum ticket, transferencia ou chamada a BlindPay.
+                    verify(avenia, org.mockito.Mockito.atLeastOnce()).createQuote(any());
+                    org.mockito.Mockito.verifyNoMoreInteractions(avenia);
+                    verifyNoInteractions(blindpay);
                 } else {
                     verifyNoInteractions(avenia, blindpay);
                 }
