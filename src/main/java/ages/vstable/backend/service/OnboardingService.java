@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -41,6 +42,8 @@ import java.util.UUID;
 public class OnboardingService {
 
     static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_key";
+    /** Mesma regra sem diferenciar maiúsculas (V14); qualquer uma das duas pode ser a violada primeiro. */
+    static final String EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT = "users_email_lower_key";
     static final String ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT = "company_memberships_active_user_key";
 
     private final UserRepository userRepository;
@@ -160,7 +163,8 @@ public class OnboardingService {
             return new NewAccount(userRepository.saveAndFlush(user), otpauthUri);
         } catch (DataIntegrityViolationException e) {
             // Cadastro simultâneo com o mesmo e-mail: a restrição única do banco decide.
-            throw conflictOn(e, EMAIL_UNIQUE_CONSTRAINT, new ConflictException("Email already registered"));
+            throw conflictOn(e, new ConflictException("Email already registered"),
+                    EMAIL_UNIQUE_CONSTRAINT, EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT);
         }
     }
 
@@ -170,7 +174,7 @@ public class OnboardingService {
             companyMembershipService.assignOwner(userId, companyId, now);
         } catch (DataIntegrityViolationException e) {
             // Outra requisição do mesmo usuário criou o vínculo ativo primeiro.
-            throw conflictOn(e, ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT, alreadyInCompany());
+            throw conflictOn(e, alreadyInCompany(), ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT);
         }
 
         AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
@@ -201,30 +205,10 @@ public class OnboardingService {
         if (password == null || !password.equals(request.getConfirmPassword())) {
             throw new UnprocessableEntityException("Password and confirmation do not match");
         }
-        if (!isStrongPassword(password)) {
-            throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
+        if (!PasswordPolicy.isStrong(password)) {
+            throw new UnprocessableEntityException("Password must be at least 8 characters long, include a number "
+                    + "and a special character, have no line breaks and be at most 72 bytes long");
         }
-    }
-
-    private static boolean isStrongPassword(String password) {
-        if (password.length() < 8) {
-            return false;
-        }
-
-        boolean hasNumber = false;
-        boolean hasSpecialCharacter = false;
-        for (int i = 0; i < password.length(); i++) {
-            char character = password.charAt(i);
-            if (character == '\n' || character == '\r' || character == '\u0085'
-                    || character == '\u2028' || character == '\u2029') {
-                return false;
-            }
-            hasNumber |= character >= '0' && character <= '9';
-            hasSpecialCharacter |= !((character >= 'a' && character <= 'z')
-                    || (character >= 'A' && character <= 'Z')
-                    || (character >= '0' && character <= '9'));
-        }
-        return hasNumber && hasSpecialCharacter;
     }
 
     private static boolean isPresent(String value) {
@@ -233,7 +217,8 @@ public class OnboardingService {
 
     private void assertEmailAvailable(String email) {
         // Admin e-mails are also reserved so that a login e-mail always maps to a single account.
-        if (userRepository.existsByEmail(email) || administratorRepository.existsByEmail(email)) {
+        if (userRepository.findFirstByEmailIgnoreCase(email).isPresent()
+                || administratorRepository.existsByEmailIgnoreCase(email)) {
             throw new ConflictException("Email already registered");
         }
     }
@@ -246,9 +231,9 @@ public class OnboardingService {
      * Só a restrição única esperada vira conflito; qualquer outra falha de integridade é um erro real e
      * segue adiante. Nada é consultado depois da falha, porque o PostgreSQL já abortou a transação.
      */
-    private static RuntimeException conflictOn(DataIntegrityViolationException e, String constraint,
-                                               ConflictException conflict) {
+    private static RuntimeException conflictOn(DataIntegrityViolationException e, ConflictException conflict,
+                                               String... constraints) {
         String cause = e.getMostSpecificCause().getMessage();
-        return cause != null && cause.contains(constraint) ? conflict : e;
+        return cause != null && Arrays.stream(constraints).anyMatch(cause::contains) ? conflict : e;
     }
 }

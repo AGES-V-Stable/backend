@@ -45,6 +45,21 @@ de execução do IDE: `INVITATION_ENCRYPTION_KEY`
 recuperável do token e nunca vai para o banco nem para o Git) e `INVITATION_FRONTEND_ORIGIN`
 (origem pública do frontend do ambiente, usada para montar o link do convite).
 `INVITATION_KEY_VERSION` (padrão `v1`) identifica a chave em uso e deve mudar quando ela for trocada.
+O aceite do convite registra a versão dos termos vigente: `TERMS_VERSION` (até 50 caracteres), com os
+endereços `TERMS_URL` e `PRIVACY_URL` (URLs http(s) absolutas). Fora da Lambda há padrões só para
+desenvolvimento (`v1`, `/termos-de-uso` e `/politica-de-privacidade` na origem do frontend); no perfil
+`lambda` as três variáveis são obrigatórias e a aplicação não sobe sem elas, para que um valor provisório
+nunca seja tratado como publicação oficial. Trocar `TERMS_VERSION` faz aceites enviados com a versão
+anterior responderem 409 `TERMS_VERSION_MISMATCH`.
+
+`INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS` informa quantos proxies confiáveis acrescentam ao
+`X-Forwarded-For` antes da aplicação, para identificar o cliente no limite de tentativas dos convites.
+O cabeçalho só é lido quando a conexão chega pelo loopback (o Lambda Web Adapter); de qualquer outra
+origem ele é ignorado. Use `0` (padrão local) para ignorá-lo, `1` para navegador → API Gateway regional
+ou HTTP API, e `2` para CloudFront (ou endpoint edge-optimized) → API Gateway. No perfil `lambda` a
+variável é obrigatória. Confirme o valor em staging antes da produção: de uma mesma máquina, 31
+requisições a `/v1/company-invitations/resolve` com `X-Forwarded-For` forjado e diferente em cada uma
+precisam terminar em 429.
 
 ## API na AWS Lambda
 
@@ -135,6 +150,8 @@ Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, pr
 
 Acesso à empresa e convites usam códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário). Convites: 404 `INVITATION_NOT_FOUND`, 410 `INVITATION_REVOKED` e 409 `INVITATION_ALREADY_USED`, `MEMBER_ALREADY_EXISTS`, `INVITATION_ALREADY_EXISTS` (o corpo traz `details.invitationId` do convite pendente), `USER_IN_OTHER_COMPANY`, `EMAIL_RESERVED` e `INVITATION_NOT_REGENERABLE`. Gerar novo link e revogar exigem a versão do convite em `If-Match`, a mesma do `ETag` e entre aspas: ausente retorna 428 `VERSION_REQUIRED` e desatualizada, 412 `RESOURCE_VERSION_MISMATCH`. Entre duas gerações de link passam no mínimo 60 segundos, e são no máximo cinco por hora contando a criação; acima disso a resposta é 429 `INVITATION_RATE_LIMITED` com `Retry-After` em segundos. Página ou tamanho fora do permitido na lista de membros retorna 400 `INVALID_PARAMETER`.
 
+Consulta e aceite pelo link (`POST /v1/company-invitations/resolve`, `/accept-new-user` e `/accept`, com o token sempre no corpo): 404 `INVITATION_INVALID` (token malformado ou inexistente), 410 `INVITATION_SUPERSEDED` (link substituído por regeneração) e `INVITATION_REVOKED`, 409 `INVITATION_ALREADY_USED`, `USER_ALREADY_EXISTS`, `USER_IN_OTHER_COMPANY`, `MEMBER_ALREADY_EXISTS` e `TERMS_VERSION_MISMATCH`, 403 `INVITATION_IDENTITY_MISMATCH` (a conta autenticada não é a do e-mail convidado) e 422 `PASSWORD_TOO_WEAK`, `PASSWORD_CONFIRMATION_MISMATCH` e `TERMS_NOT_ACCEPTED`. As três rotas somam no máximo 30 tentativas por minuto por IP em cada instância da aplicação; acima disso a resposta é 429 `RATE_LIMITED` com `Retry-After`. O contador fica na memória: na Lambda, cada ambiente de execução conta separadamente e recomeça no cold start, então **não há limite global garantido** sem uma regra compartilhada na borda (por exemplo, AWS WAF rate-based, disponível para REST API e não para HTTP API).
+
 ## 4. Testes e análise de mutação (PITest)
 
 Suíte padrão (unitários, slices web e migrações quando Docker está disponível):
@@ -149,9 +166,9 @@ Análise de mutação com PITest (tarefa dedicada e independente de `test`, `che
 ./gradlew pitest
 ```
 
-* **Relatórios:** gerados em caminho fixo em `build/reports/pitest/index.html` e `build/reports/pitest/mutations.xml` (`timestampedReports = false`). Como o Gradle faz cache incremental das entradas e saídas da tarefa, use `./gradlew pitest --rerun-tasks` se quiser forçar nova execução sem mudanças no código.
-* **Isolamento:** exclui a tag `blindpay-sandbox`, testes de integração de banco/Testcontainers (`*IntegrationTest` de persistência/serviço) e testes puros de infraestrutura/wiring (`*ContextTest`, `LoggingFormatTest`). Em runtime, as JVMs do PIT recebem `-Dspring.profiles.active=test`, segredo JWT exclusivamente de teste, endpoints loopback inválidos (`http://127.0.0.1:0`) para Avenia e BlindPay, `APP_CONFIG_SECRET_ARN` vazio e conciliação desabilitada; adicionalmente, `LambdaSecretsEnvironmentPostProcessor` fica fora do alvo de mutação e `avoidCallsTo` suprime mutações em linhas de chamada ao AWS SDK e loggers (não sendo um bloqueador de rede em runtime).
-* **Linha de base e leitura do relatório:** não há `mutationThreshold` mínimo configurado nesta etapa inicial, e `repository.specification.*` permanece fora do escopo até haver testes unitários/isolados dedicados para essas Specifications. No `mutations.xml`, o atributo `partial="true"` reflete o modo padrão de cobertura parcial (`shouldReportCoverage`) do `XMLReportListener`, e status `TIMED_OUT` indica mutante detectado por loop/tempo excedido (a revisar na curadoria da baseline). No CI (`pr-to-trunk.yml` e `push-on-trunk.yml`), o PIT roda em step explícito após o build/testes e publica `pitest-report` como artefato.
+* **Relatórios e Sumário via Terminal/CI:** gerados em caminho fixo em `build/reports/pitest/index.html` e `build/reports/pitest/mutations.xml` (`timestampedReports = false`), além de imprimir automaticamente no terminal (`PITEST MUTATION SUMMARY`) e no `GITHUB_STEP_SUMMARY` do GitHub Actions o placar global, o detalhamento por pacote e a lista de classes com mutantes sobreviventes. Como o Gradle faz cache incremental das entradas e saídas da tarefa, use `./gradlew pitest --rerun-tasks` se quiser forçar nova execução sem mudanças no código.
+* **Isolamento:** exclui a tag `blindpay-sandbox`, testes de integração de banco/Testcontainers (`*IntegrationTest` de persistência, serviço, controlador e segurança), o teste de seeder de desenvolvimento (`DevelopmentDataSeederTest`) e testes puros de infraestrutura/wiring (`*ContextTest`, `LoggingFormatTest`, `BackendApplicationTests`). Em runtime, as JVMs do PIT recebem `-Dspring.profiles.active=test`, segredos exclusivamente de teste (`JWT_SECRET`, `TWO_FACTOR_ENCRYPTION_KEY`, `INVITATION_ENCRYPTION_KEY`, `INVITATION_FRONTEND_ORIGIN`), endpoints loopback inválidos (`http://127.0.0.1:0`) para Avenia, BlindPay, Gemini e DeepSeek, `APP_CONFIG_SECRET_ARN` vazio e conciliação desabilitada; adicionalmente, classes puramente de bootstrap/seed/wiring (`BackendApplication`, `DevelopmentDataSeeder`, `SyntheticDataSeeder`, `CorsConfig`, `QuoteConfiguration`, `LambdaSecretsEnvironmentPostProcessor`, `InternalJobSecurityConfiguration`) ficam fora do alvo de mutação e `avoidCallsTo` suprime mutações em linhas de chamada ao AWS SDK e loggers (`Logger`, `LoggingEventBuilder`, `OperationalLog`).
+* **Linha de base, controle de regressão e plano de contingência:** `repository.specification.*` permanece fora do escopo até haver testes unitários isolados dedicados para essas Specifications. No `mutations.xml`, o atributo `partial="true"` reflete o modo padrão de cobertura parcial (`shouldReportCoverage`) do `XMLReportListener`, e status `TIMED_OUT` indica mutante detectado por loop/tempo excedido. Para manter o feedback rápido em Pull Requests (`pr-to-trunk.yml`), a análise de mutação roda apenas na branch principal (`push-on-trunk.yml`) em um job paralelo dedicado (`mutation-tests`) com `continue-on-error: true` e publica `pitest-report` como artefato, garantindo visibilidade contínua em staging/trunk sem impactar o tempo de revisão dos PRs.
 
 ## Operational logging
 

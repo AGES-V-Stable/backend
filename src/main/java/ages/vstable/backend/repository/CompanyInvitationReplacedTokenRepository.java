@@ -13,4 +13,7 @@ public interface CompanyInvitationReplacedTokenRepository
     /** Substituições do convite depois do instante dado; cada uma marca a geração de um novo link. */
     List<CompanyInvitationReplacedTokenEntity> findByInvitationIdAndReplacedAtAfter(UUID invitationId,
                                                                                      OffsetDateTime after);
+
+    /** Indica que o link já foi de um convite e foi substituído por regeneração. */
+    boolean existsByTokenHash(String tokenHash);
 }

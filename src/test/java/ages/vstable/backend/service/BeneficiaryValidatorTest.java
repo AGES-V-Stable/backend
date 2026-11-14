@@ -55,6 +55,16 @@ class BeneficiaryValidatorTest {
     }
 
     @Test
+    void walletQualification_acceptsBoundary100CharacterNames() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setIsSelfCustody(false);
+        request.setCounterpartyName("X".repeat(100));
+        request.setCustodianName("Y".repeat(100));
+
+        assertThatCode(() -> validator.validate(request)).doesNotThrowAnyException();
+    }
+
+    @Test
     void walletQualification_rejectsMissingLongOrControlCharacterNames() {
         BeneficiaryCreateRequest request = walletRequest();
         for (String name : new String[]{null, " ", "X".repeat(101), "Test\nRecipient"}) {
@@ -278,6 +288,163 @@ class BeneficiaryValidatorTest {
         request.setIban("GB29NWBK60161331926819");
 
         assertThatCode(() -> validator.validate(request)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void shouldRejectWalletMissingCurrency() {
+        BeneficiaryCreateRequest request = walletRequest();
+        request.setCurrency("   ");
+
+        assertThatThrownBy(() -> validator.validate(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currency: Campo obrigatório.");
+    }
+
+    @Test
+    void shouldRejectBrlBankAccountMissingRequiredFields() {
+        BeneficiaryCreateRequest missingCurrency = brlBankAccountRequest();
+        missingCurrency.setCurrency(" ");
+        assertThatThrownBy(() -> validator.validate(missingCurrency))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currency: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingBankCode = brlBankAccountRequest();
+        missingBankCode.setBankCode(" ");
+        assertThatThrownBy(() -> validator.validate(missingBankCode))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bankCode: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingBranch = brlBankAccountRequest();
+        missingBranch.setBranchNumber(" ");
+        assertThatThrownBy(() -> validator.validate(missingBranch))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("branchNumber: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingAccount = brlBankAccountRequest();
+        missingAccount.setAccountNumber(" ");
+        assertThatThrownBy(() -> validator.validate(missingAccount))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("accountNumber: Campo obrigatório.");
+    }
+
+    @Test
+    void shouldValidateUsdBankAccountOnAchAndWireRails() {
+        BeneficiaryCreateRequest validUsd = usdBankAccountRequest();
+        assertThatCode(() -> validator.validate(validUsd)).doesNotThrowAnyException();
+
+        BeneficiaryCreateRequest wrongCurrency = usdBankAccountRequest();
+        wrongCurrency.setCurrency("EUR");
+        assertThatThrownBy(() -> validator.validate(wrongCurrency))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currency deve ser USD para o paymentRail informado");
+
+        BeneficiaryCreateRequest missingBankName = usdBankAccountRequest();
+        missingBankName.setBankName(" ");
+        assertThatThrownBy(() -> validator.validate(missingBankName))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bankName: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingAccountNumber = usdBankAccountRequest();
+        missingAccountNumber.setAccountNumber(" ");
+        assertThatThrownBy(() -> validator.validate(missingAccountNumber))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("accountNumber: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingRoutingNumber = usdBankAccountRequest();
+        missingRoutingNumber.setRoutingNumber(" ");
+        assertThatThrownBy(() -> validator.validate(missingRoutingNumber))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("routingNumber: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingAddressLine1 = usdBankAccountRequest();
+        missingAddressLine1.setAddressLine1(" ");
+        assertThatThrownBy(() -> validator.validate(missingAddressLine1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("addressLine1: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingCity = usdBankAccountRequest();
+        missingCity.setCity(" ");
+        assertThatThrownBy(() -> validator.validate(missingCity))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("city: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingState = usdBankAccountRequest();
+        missingState.setStateProvinceRegion(" ");
+        assertThatThrownBy(() -> validator.validate(missingState))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("stateProvinceRegion: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingPostalCode = usdBankAccountRequest();
+        missingPostalCode.setPostalCode(" ");
+        assertThatThrownBy(() -> validator.validate(missingPostalCode))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("postalCode: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingCountryCode = usdBankAccountRequest();
+        missingCountryCode.setCountryCode(" ");
+        assertThatThrownBy(() -> validator.validate(missingCountryCode))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("countryCode: Campo obrigatório.");
+
+        BeneficiaryCreateRequest invalidCountryCode = usdBankAccountRequest();
+        invalidCountryCode.setCountryCode("US");
+        assertThatThrownBy(() -> validator.validate(invalidCountryCode))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("countryCode deve ter 3 caracteres");
+    }
+
+    @Test
+    void shouldRejectSepaBankAccountWithWrongCurrency() {
+        BeneficiaryCreateRequest request = sepaRequest();
+        request.setCurrency("USD");
+
+        assertThatThrownBy(() -> validator.validate(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("currency deve ser EUR para o paymentRail informado");
+    }
+
+    @Test
+    void shouldRejectSwiftBankAccountMissingAddressAndCountryCodes() {
+        BeneficiaryCreateRequest missingAddress = bankAccountRequest();
+        missingAddress.setAddressLine1(" ");
+        assertThatThrownBy(() -> validator.validate(missingAddress))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("addressLine1: Campo obrigatório.");
+
+        BeneficiaryCreateRequest missingCity = bankAccountRequest();
+        missingCity.setCity(" ");
+        assertThatThrownBy(() -> validator.validate(missingCity))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("city: Campo obrigatório.");
+
+        BeneficiaryCreateRequest invalidCountry = bankAccountRequest();
+        invalidCountry.setCountryCode("USA");
+        assertThatThrownBy(() -> validator.validate(invalidCountry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("countryCode deve ter 2 caracteres");
+
+        BeneficiaryCreateRequest invalidBankCountry = bankAccountRequest();
+        invalidBankCountry.setBankCountryCode("USA");
+        assertThatThrownBy(() -> validator.validate(invalidBankCountry))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bankCountryCode deve ter 2 caracteres");
+    }
+
+    private BeneficiaryCreateRequest usdBankAccountRequest() {
+        BeneficiaryCreateRequest request = new BeneficiaryCreateRequest();
+        request.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        request.setNickname("Fornecedor USD");
+        request.setPaymentRail("ach");
+        request.setCurrency("USD");
+        request.setBankName("Bank of America");
+        request.setAccountNumber("987654321");
+        request.setRoutingNumber("026009593");
+        request.setAddressLine1("100 Federal St");
+        request.setCity("Boston");
+        request.setStateProvinceRegion("MA");
+        request.setPostalCode("02110");
+        request.setCountryCode("USA");
+        return request;
     }
 
     private BeneficiaryCreateRequest pixRequest() {

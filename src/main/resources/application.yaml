@@ -67,6 +67,15 @@ app:
     encryption-key: ${INVITATION_ENCRYPTION_KEY}
     key-version: ${INVITATION_KEY_VERSION:v1}
     frontend-origin: ${INVITATION_FRONTEND_ORIGIN}
+    rate-limit:
+      # Proxies confiáveis que acrescentam ao X-Forwarded-For (veja ClientIpResolver). 0 ignora o cabeçalho.
+      trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
+  # Termos aceitos no aceite do convite. Trocar a versão exige novo aceite de quem ainda não aceitou.
+  # Os padrões abaixo são só para desenvolvimento; o perfil lambda exige valores explícitos.
+  terms:
+    version: ${TERMS_VERSION:v1}
+    terms-url: ${TERMS_URL:${INVITATION_FRONTEND_ORIGIN}/termos-de-uso}
+    privacy-url: ${PRIVACY_URL:${INVITATION_FRONTEND_ORIGIN}/politica-de-privacidade}
 
 api:
   auth:
@@ -150,6 +159,17 @@ spring:
       maximum-pool-size: 2
   flyway:
     enabled: false
+
+# Sem padrão na Lambda: a aplicação não sobe sem a versão publicada dos termos e sem a topologia de proxies
+# definida para o ambiente, para que valores provisórios nunca sejam usados em staging ou produção.
+app:
+  invitation:
+    rate-limit:
+      trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}
+  terms:
+    version: ${TERMS_VERSION}
+    terms-url: ${TERMS_URL}
+    privacy-url: ${PRIVACY_URL}
 
 ---
 spring:

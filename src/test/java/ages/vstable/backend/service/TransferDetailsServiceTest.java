@@ -361,4 +361,57 @@ class TransferDetailsServiceTest {
                         ex -> assertThat(ex.getCode()).isEqualTo("TRANSFER_NOT_FOUND"));
         verify(pdfGenerator, never()).generate(any());
     }
+
+    @Test
+    void getDetails_zeroConvertedBrlAndBlankCounterpartyFields_returnsNullPercentageAndNullCounterparty() {
+        verifiedUser();
+        ExportTransactionEntity receipt = ExportTransactionEntity.builder()
+                .id(transferId)
+                .companyId(companyId)
+                .status(TransactionStatus.SETTLED)
+                .foreignCurrency("USD")
+                .foreignAmount(new BigDecimal("100.00"))
+                .settlementAmountBrl(new BigDecimal("-50.00"))
+                .serviceFeeBrl(new BigDecimal("50.00"))
+                .exchangeRate(new BigDecimal("5.4"))
+                .externalPayerName("   ")
+                .externalPayerEmail("")
+                .build();
+        when(transactionRepository.findById(transferId)).thenReturn(Optional.of(receipt));
+
+        TransferDetailsResponse details = service.getDetails(transferId, user);
+
+        assertThat(details.counterpartyName()).isNull();
+        assertThat(details.counterpartyDetails()).isNull();
+        assertThat(details.costs().serviceFee().amount()).isEqualTo("50.00");
+        assertThat(details.costs().serviceFee().percentage()).isNull();
+        assertThat(details.exchangeRate().rate()).isEqualTo("5.40");
+    }
+
+    @Test
+    void receiptRecord_implementsValueBasedEqualsHashCodeAndToString() {
+        byte[] contentA = {1, 2, 3};
+        byte[] contentA2 = {1, 2, 3};
+        byte[] contentB = {1, 2, 4};
+
+        TransferDetailsService.Receipt receipt1 = new TransferDetailsService.Receipt("file-a.pdf", contentA);
+        TransferDetailsService.Receipt receipt2 = new TransferDetailsService.Receipt("file-a.pdf", contentA2);
+        TransferDetailsService.Receipt differentName = new TransferDetailsService.Receipt("file-b.pdf", contentA);
+        TransferDetailsService.Receipt differentContent = new TransferDetailsService.Receipt("file-a.pdf", contentB);
+        TransferDetailsService.Receipt nullContent = new TransferDetailsService.Receipt("file-a.pdf", null);
+
+        assertThat(receipt1)
+                .isEqualTo(receipt1)
+                .isEqualTo(receipt2)
+                .isNotEqualTo(differentName)
+                .isNotEqualTo(differentContent)
+                .isNotEqualTo(nullContent)
+                .isNotEqualTo("not-a-receipt")
+                .isNotEqualTo(null);
+
+        int expectedHash = 31 * java.util.Objects.hashCode("file-a.pdf") + java.util.Arrays.hashCode(contentA);
+        assertThat(receipt1.hashCode()).isEqualTo(expectedHash).isEqualTo(receipt2.hashCode()).isNotZero();
+        assertThat(receipt1.toString()).isEqualTo("Receipt[filename=file-a.pdf, content=3 bytes]");
+        assertThat(nullContent.toString()).isEqualTo("Receipt[filename=file-a.pdf, content=0 bytes]");
+    }
 }

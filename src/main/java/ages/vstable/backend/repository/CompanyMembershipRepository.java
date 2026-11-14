@@ -19,6 +19,9 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
 
     List<CompanyMembershipEntity> findByCompanyIdAndStatus(UUID companyId, MembershipStatus status);
 
+    /** Indica se o usuário já teve algum vínculo, ativo ou removido. */
+    boolean existsByUserId(UUID userId);
+
     /** Serializa alteracoes de perfil e revogacoes concorrentes do mesmo vinculo. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from CompanyMembershipEntity m where m.id = :memberId and m.companyId = :companyId")

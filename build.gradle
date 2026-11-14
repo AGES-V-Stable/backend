@@ -147,8 +147,11 @@ pitest {
 	excludedClasses = [
 		'ages.vstable.backend.BackendApplication',
 		'ages.vstable.backend.DevelopmentDataSeeder',
+		'ages.vstable.backend.service.SyntheticDataSeeder',
 		'ages.vstable.backend.config.CorsConfig',
+		'ages.vstable.backend.configuration.QuoteConfiguration',
 		'ages.vstable.backend.configuration.LambdaSecretsEnvironmentPostProcessor',
+		'ages.vstable.backend.configuration.security.InternalJobSecurityConfiguration',
 		'ages.vstable.backend.repository.specification.*'
 	]
 	targetTests = [
@@ -157,6 +160,8 @@ pitest {
 	]
 	excludedGroups = ['blindpay-sandbox']
 	excludedTestClasses = [
+		'ages.vstable.backend.BackendApplicationTests',
+		'ages.vstable.backend.DevelopmentDataSeederTest',
 		'ages.vstable.backend.sandbox.*',
 		'ages.vstable.backend.repository.*IntegrationTest',
 		'ages.vstable.backend.service.*IntegrationTest',
@@ -168,6 +173,8 @@ pitest {
 	avoidCallsTo = [
 		'software.amazon.awssdk',
 		'org.slf4j.Logger',
+		'org.slf4j.spi.LoggingEventBuilder',
+		'ages.vstable.backend.logging.OperationalLog',
 		'java.util.logging',
 		'org.apache.logging.log4j',
 		'org.apache.commons.logging'
@@ -182,10 +189,115 @@ pitest {
 			"-javaagent:${configurations.mockitoAgent.asPath}".toString(),
 			'-Dspring.profiles.active=test',
 			'-DJWT_SECRET=test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes',
+			'-DTWO_FACTOR_ENCRYPTION_KEY=dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE=',
+			'-DINVITATION_ENCRYPTION_KEY=dGVzdC1vbmx5LWludml0ZS1rZXktMzItYnl0ZXMhISE=',
+			'-DINVITATION_FRONTEND_ORIGIN=https://frontend.example',
 			'-DAVENIA_BASE_URL=http://127.0.0.1:0',
 			'-DBLINDPAY_BASE_URL=http://127.0.0.1:0',
+			'-DAI_SUPPORT_GEMINI_BASE_URL=http://127.0.0.1:0',
+			'-DAI_SUPPORT_DEEPSEEK_BASE_URL=http://127.0.0.1:0',
 			'-DAPP_CONFIG_SECRET_ARN=',
 			'-DTRANSFERS_RECONCILIATION_ENABLED=false'
 		]
 	})
+}
+
+tasks.named('pitest') {
+	doLast {
+		File xmlFile = layout.buildDirectory.file('reports/pitest/mutations.xml').get().asFile
+		if (!xmlFile.exists()) {
+			logger.lifecycle('PITest report not found at {}', xmlFile)
+			return
+		}
+		def mutations = new groovy.xml.XmlSlurper().parse(xmlFile).mutation
+		int total = mutations.size()
+		int killed = mutations.count { it.@status.text() == 'KILLED' }
+		int timedOut = mutations.count { it.@status.text() == 'TIMED_OUT' }
+		int survived = mutations.count { it.@status.text() == 'SURVIVED' }
+		int noCoverage = mutations.count { it.@status.text() == 'NO_COVERAGE' }
+		int detected = killed + timedOut
+		int covered = total - noCoverage
+		int mutationPct = total > 0 ? Math.round((detected * 100.0f) / total) : 0
+		int strengthPct = covered > 0 ? Math.round((detected * 100.0f) / covered) : 0
+
+		def byPkg = [:].withDefault { [classes: [] as Set, total: 0, detected: 0, survived: 0, noCov: 0] }
+		def byClass = [:].withDefault { [total: 0, detected: 0, survived: 0, noCov: 0] }
+		mutations.each { m ->
+			String cls = m.mutatedClass.text()
+			String pkg = cls.contains('.') ? cls.substring(0, cls.lastIndexOf('.')) : cls
+			String status = m.@status.text()
+			byPkg[pkg].classes.add(cls)
+			byPkg[pkg].total++
+			byClass[cls].total++
+			if (status == 'KILLED' || status == 'TIMED_OUT') {
+				byPkg[pkg].detected++
+				byClass[cls].detected++
+			} else if (status == 'SURVIVED') {
+				byPkg[pkg].survived++
+				byClass[cls].survived++
+			} else if (status == 'NO_COVERAGE') {
+				byPkg[pkg].noCov++
+				byClass[cls].noCov++
+			}
+		}
+
+		logger.lifecycle('')
+		logger.lifecycle('================================================================================')
+		logger.lifecycle('PITEST MUTATION SUMMARY')
+		logger.lifecycle('================================================================================')
+		logger.lifecycle(String.format('Total Classes   : %d', byClass.size()))
+		logger.lifecycle(String.format('Total Mutations : %d', total))
+		logger.lifecycle(String.format('Mutation Score  : %d%% (%d/%d detected)', mutationPct, detected, total))
+		logger.lifecycle(String.format('Test Strength   : %d%% (%d/%d covered)', strengthPct, detected, covered))
+		logger.lifecycle(String.format('Status Breakdown: KILLED=%d | SURVIVED=%d | NO_COVERAGE=%d | TIMED_OUT=%d',
+				killed, survived, noCoverage, timedOut))
+		logger.lifecycle('--------------------------------------------------------------------------------')
+		logger.lifecycle('Breakdown by Package:')
+		byPkg.sort { it.key }.each { pkg, stats ->
+			int pkgPct = stats.total > 0 ? Math.round((stats.detected * 100.0f) / stats.total) : 0
+			String shortPkg = pkg.replace('ages.vstable.backend.', '')
+			logger.lifecycle(String.format('  - %-32s | Classes: %2d | Score: %3d%% (%4d/%4d) | Survived: %3d | NoCov: %3d',
+					shortPkg, stats.classes.size(), pkgPct, stats.detected, stats.total, stats.survived, stats.noCov))
+		}
+		logger.lifecycle('--------------------------------------------------------------------------------')
+
+		def classesWithSurvivors = byClass.findAll { it.value.survived > 0 }
+				.sort { a, b -> b.value.survived <=> a.value.survived ?: a.key <=> b.key }
+
+		if (classesWithSurvivors.isEmpty()) {
+			logger.lifecycle('No surviving mutations!')
+		} else {
+			logger.lifecycle(String.format('Classes with Surviving Mutations (%d classes, %d survivors):',
+					classesWithSurvivors.size(), survived))
+			classesWithSurvivors.each { cls, stats ->
+				int clsPct = stats.total > 0 ? Math.round((stats.detected * 100.0f) / stats.total) : 0
+				String shortName = cls.replace('ages.vstable.backend.', '')
+				logger.lifecycle(String.format('  - %-52s | Survived: %2d | NoCov: %2d | Score: %3d%% (%d/%d)',
+						shortName, stats.survived, stats.noCov, clsPct, stats.detected, stats.total))
+			}
+		}
+		logger.lifecycle('================================================================================')
+
+		String stepSummaryPath = System.getenv('GITHUB_STEP_SUMMARY')
+		if (stepSummaryPath) {
+			File summaryFile = new File(stepSummaryPath)
+			StringBuilder md = new StringBuilder()
+			md.append('## PITest Mutation Analysis Summary\n\n')
+			md.append('| Metric | Value |\n| :--- | :--- |\n')
+			md.append("| **Classes Evaluated** | ${byClass.size()} |\n")
+			md.append("| **Mutation Coverage** | **${mutationPct}%** (${detected}/${total}) |\n")
+			md.append("| **Test Strength** | **${strengthPct}%** (${detected}/${covered}) |\n")
+			md.append("| **Killed / Timed Out** | ${killed} / ${timedOut} |\n")
+			md.append("| **Survived** | **${survived}** |\n")
+			md.append("| **No Coverage** | ${noCoverage} |\n\n")
+			md.append('### Breakdown by Package\n\n')
+			md.append('| Package | Classes | Mutation Score | Survived | No Coverage |\n| :--- | :---: | :---: | :---: | :---: |\n')
+			byPkg.sort { it.key }.each { pkg, stats ->
+				int pkgPct = stats.total > 0 ? Math.round((stats.detected * 100.0f) / stats.total) : 0
+				String shortPkg = pkg.replace('ages.vstable.backend.', '')
+				md.append("| `${shortPkg}` | ${stats.classes.size()} | ${pkgPct}% (${stats.detected}/${stats.total}) | ${stats.survived} | ${stats.noCov} |\n")
+			}
+			summaryFile.append(md.toString(), 'UTF-8')
+		}
+	}
 }
