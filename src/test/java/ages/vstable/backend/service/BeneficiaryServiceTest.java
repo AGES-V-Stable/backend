@@ -4,6 +4,7 @@ import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
@@ -12,7 +13,11 @@ import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
+import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
+import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,9 +31,11 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -131,18 +138,27 @@ class BeneficiaryServiceTest {
             return entity;
         });
 
-        BeneficiaryResponse response = beneficiaryService.create(companyId, currentUserId, bankAccountRequest());
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            BeneficiaryResponse response = beneficiaryService.create(companyId, currentUserId, bankAccountRequest());
 
-        assertThat(response.getId()).isNotNull();
-        assertThat(response.getCompanyId()).isEqualTo(companyId);
-        assertThat(response.getReceivingMethod()).isEqualTo(ReceivingMethod.BANK_ACCOUNT);
-        assertThat(response.getNickname()).isEqualTo("Fornecedor Principal"); // Ajuste baseado no nickname
+            assertThat(response.getId()).isNotNull();
+            assertThat(response.getCompanyId()).isEqualTo(companyId);
+            assertThat(response.getReceivingMethod()).isEqualTo(ReceivingMethod.BANK_ACCOUNT);
+            assertThat(response.getNickname()).isEqualTo("Fornecedor Principal");
+            assertThat(capture.events()).hasSize(1);
+            Map<String, Object> fields = LogCapture.fields(capture.events().getFirst());
+            assertThat(fields).containsEntry("event", "beneficiary.creation.completed")
+                    .containsEntry("outcome", "success");
+        }
 
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getCompany().getId()).isEqualTo(companyId);
         assertThat(captor.getValue().getAveniaId()).isEqualTo(aveniaId);
         assertThat(captor.getValue().getAveniaSubAccountId()).isEqualTo(subAccountId);
+        assertThat(captor.getValue().getAccountClass()).isEqualTo("business");
+        assertThat(captor.getValue().getPaymentRail()).isEqualTo("wire");
+        assertThat(captor.getValue().getRecipientRelationship()).isEqualTo("vendor_or_supplier");
     }
 
     @Test
@@ -167,6 +183,8 @@ class BeneficiaryServiceTest {
         entity.setNickname("Nick");
         entity.setInternalDescription("Desc");
         entity.setReceivingMethod(ReceivingMethod.BANK_ACCOUNT);
+        entity.setBankName("Itau");
+        entity.setAccountType(BankAccountType.checking);
         entity.setIdentificationDocument("12345");
         entity.setBankCode("341");
         entity.setBranchNumber("0001");
@@ -176,6 +194,9 @@ class BeneficiaryServiceTest {
         entity.setBlockchainNetwork(BlockchainNetwork.ethereum);
         entity.setWalletAddress("0x00");
         entity.setWalletMemo("memo");
+        entity.setIsSelfCustody(false);
+        entity.setCustodianName("Fireblocks");
+        entity.setIsSameEconomicGroup(true);
         entity.setBeneficiaryType("LEGAL_ENTITY");
         entity.setAccountHolderName("Holder");
         entity.setSwiftBic("SWIFT");
@@ -190,6 +211,9 @@ class BeneficiaryServiceTest {
 
         assertThat(response.getNickname()).isEqualTo("Nick");
         assertThat(response.getInternalDescription()).isEqualTo("Desc");
+        assertThat(response.getBankName()).isEqualTo("Itau");
+        assertThat(response.getAccountType()).isEqualTo(BankAccountType.checking);
+        assertThat(response.getIdentificationDocument()).isEqualTo("12345");
         assertThat(response.getBankCode()).isEqualTo("341");
         assertThat(response.getBranchNumber()).isEqualTo("0001");
         assertThat(response.getAccountNumber()).isEqualTo("123-4");
@@ -198,6 +222,9 @@ class BeneficiaryServiceTest {
         assertThat(response.getBlockchainNetwork()).isEqualTo(BlockchainNetwork.ethereum);
         assertThat(response.getWalletAddress()).isEqualTo("0x00");
         assertThat(response.getWalletMemo()).isEqualTo("memo");
+        assertThat(response.getIsSelfCustody()).isFalse();
+        assertThat(response.getCustodianName()).isEqualTo("Fireblocks");
+        assertThat(response.getIsSameEconomicGroup()).isTrue();
         assertThat(response.getBeneficiaryType()).isEqualTo("LEGAL_ENTITY");
         assertThat(response.getLegalName()).isEqualTo("Holder");
         assertThat(response.getAccountHolderName()).isEqualTo("Holder");
@@ -475,5 +502,98 @@ class BeneficiaryServiceTest {
         capturedSpec.toPredicate(root, query, cb);
 
         assertThat(capturedSpec).isNotNull();
+    }
+
+    @Test
+    void create_userWithoutKycVerification_throwsUnprocessableEntity() {
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("KYC");
+    }
+
+    @Test
+    void buildBeneficiaryAndParseAccountType_handlesIndividualSavingCheckingAndBlankFallbacks() {
+        BeneficiaryCreateRequest individualRequest = bankAccountRequest();
+        individualRequest.setBeneficiaryType("INDIVIDUAL");
+        individualRequest.setAccountClass("   ");
+        individualRequest.setPaymentRail("   ");
+        individualRequest.setAccountType("saving");
+        individualRequest.setRecipientRelationship(null);
+        individualRequest.setAddressLine1("   ");
+
+        BeneficiaryEntity individual = ReflectionTestUtils.invokeMethod(
+                beneficiaryService, "buildBeneficiary", approvedCompany(), individualRequest);
+        assertThat(individual).isNotNull();
+        assertThat(individual.getAccountClass()).isEqualTo("individual");
+        assertThat(individual.getPaymentRail()).isEqualTo("international_swift");
+        assertThat(individual.getAccountType()).isEqualTo(BankAccountType.savings);
+        assertThat(individual.getRecipientRelationship()).isEqualTo("vendor_or_supplier");
+        assertThat(individual.getAddressLine1()).isEqualTo("Rua Teste, 123");
+
+        BeneficiaryCreateRequest checkingRequest = bankAccountRequest();
+        checkingRequest.setAccountClass(" individual ");
+        checkingRequest.setAccountType("CHECKING");
+        BeneficiaryEntity checking = ReflectionTestUtils.invokeMethod(
+                beneficiaryService, "buildBeneficiary", approvedCompany(), checkingRequest);
+        assertThat(checking).isNotNull();
+        assertThat(checking.getAccountClass()).isEqualTo("individual");
+        assertThat(checking.getAccountType()).isEqualTo(BankAccountType.checking);
+
+        BankAccountType blankAccountType = ReflectionTestUtils.invokeMethod(
+                beneficiaryService, "parseAccountType", "   ");
+        assertThat(blankAccountType).isNull();
+    }
+
+    @Test
+    void findByIdForCompany_returnsWhenOwnedAndThrowsWhenForeignOrMissing() {
+        UUID id = UUID.randomUUID();
+        BeneficiaryEntity owned = buildBeneficiary(id, companyId);
+        when(beneficiaryRepository.findById(id)).thenReturn(Optional.of(owned));
+
+        BeneficiaryResponse response = beneficiaryService.findByIdForCompany(companyId, id);
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(id);
+
+        UUID otherCompanyId = UUID.randomUUID();
+        assertThatThrownBy(() -> beneficiaryService.findByIdForCompany(otherCompanyId, id))
+                .isInstanceOf(NotFoundException.class);
+
+        UUID unknownId = UUID.randomUUID();
+        when(beneficiaryRepository.findById(unknownId)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> beneficiaryService.findByIdForCompany(companyId, unknownId))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void aveniaSubAccountProvisioningService_reusesExistingOrCreatesNewSubAccount() {
+        AveniaClient aveniaClient = org.mockito.Mockito.mock(AveniaClient.class);
+        AveniaSubAccountProvisioningService provisioningService = new AveniaSubAccountProvisioningService(
+                aveniaClient, aveniaKycVerificationRepository);
+
+        AveniaKycVerificationEntity existing = AveniaKycVerificationEntity.builder()
+                .id(UUID.randomUUID())
+                .aveniaSubAccountId("existing-sub-1")
+                .build();
+        assertThat(provisioningService.ensureSubAccountId(existing)).isEqualTo("existing-sub-1");
+        org.mockito.Mockito.verifyNoInteractions(aveniaClient);
+
+        UUID kycId = UUID.randomUUID();
+        AveniaKycVerificationEntity blankSub = AveniaKycVerificationEntity.builder()
+                .id(kycId)
+                .aveniaSubAccountId("   ")
+                .build();
+        AveniaSubAccountResponse subResponse = new AveniaSubAccountResponse();
+        subResponse.setId("created-sub-2");
+        when(aveniaClient.criarSubconta("kyc-" + kycId)).thenReturn(subResponse);
+
+        String provisioned = provisioningService.ensureSubAccountId(blankSub);
+
+        assertThat(provisioned).isEqualTo("created-sub-2");
+        assertThat(blankSub.getAveniaSubAccountId()).isEqualTo("created-sub-2");
+        verify(aveniaKycVerificationRepository).save(blankSub);
     }
 }

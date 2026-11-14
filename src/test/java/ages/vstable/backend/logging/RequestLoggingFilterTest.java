@@ -24,7 +24,7 @@ class RequestLoggingFilterTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {200, 201, 302, 400, 401, 403, 404, 500})
+    @ValueSource(ints = {200, 201, 302, 399, 400, 401, 403, 404, 499, 500})
     void logsOneCorrelatedCompletionWithSafeRouteAndCorrectLevel(int status) throws Exception {
         String requestId = UUID.randomUUID().toString();
         var request = new MockHttpServletRequest("GET", "/accounts/sensitive-id");
@@ -40,12 +40,14 @@ class RequestLoggingFilterTest {
                 response.setStatus(status);
             });
 
+            assertThat(request.getAttribute(RequestLoggingFilter.class.getName() + ".completed")).isEqualTo(true);
             assertThat(response.getHeader(RequestLoggingFilter.HEADER)).isEqualTo(requestId);
             assertThat(capture.events()).hasSize(1);
             var event = capture.events().getFirst();
             assertThat(event.getMDCPropertyMap()).containsEntry("requestId", requestId);
             assertThat(event.getLevel()).isEqualTo(status >= 500 ? Level.ERROR : status >= 400 ? Level.WARN : Level.INFO);
             assertThat(LogCapture.fields(event)).containsEntry("status", status)
+                    .containsEntry("outcome", status >= 400 ? "failure" : "success")
                     .containsEntry("route", "/accounts/{id}").containsKey("durationMs");
             assertThat(LogCapture.fields(event).toString()).doesNotContain("sensitive-id", "synthetic-secret");
             assertThat(MDC.get("requestId")).isEqualTo("previous");
@@ -88,5 +90,18 @@ class RequestLoggingFilterTest {
                     .doesNotContain("synthetic-secret", "private-payload");
             assertThat(MDC.getCopyOfContextMap()).isNullOrEmpty();
         }
+    }
+
+    @Test
+    void restoresContextEvenWhenCompletionLoggingFails() {
+        var request = new MockHttpServletRequest("GET", "/");
+        var response = org.mockito.Mockito.spy(new MockHttpServletResponse());
+        org.mockito.Mockito.when(response.getStatus()).thenThrow(new IllegalStateException("status failure"));
+        MDC.put("requestId", "previous-context");
+
+        assertThatThrownBy(() -> filter.doFilter(request, response, (req, res) -> { }))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(MDC.get("requestId")).isEqualTo("previous-context");
     }
 }

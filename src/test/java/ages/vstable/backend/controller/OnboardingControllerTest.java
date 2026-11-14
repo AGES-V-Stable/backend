@@ -313,4 +313,32 @@ class OnboardingControllerTest {
                 .content(validPayload()))
                 .andExpect(status().isInternalServerError());
     }
+
+    @Test
+    void getMe_byAdministrator_returns403() throws Exception {
+        AdministratorEntity admin = AdministratorEntity.builder()
+                .id(UUID.randomUUID()).email("admin@vstable.com").build();
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/v1/onboarding/me")
+                        .with(authentication(new UsernamePasswordAuthenticationToken(admin, null, admin.getAuthorities()))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(onboardingService);
+    }
+
+    @Test
+    void getMe_byAuthenticatedCompanyUser_returns200WithCurrentOnboardingStatus() throws Exception {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email("joao@example.com").build();
+        ages.vstable.backend.dto.onboarding.OnboardingStatusResponse statusResponse =
+                ages.vstable.backend.dto.onboarding.OnboardingStatusResponse.builder()
+                        .companyId(UUID.randomUUID())
+                        .kycVerificationId(UUID.randomUUID())
+                        .build();
+        when(onboardingService.getCurrentOnboarding(user)).thenReturn(statusResponse);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/v1/onboarding/me")
+                        .with(asUser(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.companyId").value(statusResponse.getCompanyId().toString()))
+                .andExpect(jsonPath("$.kycVerificationId").value(statusResponse.getKycVerificationId().toString()));
+    }
 }

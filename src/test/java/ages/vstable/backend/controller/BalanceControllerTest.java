@@ -22,9 +22,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
+import java.math.BigDecimal;
+
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -128,4 +131,106 @@ class BalanceControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
+
+    @Test
+    void addMockTopUp_usesExistingServiceAndReturnsCreditAndUpdatedBalance() throws Exception {
+        UserEntity user = companyUser(companyId);
+        when(service.addBalance(user, new BigDecimal("10.25")))
+                .thenReturn(new BalanceResponse("12.75"));
+
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amountBrl": "10.25"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditedAmountBrl").value("10.25"))
+                .andExpect(jsonPath("$.availableBalanceBrl").value("12.75"));
+    }
+
+    @Test
+    void addMockTopUp_doesNotAcceptLegacyAmountField() throws Exception {
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(companyUser(companyId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount": "10.25"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void addMockTopUp_doesNotCreditForInvalidPrecision() throws Exception {
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(companyUser(companyId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amountBrl": "10.251"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void addMockTopUp_doesNotCreditZeroOrNegativeAmounts() throws Exception {
+        for (String amount : new String[] {"0.00", "-1.00"}) {
+            mockMvc.perform(post("/v1/balance/mock-top-ups")
+                            .principal(authenticated(companyUser(companyId)))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"amountBrl": "%s"}
+                                    """.formatted(amount)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void addMockTopUp_doesNotCreditWhenNumericCapacityIsExceeded() throws Exception {
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(companyUser(companyId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amountBrl": "10000000000000.00"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void addSimulatedBalance_rejectsZeroBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/v1/balance/simulated-deposits")
+                        .principal(authenticated(companyUser(companyId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount": "0.00"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void addSimulatedBalance_returnsUpdatedBalanceForAuthenticatedUser() throws Exception {
+        UserEntity user = companyUser(companyId);
+
+        when(service.addBalance(user, new BigDecimal("20.50")))
+            .thenReturn(new BalanceResponse("120.50"));
+
+        mockMvc.perform(post("/v1/balance/simulated-deposits")
+                        .principal(authenticated(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amount": "20.50"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableBalanceBrl").value("120.50"));
+    }
+
 }
