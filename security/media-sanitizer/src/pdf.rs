@@ -4,13 +4,14 @@ use flate2::read::ZlibDecoder;
 
 use crate::{MediaKind, SanitizationError, SanitizationReport, SecurityPolicy};
 
+const PDF_STREAM_MIN_RATIO_THRESHOLD: usize = 4 * 1024;
+
 const DANGEROUS_PDF_NAMES: &[&[u8]] = &[
     b"JavaScript",
     b"JS",
     b"OpenAction",
     b"AA",
     b"Launch",
-    b"URI",
     b"GoToR",
     b"GoToE",
     b"SubmitForm",
@@ -19,12 +20,10 @@ const DANGEROUS_PDF_NAMES: &[&[u8]] = &[
     b"RichMedia",
     b"EmbeddedFile",
     b"Filespec",
-    b"AcroForm",
     b"XFA",
     b"Sound",
     b"Movie",
     b"3D",
-    b"ObjStm",
 ];
 
 struct StreamSpan<'a> {
@@ -115,10 +114,10 @@ pub fn verify_pdf(
 }
 
 fn validate_header(bytes: &[u8]) -> Result<(), SanitizationError> {
-    let has_valid_v1 =
-        bytes.len() >= 8 && bytes.starts_with(b"%PDF-1.") && bytes[7].is_ascii_digit();
-    let has_valid_v2 = bytes.starts_with(b"%PDF-2.0");
-    if has_valid_v1 || has_valid_v2 {
+    let has_valid_version = bytes.len() >= 8
+        && (bytes.starts_with(b"%PDF-1.") || bytes.starts_with(b"%PDF-2."))
+        && bytes[7].is_ascii_digit();
+    if has_valid_version {
         return Ok(());
     }
 
@@ -181,12 +180,18 @@ fn inspect_stream(
     total_decompressed: &mut usize,
 ) -> Result<(), SanitizationError> {
     let has_flate_filter = dict_has_pdf_name(span.dict, b"FlateDecode");
+    let has_incompatible_wrapper_filter = has_flate_filter && has_wrapper_filter(span.dict);
     let is_image = dict_has_pdf_name(span.dict, b"Image");
-    let looks_like_zlib = span.data.len() >= 2
+    let is_binary_font = dict_has_pdf_name(span.dict, b"FontFile")
+        || dict_has_pdf_name(span.dict, b"FontFile2")
+        || dict_has_pdf_name(span.dict, b"FontFile3");
+    let skip_structural_scan = is_image || is_binary_font;
+    let looks_like_zlib = !has_incompatible_wrapper_filter
+        && span.data.len() >= 2
         && span.data[0] == 0x78
         && (((u16::from(span.data[0]) << 8) | u16::from(span.data[1])) % 31 == 0);
 
-    if has_flate_filter || looks_like_zlib {
+    if (has_flate_filter && !has_incompatible_wrapper_filter) || looks_like_zlib {
         if span.data.is_empty() {
             return Err(SanitizationError::InvalidFormat(format!(
                 "empty FlateDecode stream #{stream_index}"
@@ -196,9 +201,14 @@ fn inspect_stream(
         let remaining_global = policy
             .max_decompressed_bytes
             .saturating_sub(*total_decompressed);
-        let max_by_ratio =
-            (span.data.len() as u64).saturating_mul(policy.max_compression_ratio);
-        let ratio_limit = usize::try_from(max_by_ratio).unwrap_or(usize::MAX);
+        let max_by_ratio = (span.data.len() as u64).saturating_mul(policy.max_compression_ratio);
+        let ratio_limit = if is_image {
+            usize::MAX
+        } else {
+            usize::try_from(max_by_ratio)
+                .unwrap_or(usize::MAX)
+                .max(PDF_STREAM_MIN_RATIO_THRESHOLD)
+        };
         let stream_limit = remaining_global.min(ratio_limit);
 
         let mut decoder = ZlibDecoder::new(span.data);
@@ -216,8 +226,8 @@ fn inspect_stream(
                 }
                 *total_decompressed = total_decompressed.saturating_add(decompressed.len());
                 let loc = format!("stream #{stream_index} (decompressed FlateDecode)");
-                scan_pdf_names(&decompressed, &loc)?;
-                if !is_image {
+                if !skip_structural_scan {
+                    scan_pdf_names(&decompressed, &loc)?;
                     check_polyglot_signatures(&decompressed, &loc)?;
                 }
             }
@@ -228,21 +238,38 @@ fn inspect_stream(
                     )));
                 }
                 let loc = format!("stream #{stream_index}");
-                scan_pdf_names(span.data, &loc)?;
-                if !is_image {
+                if !skip_structural_scan {
+                    scan_pdf_names(span.data, &loc)?;
                     check_polyglot_signatures(span.data, &loc)?;
                 }
             }
         }
     } else {
         let loc = format!("stream #{stream_index}");
-        scan_pdf_names(span.data, &loc)?;
-        if !is_image {
+        if !skip_structural_scan {
+            scan_pdf_names(span.data, &loc)?;
             check_polyglot_signatures(span.data, &loc)?;
         }
     }
 
     Ok(())
+}
+
+fn has_wrapper_filter(dict: &[u8]) -> bool {
+    const NON_RAW_ZLIB_FILTERS: &[&[u8]] = &[
+        b"ASCII85Decode",
+        b"ASCIIHexDecode",
+        b"LZWDecode",
+        b"RunLengthDecode",
+        b"CCITTFaxDecode",
+        b"JBIG2Decode",
+        b"DCTDecode",
+        b"JPXDecode",
+        b"Crypt",
+    ];
+    NON_RAW_ZLIB_FILTERS
+        .iter()
+        .any(|filter| dict_has_pdf_name(dict, filter))
 }
 
 fn extract_streams<'a>(
@@ -257,8 +284,7 @@ fn extract_streams<'a>(
             && (i == 0 || is_pdf_boundary(body[i - 1]))
             && preceding_token_is_dict_end(&body[structural_start..i])
         {
-            let data_start = if i + 7 < body.len() && body[i + 6] == b'\r' && body[i + 7] == b'\n'
-            {
+            let data_start = if i + 7 < body.len() && body[i + 6] == b'\r' && body[i + 7] == b'\n' {
                 Some(i + 8)
             } else if i + 6 < body.len() && (body[i + 6] == b'\n' || body[i + 6] == b'\r') {
                 Some(i + 7)
@@ -268,8 +294,8 @@ fn extract_streams<'a>(
 
             if let Some(data_start) = data_start {
                 let dict = find_preceding_dict(&body[structural_start..i]).unwrap_or(&[]);
-                let (data_end, after_endstream) =
-                    find_stream_end(body, data_start, dict).ok_or_else(|| {
+                let (data_end, after_endstream) = find_stream_end(body, data_start, dict)
+                    .ok_or_else(|| {
                         SanitizationError::InvalidFormat(
                             "unterminated PDF stream (missing endstream)".to_string(),
                         )
@@ -354,7 +380,7 @@ fn find_stream_end(body: &[u8], data_start: usize, dict: &[u8]) -> Option<(usize
             let mut data_end = pos;
             if data_end >= data_start + 2 && &body[data_end - 2..data_end] == b"\r\n" {
                 data_end -= 2;
-            } else if data_end >= data_start + 1
+            } else if data_end > data_start
                 && (body[data_end - 1] == b'\n' || body[data_end - 1] == b'\r')
             {
                 data_end -= 1;
@@ -421,6 +447,12 @@ fn parse_inline_length(dict: &[u8]) -> Option<usize> {
 fn scan_pdf_names(data: &[u8], location: &str) -> Result<(), SanitizationError> {
     let mut i = 0usize;
     while i < data.len() {
+        if data[i] == b'(' {
+            if let Some(after_string) = find_balanced_pdf_string_end(data, i) {
+                i = after_string;
+                continue;
+            }
+        }
         if data[i] == b'/' {
             let start = i + 1;
             let mut end = start;
@@ -453,6 +485,30 @@ fn scan_pdf_names(data: &[u8], location: &str) -> Result<(), SanitizationError> 
         }
     }
     Ok(())
+}
+
+fn find_balanced_pdf_string_end(data: &[u8], start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = start;
+    while i < data.len() {
+        match data[i] {
+            b'\\' => {
+                // Skip escaped character inside literal string
+                i += 2;
+                continue;
+            }
+            b'(' => depth += 1,
+            b')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 fn dict_has_pdf_name(dict: &[u8], target: &[u8]) -> bool {
@@ -527,10 +583,7 @@ fn check_polyglot_signatures(data: &[u8], location: &str) -> Result<(), Sanitiza
         (b"<?php", "PHP <?php tag"),
     ];
     for &(sig, label) in ASCII_ICASE_SIGS {
-        if data
-            .windows(sig.len())
-            .any(|w| w.eq_ignore_ascii_case(sig))
-        {
+        if data.windows(sig.len()).any(|w| w.eq_ignore_ascii_case(sig)) {
             return Err(SanitizationError::PolyglotDetected(format!(
                 "{label} found in {location}"
             )));
@@ -662,8 +715,11 @@ mod tests {
         );
         let off4 = pdf.len();
         pdf.extend_from_slice(
-            format!("4 0 obj\n<< /Length {} {dict_extra}>>\nstream\n", stream_bytes.len())
-                .as_bytes(),
+            format!(
+                "4 0 obj\n<< /Length {} {dict_extra}>>\nstream\n",
+                stream_bytes.len()
+            )
+            .as_bytes(),
         );
         pdf.extend_from_slice(stream_bytes);
         pdf.extend_from_slice(b"\nendstream\nendobj\n");
@@ -719,9 +775,10 @@ mod tests {
             ("/JavaScript", "/S /JavaScript "),
             ("/OpenAction", "/OpenAction << /S /JS >> "),
             ("/Launch", "/A << /S /Launch >> "),
-            ("/URI", "/A << /S /URI /URI (https://example.invalid) >> "),
+            ("/RichMedia", "/Annots [<< /Subtype /RichMedia >>] "),
             ("/EmbeddedFile", "/Names << /EmbeddedFile 5 0 R >> "),
             ("/SubmitForm", "/A << /S /SubmitForm >> "),
+            ("/XFA", "/XFA 6 0 R "),
         ];
 
         for (expected_indicator, extra) in dangerous_cases {
@@ -737,6 +794,67 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn accepts_legitimate_pdf_with_links_acroform_objstm_and_image_stream() {
+        let mut pdf = Vec::new();
+        pdf.extend_from_slice(b"%PDF-1.7\n");
+        let off1 = pdf.len();
+        pdf.extend_from_slice(
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /SigFlags 3 >> >>\nendobj\n",
+        );
+        let off2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        let off3 = pdf.len();
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Annots [<< /Subtype /Link /A << /S /URI /URI (https://vstable.test/doc) >> >>] >>\nendobj\n",
+        );
+        let off4 = pdf.len();
+        let small_text_stream = compress_zlib(&vec![b' '; 3000]);
+        pdf.extend_from_slice(
+            format!(
+                "4 0 obj\n<< /Length {} /Filter /FlateDecode >>\nstream\n",
+                small_text_stream.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&small_text_stream);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let off5 = pdf.len();
+        // Image stream containing arbitrary bytes including /AA /JS sequences (must not trigger false positive)
+        let raw_img_bytes = b"\xFF\xD8\xFF\xE0binary/AA /JS /3D pixels\xFF\xD9";
+        pdf.extend_from_slice(
+            format!(
+                "5 0 obj\n<< /Type /XObject /Subtype /Image /Width 10 /Height 10 /Filter /DCTDecode /Length {} >>\nstream\n",
+                raw_img_bytes.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(raw_img_bytes);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let off6 = pdf.len();
+        let objstm_payload = compress_zlib(b"7 0 << /Title (Contrato /JS texto) >>");
+        pdf.extend_from_slice(
+            format!(
+                "6 0 obj\n<< /Type /ObjStm /N 1 /First 5 /Filter /FlateDecode /Length {} >>\nstream\n",
+                objstm_payload.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&objstm_payload);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let xref_off = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 7\n0000000000 65535 f \n{off1:010} 00000 n \n{off2:010} 00000 n \n{off3:010} 00000 n \n{off4:010} 00000 n \n{off5:010} 00000 n \n{off6:010} 00000 n \ntrailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{xref_off}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+
+        let report = verify_pdf(&pdf, &SecurityPolicy::default())
+            .expect("legitimate modern PDF with links, AcroForm, ObjStm and image must pass");
+        assert_eq!(report.kind, MediaKind::Pdf);
     }
 
     #[test]
@@ -773,7 +891,10 @@ mod tests {
         let err = verify_pdf(&pdf, &SecurityPolicy::default())
             .expect_err("hidden /JavaScript in FlateDecode must be rejected");
         match err {
-            SanitizationError::PdfInjectionDetected { indicator, location } => {
+            SanitizationError::PdfInjectionDetected {
+                indicator,
+                location,
+            } => {
                 assert_eq!(indicator, "/JavaScript");
                 assert!(location.contains("decompressed"));
             }
@@ -789,7 +910,10 @@ mod tests {
 
         let err = verify_pdf(&pdf, &SecurityPolicy::default())
             .expect_err("high-ratio FlateDecode bomb must be rejected");
-        assert!(matches!(err, SanitizationError::DecompressionBombDetected(_)));
+        assert!(matches!(
+            err,
+            SanitizationError::DecompressionBombDetected(_)
+        ));
     }
 
     #[test]
@@ -805,7 +929,10 @@ mod tests {
 
         let err = verify_pdf(&pdf, &policy)
             .expect_err("stream exceeding max_decompressed_bytes must be rejected");
-        assert!(matches!(err, SanitizationError::DecompressionBombDetected(_)));
+        assert!(matches!(
+            err,
+            SanitizationError::DecompressionBombDetected(_)
+        ));
     }
 
     #[test]

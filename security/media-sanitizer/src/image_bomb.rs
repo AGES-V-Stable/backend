@@ -9,7 +9,6 @@ const ZIP_LOCAL_HEADER_SIG: [u8; 4] = [0x50, 0x4B, 0x03, 0x04];
 const ZIP_CENTRAL_DIR_SIG: [u8; 4] = [0x50, 0x4B, 0x01, 0x02];
 const ZIP_EOCD_SIG: [u8; 4] = [0x50, 0x4B, 0x05, 0x06];
 
-const PNG_IDAT_MIN_RATIO_THRESHOLD: u64 = 4 * 1024;
 const PNG_IDAT_SCANLINE_TOLERANCE: u64 = 4 * 1024;
 const PNG_METADATA_MAX_BYTES: usize = 64 * 1024;
 const PNG_METADATA_RATIO_THRESHOLD: u64 = 1024;
@@ -238,11 +237,13 @@ pub fn verify_png(
     let scanline_cap = expected_scanlines.saturating_add(PNG_IDAT_SCANLINE_TOLERANCE);
     let idat_limit = scanline_cap.min(remaining_budget as u64);
 
+    // IDAT ja eh limitado estritamente pelas dimensoes do IHDR (scanline_cap) e pelo teto
+    // de memoria; capturas de tela ou documentos com fundo branco comprimem > 500:1 sem ser bomba.
     let decompressed_idat = decompress_zlib_checked(
         &idat_payload,
         idat_limit,
-        policy.max_compression_ratio,
-        PNG_IDAT_MIN_RATIO_THRESHOLD,
+        u64::MAX,
+        u64::MAX,
         "PNG IDAT stream",
     )?;
 
@@ -340,7 +341,10 @@ pub fn verify_jpeg(
         ));
     }
 
-    if pos != bytes.len() {
+    if !bytes[pos..]
+        .iter()
+        .all(|&b| b == 0 || b.is_ascii_whitespace())
+    {
         return Err(SanitizationError::InvalidFormat(
             "trailing bytes found after JPEG EOI marker".to_string(),
         ));
@@ -390,8 +394,7 @@ pub fn verify_image_zip(
         ));
     }
 
-    let entries =
-        parse_zip_central_directory(bytes, eocd.cd_offset, cd_end, eocd.total_entries)?;
+    let entries = parse_zip_central_directory(bytes, eocd.cd_offset, cd_end, eocd.total_entries)?;
     let mut occupied_ranges: Vec<(usize, usize)> = Vec::with_capacity(entries.len());
     let mut total_decompressed: usize = 0;
 
@@ -594,10 +597,9 @@ fn compute_png_scanline_bytes(hdr: &PngHeader) -> Result<u64, SanitizationError>
 }
 
 fn verify_png_ztxt(data: &[u8], policy: &SecurityPolicy) -> Result<usize, SanitizationError> {
-    let nul_pos = data
-        .iter()
-        .position(|&b| b == 0)
-        .ok_or_else(|| SanitizationError::InvalidFormat("PNG zTXt missing null separator".into()))?;
+    let nul_pos = data.iter().position(|&b| b == 0).ok_or_else(|| {
+        SanitizationError::InvalidFormat("PNG zTXt missing null separator".into())
+    })?;
 
     if nul_pos == 0 || nul_pos > 79 || nul_pos + 2 > data.len() {
         return Err(SanitizationError::InvalidFormat(
@@ -624,10 +626,9 @@ fn verify_png_ztxt(data: &[u8], policy: &SecurityPolicy) -> Result<usize, Saniti
 }
 
 fn verify_png_itxt(data: &[u8], policy: &SecurityPolicy) -> Result<usize, SanitizationError> {
-    let keyword_end = data
-        .iter()
-        .position(|&b| b == 0)
-        .ok_or_else(|| SanitizationError::InvalidFormat("PNG iTXt missing null separator".into()))?;
+    let keyword_end = data.iter().position(|&b| b == 0).ok_or_else(|| {
+        SanitizationError::InvalidFormat("PNG iTXt missing null separator".into())
+    })?;
 
     if keyword_end == 0 || keyword_end > 79 || keyword_end + 3 > data.len() {
         return Err(SanitizationError::InvalidFormat(
@@ -1345,6 +1346,22 @@ mod tests {
     }
 
     #[test]
+    fn png_valid_high_ratio_1080p_document_passes() {
+        let mut png = Vec::new();
+        png.extend_from_slice(&PNG_SIGNATURE);
+        push_png_chunk(&mut png, b"IHDR", &build_ihdr_data(1920, 1080, 8, 6));
+        // Scanlines uniformes de um comprovante/documento com fundo sólido comprimem > 500:1
+        let raw_scanlines = vec![0xFFu8; (1920 * 4 + 1) * 1080];
+        let idat = zlib_compress(&raw_scanlines);
+        push_png_chunk(&mut png, b"IDAT", &idat);
+        push_png_chunk(&mut png, b"IEND", &[]);
+
+        let report =
+            verify_png(&png, &SecurityPolicy::default()).expect("valid 1080p white PNG passes");
+        assert_eq!(report.kind, MediaKind::Png);
+    }
+
+    #[test]
     fn png_pixel_flood_65535x65535_rejected() {
         let mut png = Vec::new();
         png.extend_from_slice(&PNG_SIGNATURE);
@@ -1373,7 +1390,7 @@ mod tests {
         ztxt.extend_from_slice(&zlib_compress(&vec![0u8; 200_000]));
         push_png_chunk(&mut png, b"zTXt", &ztxt);
 
-        push_png_chunk(&mut png, b"IDAT", &zlib_compress(&vec![0u8; 18]));
+        push_png_chunk(&mut png, b"IDAT", &zlib_compress(&[0u8; 18]));
         push_png_chunk(&mut png, b"IEND", &[]);
 
         let err = verify_png(&png, &SecurityPolicy::default()).unwrap_err();
@@ -1394,7 +1411,7 @@ mod tests {
         itxt.extend_from_slice(&zlib_compress(&vec![b'A'; 128_000]));
         push_png_chunk(&mut png, b"iTXt", &itxt);
 
-        push_png_chunk(&mut png, b"IDAT", &zlib_compress(&vec![0u8; 18]));
+        push_png_chunk(&mut png, b"IDAT", &zlib_compress(&[0u8; 18]));
         push_png_chunk(&mut png, b"IEND", &[]);
 
         let err = verify_png(&png, &SecurityPolicy::default()).unwrap_err();

@@ -21,8 +21,8 @@ impl Default for SecurityPolicy {
         Self {
             // Alinhado ao limite de 3 MB de compliance em application.yaml
             max_input_bytes: 3 * 1024 * 1024,
-            // Teto maximo de expansao para streams/arquivos em memoria (32 MB)
-            max_decompressed_bytes: 32 * 1024 * 1024,
+            // Teto maximo de expansao para streams/arquivos em memoria (128 MiB, cobre PNG RGBA ate 25 MP)
+            max_decompressed_bytes: 128 * 1024 * 1024,
             // Razao maxima entre bytes descomprimidos e comprimidos (100:1)
             max_compression_ratio: 100,
             max_image_width: 10_000,
@@ -53,12 +53,22 @@ pub struct SanitizationReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SanitizationError {
     EmptyInput,
-    InputTooLarge { actual: usize, max: usize },
+    InputTooLarge {
+        actual: usize,
+        max: usize,
+    },
     InvalidFormat(String),
     PolyglotDetected(String),
-    PdfInjectionDetected { indicator: String, location: String },
+    PdfInjectionDetected {
+        indicator: String,
+        location: String,
+    },
     DecompressionBombDetected(String),
-    ImageDimensionExceeded { width: u32, height: u32, pixels: u64 },
+    ImageDimensionExceeded {
+        width: u32,
+        height: u32,
+        pixels: u64,
+    },
     PathTraversalDetected(String),
     NestedArchiveDetected(String),
 }
@@ -72,14 +82,27 @@ impl fmt::Display for SanitizationError {
             }
             Self::InvalidFormat(msg) => write!(f, "invalid file structure: {msg}"),
             Self::PolyglotDetected(msg) => write!(f, "polyglot/disguised payload detected: {msg}"),
-            Self::PdfInjectionDetected { indicator, location } => {
-                write!(f, "PDF injection indicator '{indicator}' found in {location}")
+            Self::PdfInjectionDetected {
+                indicator,
+                location,
+            } => {
+                write!(
+                    f,
+                    "PDF injection indicator '{indicator}' found in {location}"
+                )
             }
             Self::DecompressionBombDetected(msg) => {
                 write!(f, "decompression/zip bomb detected: {msg}")
             }
-            Self::ImageDimensionExceeded { width, height, pixels } => {
-                write!(f, "image dimensions {width}x{height} ({pixels} px) exceed policy")
+            Self::ImageDimensionExceeded {
+                width,
+                height,
+                pixels,
+            } => {
+                write!(
+                    f,
+                    "image dimensions {width}x{height} ({pixels} px) exceed policy"
+                )
             }
             Self::PathTraversalDetected(path) => {
                 write!(f, "path traversal entry in archive: {path}")

@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn read_bounded_stops_at_limit() {
-        let data = vec![b'A'; 100];
+        let data = [b'A'; 100];
         let read = read_bounded(&data[..], 16).expect("read should succeed");
         assert_eq!(read.len(), 16);
     }

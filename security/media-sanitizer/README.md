@@ -17,11 +17,11 @@ security/media-sanitizer/
 
 ### 1. `pdf.rs` — Proteção Anti PDF-Injection & Polyglot
 - **Header & Trailer**: valida assinatura `%PDF-1.x` / `%PDF-2.x` no início do arquivo e presença de `%%EOF` na cauda (bloqueia arquivos polyglot ou truncados).
-- **Indicadores de Execução/Injection**: inspeciona objetos e streams (incluindo `/FlateDecode` descomprimido com limite de memória) bloqueando `/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/Launch`, `/SubmitForm`, `/ImportData`, `/RichMedia`, `/URI`, `/GoToR`, `/EmbeddedFile` e `/XFA`.
+- **Indicadores de Execução/Injection**: inspeciona objetos e streams de sintaxe PDF (incluindo `/FlateDecode` descomprimido com limite de memória), ignorando falso-positivos em literais de texto, hyperlinks (`/URI`), objetos comprimidos (`/ObjStm`), assinaturas digitais (`/AcroForm`) e fluxos binários de imagem/fonte, enquanto bloqueia `/JavaScript`, `/JS`, `/OpenAction`, `/AA`, `/Launch`, `/SubmitForm`, `/ImportData`, `/ResetForm`, `/RichMedia`, `/GoToR`, `/GoToE`, `/EmbeddedFile`, `/Filespec` e `/XFA`.
 - **Anti Stream-Bomb & Limite de Objetos**: impõe teto de objetos (`max_pdf_objects`) e descompressão limitada de streams `/FlateDecode` (`max_decompressed_bytes` e `max_compression_ratio`).
 
 ### 2. `image_bomb.rs` — Proteção Anti Image & ZIP Bomb
-- **PNG (`verify_png`)**: valida assinatura, `IHDR` (dimensões máximas e teto de pixels `max_image_pixels`), CRC32 de cada chunk, presença de `IEND`, e descomprime chunks `zTXt`/`iTXt`/`iCCP`/`IDAT` com teto estrito para detectar zlib bombs.
+- **PNG (`verify_png`)**: valida assinatura, `IHDR` (dimensões máximas e teto de pixels `max_image_pixels`), CRC32 de cada chunk, presença de `IEND`, e descomprime chunks `zTXt`/`iTXt` (com limite de razão e tamanho) e `IDAT` (com teto estrito derivado das scanlines declaradas em `IHDR` + `max_decompressed_bytes`) para detectar zlib bombs sem falsos positivos em capturas de tela limpas.
 - **JPEG (`verify_jpeg`)**: percorre marcadores `SOI`/`SOFn`/`EOI` validando dimensões no frame (`SOF0`–`SOF15`) antes de qualquer decodificação de pixels.
 - **ZIP (`verify_image_zip`)**: analisa Local File Headers, Central Directory e EOCD sem dependências externas além de `flate2`/`crc32fast`:
   - Bloqueia **Path Traversal** (`..`, `/`, `\`, `:`).
@@ -33,7 +33,7 @@ security/media-sanitizer/
 | Parâmetro | Valor Padrão | Objetivo |
 |---|---|---|
 | `max_input_bytes` | `3 MiB` (`3 * 1024 * 1024`) | Alinhado ao limite de upload de compliance em `application.yaml` |
-| `max_decompressed_bytes` | `32 MiB` | Teto de expansão em memória para streams/ZIP |
+| `max_decompressed_bytes` | `128 MiB` | Teto de expansão em memória (cobre PNG RGBA até 25 MP e streams/ZIP) |
 | `max_compression_ratio` | `100` | Razão máxima descomprimido:comprimido |
 | `max_image_width` / `height` | `10_000` px | Prevenção de pixel flood |
 | `max_image_pixels` | `25_000_000` (25 MP) | Limite de ~100 MB RGBA descompactado |
