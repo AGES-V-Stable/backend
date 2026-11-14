@@ -4,6 +4,7 @@ import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.service.TotpService;
+import ages.vstable.backend.service.TotpReplayStore;
 import ages.vstable.backend.service.TwoFactorAuthService;
 import ages.vstable.backend.service.UserService;
 import ages.vstable.backend.utils.JwtTokenUtils;
@@ -100,5 +101,5 @@ class AuthenticationImpactAssessmentTest extends ImpactEvidence {
         observe("limite", "Intercalamento controlado do servico; nao demonstra cinco transferencias, nem incidencia probabilistica em producao");
     }
 
-    private TwoFactorAuthService instance() { return new TwoFactorAuthService(totp, users, admins, jwt, userService); }
+    private TwoFactorAuthService instance() { return new TwoFactorAuthService(totp, mock(TotpReplayStore.class), users, admins, jwt, userService); }
 }
