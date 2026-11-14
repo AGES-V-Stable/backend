@@ -129,7 +129,18 @@ public class ExchangeRateService {
                 normalize(pair.getQuoteCurrency()), pair.getOutputPaymentMethod(),
                 properties.getReferenceAmount(), null,
                 null, null, null, null, null, null, null, null, null, null, null);
-        return aveniaTransferService.createQuote(request).basePrice().setScale(RATE_SCALE, RoundingMode.HALF_UP);
+        var response = aveniaTransferService.createQuote(request);
+        BigDecimal price = response == null ? null : response.basePrice();
+        // Taxas ausentes, negativas ou que arredondam para zero nunca são cotação atual.
+        // O CompletionException do futuro mantém a última taxa como STALE, se existir.
+        if (price == null || price.signum() <= 0) {
+            throw new IllegalStateException("Avenia returned an invalid exchange rate");
+        }
+        BigDecimal rounded = price.setScale(RATE_SCALE, RoundingMode.HALF_UP);
+        if (rounded.signum() <= 0) {
+            throw new IllegalStateException("Avenia returned a rate below supported precision");
+        }
+        return rounded;
     }
 
     private boolean isFresh(ExchangeRateSnapshotEntity snapshot, OffsetDateTime now) {
