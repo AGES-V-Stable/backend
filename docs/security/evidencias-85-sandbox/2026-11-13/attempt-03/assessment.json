@@ -1,0 +1,2549 @@
+{
+  "issue" : "AGES-V-Stable/cicd#85",
+  "commit" : "01af9fcd48431ecb2d059c710c80d23d69318f92",
+  "branch" : "test/85-integracoes-sandbox",
+  "started_utc" : "2026-11-13T13:12:57.984021500Z",
+  "checkpoint_utc" : "2026-11-13T13:21:04.455689Z",
+  "execution_state" : "FINISHED",
+  "finished_utc" : "2026-11-13T13:21:04.455689Z",
+  "environment" : "BlindPay Development; local loopback HTTP; ephemeral PostgreSQL 16.4",
+  "budget" : {
+    "min_interval_ms" : 3000,
+    "max_calls" : 180,
+    "max_minutes" : 25
+  },
+  "external_calls" : 80,
+  "stop_reason" : "none",
+  "budget_consumed" : 139,
+  "preceding_budget_consumed" : 59,
+  "cases" : [ {
+    "id" : "TC-SBX-BP-01-instance",
+    "status" : "PASS",
+    "expected" : "Authenticated Development instance",
+    "observed" : "Development confirmed by API",
+    "external_calls_during_check" : 1,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-02-new-customer",
+    "status" : "BLOQUEADO",
+    "expected" : "New synthetic customer",
+    "observed" : "Current contract requires browser ToS and document fixtures; no bypass attempted",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-01-client-contract",
+    "status" : "PASS",
+    "expected" : "Client parses approved demo customer and accepted ToS",
+    "observed" : "KYC approved and ToS accepted; AML not asserted",
+    "external_calls_during_check" : 2,
+    "details" : {
+      "aml_clear_demonstrated" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-02-provider-association",
+    "status" : "PASS",
+    "expected" : "Bank belongs to approved demo customer",
+    "observed" : "Created and fetched through CUSTOMER_A path",
+    "external_calls_during_check" : 2,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-login",
+    "status" : "PASS",
+    "expected" : "Account has active TOTP and authenticated session",
+    "observed" : "Setup, activation, challenge and login via loopback HTTP",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-02-foreign-beneficiary",
+    "status" : "PASS",
+    "expected" : "Foreign beneficiary rejected before provider call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "external_calls_delta" : 0
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "100.00",
+      "amount_side" : "SOURCE",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-success-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-repeat-confirm",
+    "status" : "PASS",
+    "expected" : "Same execution and no extra provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-success-provider-idempotency",
+    "status" : "PASS",
+    "expected" : "Same payin for same idempotency key",
+    "observed" : "Payin identity compared in memory",
+    "external_calls_during_check" : 1,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-success-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal COMPLETED",
+    "observed" : "COMPLETED",
+    "external_calls_during_check" : 12,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : true,
+      "observed_states" : [ "AWAITING_FUNDS", "PAYOUT_PROCESSING", "COMPLETED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-success-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "666.00",
+      "amount_side" : "SOURCE",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal FAILED without payout",
+    "observed" : "FAILED",
+    "external_calls_during_check" : 8,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : false,
+      "observed_states" : [ "AWAITING_FUNDS", "FAILED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-failed-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "777.00",
+      "amount_side" : "SOURCE",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal REFUNDED without payout",
+    "observed" : "REFUNDED",
+    "external_calls_during_check" : 8,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : false,
+      "observed_states" : [ "AWAITING_FUNDS", "REFUNDED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payin-refunded-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "666.00",
+      "amount_side" : "TARGET",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal FAILED",
+    "observed" : "FAILED",
+    "external_calls_during_check" : 10,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : true,
+      "observed_states" : [ "AWAITING_FUNDS", "PAYOUT_PROCESSING", "FAILED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-failed-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "777.00",
+      "amount_side" : "TARGET",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal REFUNDED",
+    "observed" : "REFUNDED",
+    "external_calls_during_check" : 10,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : true,
+      "observed_states" : [ "AWAITING_FUNDS", "PAYOUT_PROCESSING", "REFUNDED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-payout-refunded-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-expired-rejected",
+    "status" : "PASS",
+    "expected" : "Expired offer rejected before provider call",
+    "observed" : "HTTP 422",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "expiry_changed_locally" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "100.00",
+      "amount_side" : "SOURCE",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal COMPLETED",
+    "observed" : "COMPLETED",
+    "external_calls_during_check" : 12,
+    "details" : {
+      "requote_attempts" : 1,
+      "requote_accepted" : false,
+      "payout_created" : true,
+      "observed_states" : [ "AWAITING_FUNDS", "PAYOUT_PROCESSING", "COMPLETED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-expired-during-funding",
+    "status" : "PASS",
+    "expected" : "New payout quote after local expiry",
+    "observed" : "Attempts=1",
+    "external_calls_during_check" : 12,
+    "details" : {
+      "expiry_changed_locally" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-requote-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-quote-contract",
+    "status" : "PASS",
+    "expected" : "Fixed amount, cents, cover_fees, expiry and stored quote agree",
+    "observed" : "Compared real request/response and database",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "fixed_amount" : "100.00",
+      "amount_side" : "SOURCE",
+      "target_currency" : "USD",
+      "source_currency" : "BRL",
+      "network" : "base_sepolia",
+      "token" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-observed-fees",
+    "status" : "PASS",
+    "expected" : "Observed fee components nonnegative",
+    "observed" : "Checked components separately; no cross-currency sum used as assertion",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "negative_fee_defense_proven" : false
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-fee-currency",
+    "status" : "PASS",
+    "expected" : "Sum token-denominated fee components without mixing sender currency",
+    "observed" : "Compared to token-cent contract in current OpenAPI",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "payout_fee_currency" : "USDB",
+      "billing_fee_interpretation" : "Separate invoice component; observed independently",
+      "funding_fee_currency" : "USDB"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-foreign-offer",
+    "status" : "PASS",
+    "expected" : "Foreign offer rejected without external call",
+    "observed" : "HTTP 404",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-totp",
+    "status" : "FAIL",
+    "expected" : "Confirmation without TOTP must not trigger provider",
+    "observed" : "HTTP 200; provider_calls=1",
+    "external_calls_during_check" : 1,
+    "details" : {
+      "totp_sent" : false,
+      "totp_enabled" : true
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-repeat-confirm",
+    "status" : "PASS",
+    "expected" : "Same execution and no extra provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-provider-idempotency",
+    "status" : "PASS",
+    "expected" : "Same payin for same idempotency key",
+    "observed" : "Payin identity compared in memory",
+    "external_calls_during_check" : 1,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-terminal",
+    "status" : "PASS",
+    "expected" : "Terminal COMPLETED",
+    "observed" : "COMPLETED",
+    "external_calls_during_check" : 12,
+    "details" : {
+      "requote_attempts" : 0,
+      "requote_accepted" : false,
+      "payout_created" : true,
+      "observed_states" : [ "AWAITING_FUNDS", "PAYOUT_PROCESSING", "COMPLETED" ]
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-persistence",
+    "status" : "PASS",
+    "expected" : "Ownership and amounts agree across execution/history",
+    "observed" : "History rows=1",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "target_currency" : "USD",
+      "source_currency" : "BRL"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-fee-persistence",
+    "status" : "FAIL",
+    "expected" : "Token fee must be converted before storing in service_fee_brl",
+    "observed" : "Compared token-denominated quote fee to BRL history column",
+    "external_calls_during_check" : 0,
+    "details" : {
+      "quote_fee_unit" : "USDB",
+      "token_fee" : "15.10000000",
+      "history_fee_unit" : "BRL",
+      "history_fee" : "15.10"
+    }
+  }, {
+    "id" : "TC-SBX-BP-04-idempotency-terminal-immutable",
+    "status" : "PASS",
+    "expected" : "No terminal mutation or new provider call",
+    "observed" : "HTTP 200",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-webhook-real",
+    "status" : "NÃO EXECUTADO",
+    "expected" : "Real event received and authenticated",
+    "observed" : "No authorized public receiver",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-AV",
+    "status" : "NÃO EXECUTADO",
+    "expected" : "Avenia sandbox exercised",
+    "observed" : "Outside this execution",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  } ],
+  "calls" : [ {
+    "sequence" : 1,
+    "budget_sequence" : 60,
+    "scenario" : "TC-SBX-BP-01",
+    "method" : "GET",
+    "operation" : "",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 1153,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  }, {
+    "sequence" : 2,
+    "budget_sequence" : 61,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "GET",
+    "operation" : "/customers",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 345,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  }, {
+    "sequence" : 3,
+    "budget_sequence" : 62,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "GET",
+    "operation" : "/customers/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 213,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  }, {
+    "sequence" : 4,
+    "budget_sequence" : 63,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "POST",
+    "operation" : "/customers/{id}/bank-accounts",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 458,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 5,
+    "budget_sequence" : 64,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 184,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 6,
+    "budget_sequence" : 65,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 181,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 7,
+    "budget_sequence" : 66,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/customers/{id}/wallets",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 716,
+    "json_content_type" : true,
+    "request" : {
+      "network" : "base_sepolia"
+    },
+    "response" : {
+      "network" : "base_sepolia"
+    }
+  }, {
+    "sequence" : 8,
+    "budget_sequence" : 67,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 200,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "10000",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794575899884"
+    }
+  }, {
+    "sequence" : 9,
+    "budget_sequence" : 68,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 289,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "1754",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "1754",
+      "receiver_amount" : "252",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794575902906"
+    }
+  }, {
+    "sequence" : 10,
+    "budget_sequence" : 69,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 600,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 11,
+    "budget_sequence" : 70,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 204,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 12,
+    "budget_sequence" : 71,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 211,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 13,
+    "budget_sequence" : 72,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 210,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 14,
+    "budget_sequence" : 73,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 200,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 15,
+    "budget_sequence" : 74,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 213,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1754",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 16,
+    "budget_sequence" : 75,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "POST",
+    "operation" : "/payouts/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 287,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 17,
+    "budget_sequence" : 76,
+    "scenario" : "TC-SBX-BP-04-success",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 207,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "1754",
+      "receiver_amount" : "252",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1502",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 18,
+    "budget_sequence" : 77,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 186,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 19,
+    "budget_sequence" : 78,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 445,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "66600",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794575969393"
+    }
+  }, {
+    "sequence" : 20,
+    "budget_sequence" : 79,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 310,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "11749",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "11749",
+      "receiver_amount" : "10237",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794575972190"
+    }
+  }, {
+    "sequence" : 21,
+    "budget_sequence" : 80,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 520,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "22",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 22,
+    "budget_sequence" : 81,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 201,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "22",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 23,
+    "budget_sequence" : 82,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 184,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "22",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 24,
+    "budget_sequence" : 83,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 189,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "22",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 25,
+    "budget_sequence" : 84,
+    "scenario" : "TC-SBX-BP-04-payin-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 210,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "66600",
+      "receiver_amount" : "11749",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "22",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "failed"
+    }
+  }, {
+    "sequence" : 26,
+    "budget_sequence" : 85,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 212,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 27,
+    "budget_sequence" : 86,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 389,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "77700",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576022555"
+    }
+  }, {
+    "sequence" : 28,
+    "budget_sequence" : 87,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 365,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "13717",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "13717",
+      "receiver_amount" : "12203",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576025419"
+    }
+  }, {
+    "sequence" : 29,
+    "budget_sequence" : 88,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 499,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "24",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 30,
+    "budget_sequence" : 89,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 187,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "24",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 31,
+    "budget_sequence" : 90,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 206,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "24",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 32,
+    "budget_sequence" : 91,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 212,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "24",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 33,
+    "budget_sequence" : 92,
+    "scenario" : "TC-SBX-BP-04-payin-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 212,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "77700",
+      "receiver_amount" : "13717",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "24",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "refunded"
+    }
+  }, {
+    "sequence" : 34,
+    "budget_sequence" : 93,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 199,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 35,
+    "budget_sequence" : 94,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 329,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "66600",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "receiver",
+      "cover_fees" : true
+    },
+    "response" : {
+      "sender_amount" : "68168",
+      "receiver_amount" : "66600",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576075689"
+    }
+  }, {
+    "sequence" : 36,
+    "budget_sequence" : 95,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 221,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "68168",
+      "token" : "USDB",
+      "currency_type" : "receiver",
+      "payment_method" : "pix",
+      "cover_fees" : true
+    },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576078682"
+    }
+  }, {
+    "sequence" : 37,
+    "budget_sequence" : 96,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 559,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "78",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 38,
+    "budget_sequence" : 97,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 198,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "78",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 39,
+    "budget_sequence" : 98,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 235,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "78",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 40,
+    "budget_sequence" : 99,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 248,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "78",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 41,
+    "budget_sequence" : 100,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 218,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "385926",
+      "receiver_amount" : "68168",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "78",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 42,
+    "budget_sequence" : 101,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "POST",
+    "operation" : "/payouts/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 409,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 43,
+    "budget_sequence" : 102,
+    "scenario" : "TC-SBX-BP-04-payout-failed",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 190,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "68168",
+      "receiver_amount" : "66600",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1568",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "failed"
+    }
+  }, {
+    "sequence" : 44,
+    "budget_sequence" : 103,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 186,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 45,
+    "budget_sequence" : 104,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 286,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "77700",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "receiver",
+      "cover_fees" : true
+    },
+    "response" : {
+      "sender_amount" : "79279",
+      "receiver_amount" : "77700",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576142546"
+    }
+  }, {
+    "sequence" : 46,
+    "budget_sequence" : 105,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 203,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "79279",
+      "token" : "USDB",
+      "currency_type" : "receiver",
+      "payment_method" : "pix",
+      "cover_fees" : true
+    },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576145543"
+    }
+  }, {
+    "sequence" : 47,
+    "budget_sequence" : 106,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 523,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "89",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 48,
+    "budget_sequence" : 107,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 213,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "89",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 49,
+    "budget_sequence" : 108,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 202,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "89",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 50,
+    "budget_sequence" : 109,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 193,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "89",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 51,
+    "budget_sequence" : 110,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 189,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "448923",
+      "receiver_amount" : "79279",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "89",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 52,
+    "budget_sequence" : 111,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "POST",
+    "operation" : "/payouts/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 263,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 53,
+    "budget_sequence" : 112,
+    "scenario" : "TC-SBX-BP-04-payout-refunded",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 184,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "79279",
+      "receiver_amount" : "77700",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1579",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "refunded"
+    }
+  }, {
+    "sequence" : 54,
+    "budget_sequence" : 113,
+    "scenario" : "TC-SBX-BP-04-expired",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 195,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 55,
+    "budget_sequence" : 114,
+    "scenario" : "TC-SBX-BP-04-expired",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 207,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "10000",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1755",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576209130"
+    }
+  }, {
+    "sequence" : 56,
+    "budget_sequence" : 115,
+    "scenario" : "TC-SBX-BP-04-expired",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 295,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "1755",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "1755",
+      "receiver_amount" : "253",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576212122"
+    }
+  }, {
+    "sequence" : 57,
+    "budget_sequence" : 116,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 200,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 58,
+    "budget_sequence" : 117,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 373,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "10000",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576218297"
+    }
+  }, {
+    "sequence" : 59,
+    "budget_sequence" : 118,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 391,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "1756",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576221237"
+    }
+  }, {
+    "sequence" : 60,
+    "budget_sequence" : 119,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 575,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 61,
+    "budget_sequence" : 120,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 197,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 62,
+    "budget_sequence" : 121,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 189,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 63,
+    "budget_sequence" : 122,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 258,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 64,
+    "budget_sequence" : 123,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 193,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 65,
+    "budget_sequence" : 124,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 180,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 66,
+    "budget_sequence" : 125,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 291,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "1756",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576271502"
+    }
+  }, {
+    "sequence" : 67,
+    "budget_sequence" : 126,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "POST",
+    "operation" : "/payouts/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 271,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 68,
+    "budget_sequence" : 127,
+    "scenario" : "TC-SBX-BP-04-requote",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 198,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1502",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 69,
+    "budget_sequence" : 128,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/customers/{id}/bank-accounts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 189,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "approved"
+    }
+  }, {
+    "sequence" : 70,
+    "budget_sequence" : 129,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "POST",
+    "operation" : "/payin-quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 370,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "10000",
+      "token" : "USDB",
+      "currency_type" : "sender",
+      "payment_method" : "pix",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "flat_fee" : "10",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576290971"
+    }
+  }, {
+    "sequence" : 71,
+    "budget_sequence" : 130,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "POST",
+    "operation" : "/quotes",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 370,
+    "json_content_type" : true,
+    "request" : {
+      "request_amount" : "1756",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency_type" : "sender",
+      "cover_fees" : false
+    },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "flat_fee" : "1500",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "expires_at" : "1794576293890"
+    }
+  }, {
+    "sequence" : 72,
+    "budget_sequence" : 131,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 534,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 73,
+    "budget_sequence" : 132,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "POST",
+    "operation" : "/payins/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 189,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 74,
+    "budget_sequence" : 133,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 193,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 75,
+    "budget_sequence" : 134,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 193,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 76,
+    "budget_sequence" : 135,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 208,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 77,
+    "budget_sequence" : 136,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payins/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 183,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "10000",
+      "receiver_amount" : "1756",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "12",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "BRL",
+      "payment_method" : "pix",
+      "status" : "completed"
+    }
+  }, {
+    "sequence" : 78,
+    "budget_sequence" : 137,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "POST",
+    "operation" : "/payouts/evm",
+    "bearer_present" : true,
+    "idempotency_present" : true,
+    "http_status" : 200,
+    "duration_ms" : 326,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 79,
+    "budget_sequence" : 138,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 182,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1502",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "processing"
+    }
+  }, {
+    "sequence" : 80,
+    "budget_sequence" : 139,
+    "scenario" : "TC-SBX-BP-04-idempotency",
+    "method" : "GET",
+    "operation" : "/payouts/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 255,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : {
+      "sender_amount" : "1756",
+      "receiver_amount" : "254",
+      "billing_fee_amount" : "0",
+      "partner_fee_amount" : "0",
+      "transaction_fee_amount" : "1502",
+      "token" : "USDB",
+      "network" : "base_sepolia",
+      "currency" : "USD",
+      "status" : "completed"
+    }
+  } ],
+  "resources" : [ {
+    "aml_status" : "not_screened",
+    "terms_accepted" : true,
+    "kyc_status" : "approved",
+    "customer_type" : "individual",
+    "alias" : "CUSTOMER_A",
+    "origin" : "existing_demo",
+    "modified" : false
+  }, {
+    "origin" : "created_this_run",
+    "alias" : "BANK_ACCOUNT_A",
+    "rail" : "wire",
+    "status" : "approved"
+  } ]
+}

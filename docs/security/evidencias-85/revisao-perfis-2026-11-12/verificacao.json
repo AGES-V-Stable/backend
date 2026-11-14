@@ -1,0 +1,30 @@
+﻿{
+    "captured_at_utc":  "2026-11-12T13:20:54.1606245+00:00",
+    "backend_commit":  "61a9662c8f9d8051540bdf551b399d36c8bec719",
+    "scope":  "Revisao local da matriz de acesso; dados sinteticos; provedores simulados; sem sandbox",
+    "assessment_command":  "gradlew.bat securityAssessmentTest --no-daemon --console=plain",
+    "assessment_process_exit_code":  1,
+    "assessment_summary":  {
+                               "total":  221,
+                               "passed":  204,
+                               "failed":  17,
+                               "skipped":  0
+                           },
+    "revised_rbac_summary":  {
+                                 "failed":  3,
+                                 "skipped":  0,
+                                 "total":  13,
+                                 "passed":  10
+                             },
+    "build_command":  "gradlew.bat build --no-daemon --console=plain",
+    "build_process_exit_code":  0,
+    "regression_summary":  {
+                               "total":  1241,
+                               "passed":  1235,
+                               "failed":  0,
+                               "skipped":  6
+                           },
+    "frontend_rerun":  false,
+    "production_code_changed":  false,
+    "historical_evidence_preserved":  true
+}

@@ -1,0 +1,89 @@
+{
+  "issue" : "AGES-V-Stable/cicd#85",
+  "commit" : "01af9fcd48431ecb2d059c710c80d23d69318f92",
+  "branch" : "test/85-integracoes-sandbox",
+  "started_utc" : "2026-11-13T04:04:30.440014900Z",
+  "finished_utc" : "2026-11-13T04:04:36.841806300Z",
+  "environment" : "BlindPay Development; local loopback HTTP; ephemeral PostgreSQL 16.4",
+  "budget" : {
+    "max_minutes" : 25,
+    "max_calls" : 180,
+    "min_interval_ms" : 3000
+  },
+  "external_calls" : 3,
+  "stop_reason" : "none",
+  "cases" : [ {
+    "id" : "TC-SBX-BP-01-instance",
+    "status" : "PASS",
+    "expected" : "Authenticated Development instance",
+    "observed" : "Development confirmed by API",
+    "external_calls_during_check" : 1,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-02-new-customer",
+    "status" : "BLOQUEADO",
+    "expected" : "New synthetic customer",
+    "observed" : "Current contract requires browser ToS and document fixtures; no bypass attempted",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-preparation",
+    "status" : "BLOQUEADO",
+    "expected" : "Required preparation completed",
+    "observed" : "Preparation stopped: SafeAbort",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-BP-webhook-real",
+    "status" : "NÃO EXECUTADO",
+    "expected" : "Real event received and authenticated",
+    "observed" : "No authorized public receiver",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  }, {
+    "id" : "TC-SBX-AV",
+    "status" : "NÃO EXECUTADO",
+    "expected" : "Avenia sandbox exercised",
+    "observed" : "Outside this execution",
+    "external_calls_during_check" : 0,
+    "details" : { }
+  } ],
+  "calls" : [ {
+    "sequence" : 1,
+    "scenario" : "TC-SBX-BP-01",
+    "method" : "GET",
+    "operation" : "",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 1051,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  }, {
+    "sequence" : 2,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "GET",
+    "operation" : "/customers",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 336,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  }, {
+    "sequence" : 3,
+    "scenario" : "TC-SBX-BP-02-preparation",
+    "method" : "GET",
+    "operation" : "/customers/{id}",
+    "bearer_present" : true,
+    "idempotency_present" : false,
+    "http_status" : 200,
+    "duration_ms" : 216,
+    "json_content_type" : true,
+    "request" : { },
+    "response" : { }
+  } ],
+  "resources" : [ ]
+}

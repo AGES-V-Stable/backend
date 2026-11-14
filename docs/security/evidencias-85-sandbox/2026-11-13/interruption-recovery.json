@@ -1,0 +1,11 @@
+﻿{
+    "operation":  "GET payin from interrupted execution",
+    "calls":  1,
+    "confirmed_preceding_calls":  42,
+    "known_calls_total":  43,
+    "local_status":  "AWAITING_FUNDS",
+    "provider_status":  "completed",
+    "local_payout_id_present":  false,
+    "resubmitted":  false,
+    "observed_at_utc":  "2026-11-13T13:08:15.6588780Z"
+}

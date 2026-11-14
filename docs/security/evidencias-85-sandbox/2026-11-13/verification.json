@@ -1,0 +1,46 @@
+﻿{
+    "commit":  "01af9fcd48431ecb2d059c710c80d23d69318f92",
+    "branch":  "test/85-integracoes-sandbox",
+    "sandbox_execution_finished":  true,
+    "sandbox_exit_code":  1,
+    "regression":  {
+                       "total":  1522,
+                       "passed":  1516,
+                       "failed":  0,
+                       "skipped":  6
+                   },
+    "local_diagnostic":  {
+                             "total":  419,
+                             "passed":  398,
+                             "failed":  21,
+                             "skipped":  0
+                         },
+    "build_check_test_tasks_completed":  true,
+    "combined_build_and_initial_diagnostic_exit_code":  1,
+    "final_local_diagnostic_exit_code":  1,
+    "inventory":  {
+                      "operations":  71,
+                      "public":  5,
+                      "authenticated":  66,
+                      "admin":  18
+                  },
+    "raw_junit_not_published":  true,
+    "production_files_changed":  false,
+    "git_commit_push_pr_performed":  false,
+    "recovered_old_database":  "Stopped without deleting after read-only recovery",
+    "source_sha256":  {
+                          "build.gradle":  "0946e4ce5b4284a484e363c39887dddcb43f584292e4c3076ef7e24c4670027c",
+                          "scripts/run-blindpay-security-sandbox.ps1":  "0a1498e62bd1b986289b24fdbbc939e6b958c76eb8f5debfd3b9306b3252e950",
+                          "src/test/java/ages/vstable/backend/sandbox/BlindPaySandboxBoundary.java":  "e5bf8bf0195582fb4b5a57cdc4f16fcb428860404bdd4c261df8c5f7dc7e5d6a",
+                          "src/test/java/ages/vstable/backend/sandbox/BlindPaySandboxBoundaryTest.java":  "ae5709516cad2329355132f35f0aad533423fbaf0ed53286f5a0ffed32ed578e",
+                          "src/test/java/ages/vstable/backend/sandbox/BlindPaySecuritySandboxTest.java":  "c1e9905c7ea9ca1022f65f589bed81f69b1f0786b26e8b21126510936a02414e",
+                          "src/test/java/ages/vstable/backend/configuration/security/ApplicationSecurityAssessmentTest.java":  "a4dbcb8e13119c8f65fe0b4b54462eef333f0b3efad4630b71ed1beedf67057b"
+                      },
+    "scope_notes":  [
+                        "Sandbox 77 subcases are separate from local JUnit counts",
+                        "Two outdated public-route assertions withdrawn; no production permission weakened",
+                        "Four invalid mixed-currency fee assertions from interrupted attempt withdrawn; token-to-BRL persistence flaw retained",
+                        "Avenia real, incoming webhooks and complete customer onboarding not demonstrated",
+                        "Invitation code present but dedicated assessment excluded"
+                    ]
+}

@@ -1,0 +1,288 @@
+﻿{
+    "issue":  "AGES-V-Stable/cicd#85",
+    "commit":  "01af9fcd48431ecb2d059c710c80d23d69318f92",
+    "branch":  "test/85-integracoes-sandbox",
+    "capture":  "attempt-03/assessment.json",
+    "execution_state":  "FINISHED",
+    "subcases":  77,
+    "pass":  60,
+    "fail":  14,
+    "blocked":  1,
+    "not_executed":  2,
+    "known_prior_calls":  43,
+    "reserved_uncheckpointed_calls":  16,
+    "this_attempt_calls":  80,
+    "known_campaign_calls":  123,
+    "conservative_campaign_upper_bound":  139,
+    "campaign_limit":  180,
+    "gradle_exit_code":  1,
+    "checks":  {
+                   "source_hashes_match":  true,
+                   "all_eighty_calls_recorded":  true,
+                   "all_http_200":  true,
+                   "all_calls_authenticated":  true,
+                   "eight_scenarios_observed":  true,
+                   "all_scenarios_pass":  true,
+                   "only_expected_fail_groups":  true,
+                   "no_budget_stop":  true
+               },
+    "scope_groups":  {
+                         "TC-SBX-BP-01":  [
+                                              "TC-SBX-BP-01-instance",
+                                              "TC-SBX-BP-01-client-contract"
+                                          ],
+                         "TC-SBX-BP-02":  [
+                                              "TC-SBX-BP-02-new-customer",
+                                              "TC-SBX-BP-02-provider-association",
+                                              "TC-SBX-BP-02-foreign-beneficiary",
+                                              "TC-SBX-BP-04-success-foreign-offer",
+                                              "TC-SBX-BP-04-payin-failed-foreign-offer",
+                                              "TC-SBX-BP-04-payin-refunded-foreign-offer",
+                                              "TC-SBX-BP-04-payout-failed-foreign-offer",
+                                              "TC-SBX-BP-04-payout-refunded-foreign-offer",
+                                              "TC-SBX-BP-04-requote-foreign-offer",
+                                              "TC-SBX-BP-04-idempotency-foreign-offer"
+                                          ],
+                         "TC-SBX-BP-03":  [
+                                              "TC-SBX-BP-04-success-quote-contract",
+                                              "TC-SBX-BP-04-success-observed-fees",
+                                              "TC-SBX-BP-04-success-fee-currency",
+                                              "TC-SBX-BP-04-success-fee-persistence",
+                                              "TC-SBX-BP-04-payin-failed-quote-contract",
+                                              "TC-SBX-BP-04-payin-failed-observed-fees",
+                                              "TC-SBX-BP-04-payin-failed-fee-currency",
+                                              "TC-SBX-BP-04-payin-failed-fee-persistence",
+                                              "TC-SBX-BP-04-payin-refunded-quote-contract",
+                                              "TC-SBX-BP-04-payin-refunded-observed-fees",
+                                              "TC-SBX-BP-04-payin-refunded-fee-currency",
+                                              "TC-SBX-BP-04-payin-refunded-fee-persistence",
+                                              "TC-SBX-BP-04-payout-failed-quote-contract",
+                                              "TC-SBX-BP-04-payout-failed-observed-fees",
+                                              "TC-SBX-BP-04-payout-failed-fee-currency",
+                                              "TC-SBX-BP-04-payout-failed-fee-persistence",
+                                              "TC-SBX-BP-04-payout-refunded-quote-contract",
+                                              "TC-SBX-BP-04-payout-refunded-observed-fees",
+                                              "TC-SBX-BP-04-payout-refunded-fee-currency",
+                                              "TC-SBX-BP-04-payout-refunded-fee-persistence",
+                                              "TC-SBX-BP-04-requote-quote-contract",
+                                              "TC-SBX-BP-04-requote-observed-fees",
+                                              "TC-SBX-BP-04-requote-fee-currency",
+                                              "TC-SBX-BP-04-requote-fee-persistence",
+                                              "TC-SBX-BP-04-idempotency-quote-contract",
+                                              "TC-SBX-BP-04-idempotency-observed-fees",
+                                              "TC-SBX-BP-04-idempotency-fee-currency",
+                                              "TC-SBX-BP-04-idempotency-fee-persistence"
+                                          ],
+                         "TC-SBX-BP-04":  [
+                                              "TC-SBX-BP-04-login",
+                                              "TC-SBX-BP-04-success-quote-contract",
+                                              "TC-SBX-BP-04-success-observed-fees",
+                                              "TC-SBX-BP-04-success-fee-currency",
+                                              "TC-SBX-BP-04-success-foreign-offer",
+                                              "TC-SBX-BP-04-success-totp",
+                                              "TC-SBX-BP-04-success-repeat-confirm",
+                                              "TC-SBX-BP-04-success-provider-idempotency",
+                                              "TC-SBX-BP-04-success-terminal",
+                                              "TC-SBX-BP-04-success-persistence",
+                                              "TC-SBX-BP-04-success-fee-persistence",
+                                              "TC-SBX-BP-04-success-terminal-immutable",
+                                              "TC-SBX-BP-04-payin-failed-quote-contract",
+                                              "TC-SBX-BP-04-payin-failed-observed-fees",
+                                              "TC-SBX-BP-04-payin-failed-fee-currency",
+                                              "TC-SBX-BP-04-payin-failed-foreign-offer",
+                                              "TC-SBX-BP-04-payin-failed-totp",
+                                              "TC-SBX-BP-04-payin-failed-terminal",
+                                              "TC-SBX-BP-04-payin-failed-persistence",
+                                              "TC-SBX-BP-04-payin-failed-fee-persistence",
+                                              "TC-SBX-BP-04-payin-failed-terminal-immutable",
+                                              "TC-SBX-BP-04-payin-refunded-quote-contract",
+                                              "TC-SBX-BP-04-payin-refunded-observed-fees",
+                                              "TC-SBX-BP-04-payin-refunded-fee-currency",
+                                              "TC-SBX-BP-04-payin-refunded-foreign-offer",
+                                              "TC-SBX-BP-04-payin-refunded-totp",
+                                              "TC-SBX-BP-04-payin-refunded-terminal",
+                                              "TC-SBX-BP-04-payin-refunded-persistence",
+                                              "TC-SBX-BP-04-payin-refunded-fee-persistence",
+                                              "TC-SBX-BP-04-payin-refunded-terminal-immutable",
+                                              "TC-SBX-BP-04-payout-failed-quote-contract",
+                                              "TC-SBX-BP-04-payout-failed-observed-fees",
+                                              "TC-SBX-BP-04-payout-failed-fee-currency",
+                                              "TC-SBX-BP-04-payout-failed-foreign-offer",
+                                              "TC-SBX-BP-04-payout-failed-totp",
+                                              "TC-SBX-BP-04-payout-failed-terminal",
+                                              "TC-SBX-BP-04-payout-failed-persistence",
+                                              "TC-SBX-BP-04-payout-failed-fee-persistence",
+                                              "TC-SBX-BP-04-payout-failed-terminal-immutable",
+                                              "TC-SBX-BP-04-payout-refunded-quote-contract",
+                                              "TC-SBX-BP-04-payout-refunded-observed-fees",
+                                              "TC-SBX-BP-04-payout-refunded-fee-currency",
+                                              "TC-SBX-BP-04-payout-refunded-foreign-offer",
+                                              "TC-SBX-BP-04-payout-refunded-totp",
+                                              "TC-SBX-BP-04-payout-refunded-terminal",
+                                              "TC-SBX-BP-04-payout-refunded-persistence",
+                                              "TC-SBX-BP-04-payout-refunded-fee-persistence",
+                                              "TC-SBX-BP-04-payout-refunded-terminal-immutable",
+                                              "TC-SBX-BP-04-expired-rejected",
+                                              "TC-SBX-BP-04-requote-quote-contract",
+                                              "TC-SBX-BP-04-requote-observed-fees",
+                                              "TC-SBX-BP-04-requote-fee-currency",
+                                              "TC-SBX-BP-04-requote-foreign-offer",
+                                              "TC-SBX-BP-04-requote-totp",
+                                              "TC-SBX-BP-04-requote-terminal",
+                                              "TC-SBX-BP-04-requote-persistence",
+                                              "TC-SBX-BP-04-requote-fee-persistence",
+                                              "TC-SBX-BP-04-requote-expired-during-funding",
+                                              "TC-SBX-BP-04-requote-terminal-immutable",
+                                              "TC-SBX-BP-04-idempotency-quote-contract",
+                                              "TC-SBX-BP-04-idempotency-observed-fees",
+                                              "TC-SBX-BP-04-idempotency-fee-currency",
+                                              "TC-SBX-BP-04-idempotency-foreign-offer",
+                                              "TC-SBX-BP-04-idempotency-totp",
+                                              "TC-SBX-BP-04-idempotency-repeat-confirm",
+                                              "TC-SBX-BP-04-idempotency-provider-idempotency",
+                                              "TC-SBX-BP-04-idempotency-terminal",
+                                              "TC-SBX-BP-04-idempotency-persistence",
+                                              "TC-SBX-BP-04-idempotency-fee-persistence",
+                                              "TC-SBX-BP-04-idempotency-terminal-immutable"
+                                          ]
+                     },
+    "scenarios":  [
+                      {
+                          "id":  "TC-SBX-BP-04-success-terminal",
+                          "status":  "PASS",
+                          "observed":  "COMPLETED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  true,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "PAYOUT_PROCESSING",
+                                                                  "COMPLETED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-payin-failed-terminal",
+                          "status":  "PASS",
+                          "observed":  "FAILED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  false,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "FAILED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-payin-refunded-terminal",
+                          "status":  "PASS",
+                          "observed":  "REFUNDED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  false,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "REFUNDED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-payout-failed-terminal",
+                          "status":  "PASS",
+                          "observed":  "FAILED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  true,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "PAYOUT_PROCESSING",
+                                                                  "FAILED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-payout-refunded-terminal",
+                          "status":  "PASS",
+                          "observed":  "REFUNDED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  true,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "PAYOUT_PROCESSING",
+                                                                  "REFUNDED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-expired-rejected",
+                          "status":  "PASS",
+                          "observed":  "HTTP 422",
+                          "details":  {
+                                          "expiry_changed_locally":  true
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-requote-terminal",
+                          "status":  "PASS",
+                          "observed":  "COMPLETED",
+                          "details":  {
+                                          "requote_attempts":  1,
+                                          "requote_accepted":  false,
+                                          "payout_created":  true,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "PAYOUT_PROCESSING",
+                                                                  "COMPLETED"
+                                                              ]
+                                      }
+                      },
+                      {
+                          "id":  "TC-SBX-BP-04-idempotency-terminal",
+                          "status":  "PASS",
+                          "observed":  "COMPLETED",
+                          "details":  {
+                                          "requote_attempts":  0,
+                                          "requote_accepted":  false,
+                                          "payout_created":  true,
+                                          "observed_states":  [
+                                                                  "AWAITING_FUNDS",
+                                                                  "PAYOUT_PROCESSING",
+                                                                  "COMPLETED"
+                                                              ]
+                                      }
+                      }
+                  ],
+    "resources_this_attempt":  [
+                                   {
+                                       "aml_status":  "not_screened",
+                                       "terms_accepted":  true,
+                                       "kyc_status":  "approved",
+                                       "customer_type":  "individual",
+                                       "alias":  "CUSTOMER_A",
+                                       "origin":  "existing_demo",
+                                       "modified":  false
+                                   },
+                                   {
+                                       "origin":  "created_this_run",
+                                       "alias":  "BANK_ACCOUNT_A",
+                                       "rail":  "wire",
+                                       "status":  "approved"
+                                   }
+                               ],
+    "created_managed_wallets":  1,
+    "limits":  [
+                   "New customer onboarding blocked by browser ToS/document fixtures",
+                   "Real webhook delivery not executed",
+                   "Avenia real not executed",
+                   "Operator invitation flow excluded",
+                   "No production assets or money",
+                   "USDB cents do not prove production crypto eight-decimal precision"
+               ]
+}

@@ -1,0 +1,17 @@
+﻿{
+    "command":  ".\\scripts\\run-blindpay-security-sandbox.ps1",
+    "gradle_task":  "blindpaySecuritySandboxTest",
+    "execution_state":  "FINISHED",
+    "started_utc":  "2026-11-13T13:12:02.8666301Z",
+    "preceding_budget_consumed":  59,
+    "exit_code":  1,
+    "commit":  "01af9fcd48431ecb2d059c710c80d23d69318f92",
+    "openapi_sha256":  "19b76414eb897ea41b1accd6943ecd9e048a2c7de3a9671a3d0c6232e42b03d8",
+    "source_sha256":  {
+                          "scripts/run-blindpay-security-sandbox.ps1":  "0a1498e62bd1b986289b24fdbbc939e6b958c76eb8f5debfd3b9306b3252e950",
+                          "src/test/java/ages/vstable/backend/sandbox/BlindPaySecuritySandboxTest.java":  "c1e9905c7ea9ca1022f65f589bed81f69b1f0786b26e8b21126510936a02414e",
+                          "build.gradle":  "0946e4ce5b4284a484e363c39887dddcb43f584292e4c3076ef7e24c4670027c",
+                          "src/test/java/ages/vstable/backend/sandbox/BlindPaySandboxBoundary.java":  "e5bf8bf0195582fb4b5a57cdc4f16fcb428860404bdd4c261df8c5f7dc7e5d6a"
+                      },
+    "finished_utc":  "2026-11-13T13:21:05.9590458Z"
+}
