@@ -28,6 +28,8 @@ import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -192,7 +194,7 @@ class OnboardingServiceTest {
 
     @Test
     void performOnboarding_emailAlreadyRegistered_throwsConflict() {
-        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(userRepository.findFirstByEmailIgnoreCase("joao@example.com")).thenReturn(Optional.of(new UserEntity()));
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -200,7 +202,7 @@ class OnboardingServiceTest {
 
     @Test
     void performOnboarding_emailBelongsToAdministrator_throwsConflict() {
-        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(administratorRepository.existsByEmailIgnoreCase("joao@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -271,11 +273,13 @@ class OnboardingServiceTest {
                 .isInstanceOf(ConflictException.class);
     }
 
-    @Test
-    void performOnboarding_emailConstraintRaceCondition_returnsConflict() {
-        // Arrange: outra requisição gravou o mesmo e-mail depois da verificação prévia.
+    @ParameterizedTest
+    @ValueSource(strings = {OnboardingService.EMAIL_UNIQUE_CONSTRAINT,
+            OnboardingService.EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT})
+    void performOnboarding_emailConstraintRaceCondition_returnsConflict(String constraint) {
+        // Arrange: outra requisição gravou o mesmo e-mail (com ou sem as mesmas maiúsculas) depois da verificação.
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(OnboardingService.EMAIL_UNIQUE_CONSTRAINT));
+        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(constraint));
 
         // Act / Assert
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
@@ -461,7 +465,7 @@ class OnboardingServiceTest {
 
     @Test
     void createAccount_emailAlreadyRegistered_throwsConflictWithoutSaving() {
-        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(userRepository.findFirstByEmailIgnoreCase("joao@example.com")).thenReturn(Optional.of(new UserEntity()));
 
         assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
                 .isInstanceOf(ConflictException.class)
@@ -471,7 +475,7 @@ class OnboardingServiceTest {
 
     @Test
     void createAccount_emailBelongsToAdministrator_throwsConflictWithoutSaving() {
-        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(administratorRepository.existsByEmailIgnoreCase("joao@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -506,6 +510,20 @@ class OnboardingServiceTest {
 
         assertThatThrownBy(() -> onboardingService.createAccount(request))
                 .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @Test
+    void createAccount_passwordLongerThan72Utf8Bytes_throwsUnprocessableWithoutSaving() {
+        // Arrange: 37 caracteres "é" ocupam 74 bytes, acima do limite do BCrypt
+        AccountRequestDTO request = accountRequest();
+        String tooLong = "1@" + "é".repeat(36);
+        request.setPassword(tooLong);
+        request.setConfirmPassword(tooLong);
+
+        // Act / Assert
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test

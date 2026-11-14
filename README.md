@@ -45,6 +45,21 @@ de execução do IDE: `INVITATION_ENCRYPTION_KEY`
 recuperável do token e nunca vai para o banco nem para o Git) e `INVITATION_FRONTEND_ORIGIN`
 (origem pública do frontend do ambiente, usada para montar o link do convite).
 `INVITATION_KEY_VERSION` (padrão `v1`) identifica a chave em uso e deve mudar quando ela for trocada.
+O aceite do convite registra a versão dos termos vigente: `TERMS_VERSION` (até 50 caracteres), com os
+endereços `TERMS_URL` e `PRIVACY_URL` (URLs http(s) absolutas). Fora da Lambda há padrões só para
+desenvolvimento (`v1`, `/termos-de-uso` e `/politica-de-privacidade` na origem do frontend); no perfil
+`lambda` as três variáveis são obrigatórias e a aplicação não sobe sem elas, para que um valor provisório
+nunca seja tratado como publicação oficial. Trocar `TERMS_VERSION` faz aceites enviados com a versão
+anterior responderem 409 `TERMS_VERSION_MISMATCH`.
+
+`INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS` informa quantos proxies confiáveis acrescentam ao
+`X-Forwarded-For` antes da aplicação, para identificar o cliente no limite de tentativas dos convites.
+O cabeçalho só é lido quando a conexão chega pelo loopback (o Lambda Web Adapter); de qualquer outra
+origem ele é ignorado. Use `0` (padrão local) para ignorá-lo, `1` para navegador → API Gateway regional
+ou HTTP API, e `2` para CloudFront (ou endpoint edge-optimized) → API Gateway. No perfil `lambda` a
+variável é obrigatória. Confirme o valor em staging antes da produção: de uma mesma máquina, 31
+requisições a `/v1/company-invitations/resolve` com `X-Forwarded-For` forjado e diferente em cada uma
+precisam terminar em 429.
 
 ## API na AWS Lambda
 
@@ -134,6 +149,8 @@ nesse momento interrompe a inicialização com uma mensagem de configuração.
 Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, preservando os status HTTP existentes. Códigos: `INVALID_ARGUMENT`, `VALIDATION_ERROR`, `MALFORMED_PAYLOAD`, `MISSING_HEADER`, `INVALID_PARAMETER`, `CONFLICT`, `FORBIDDEN`, `NOT_FOUND`, `UNPROCESSABLE_ENTITY`, `PROVIDER_ERROR`, `ACCESS_DENIED` e `INTERNAL_ERROR`. Login inválido retorna 401 com `INVALID_CREDENTIALS`; conta bloqueada retorna 423 com `ACCOUNT_LOCKED`. Contratos especializados de detalhes/comprovantes e códigos da camada de segurança são preservados. Clientes antigos podem continuar consumindo somente `message`.
 
 Acesso à empresa e convites usam códigos próprios, que o frontend deve tratar por `code` e nunca pela mensagem. 403: `COMPANY_ACCESS_DENIED` (sem vínculo com a empresa, outra empresa ou administrador em rota de empresa), `COMPANY_ACCESS_REVOKED` (vínculo removido), `PERMISSION_DENIED` (o perfil não tem a permissão) e `OWNER_REQUIRED` (ação só do proprietário). Convites: 404 `INVITATION_NOT_FOUND`, 410 `INVITATION_REVOKED` e 409 `INVITATION_ALREADY_USED`, `MEMBER_ALREADY_EXISTS`, `INVITATION_ALREADY_EXISTS` (o corpo traz `details.invitationId` do convite pendente), `USER_IN_OTHER_COMPANY`, `EMAIL_RESERVED` e `INVITATION_NOT_REGENERABLE`. Gerar novo link e revogar exigem a versão do convite em `If-Match`, a mesma do `ETag` e entre aspas: ausente retorna 428 `VERSION_REQUIRED` e desatualizada, 412 `RESOURCE_VERSION_MISMATCH`. Entre duas gerações de link passam no mínimo 60 segundos, e são no máximo cinco por hora contando a criação; acima disso a resposta é 429 `INVITATION_RATE_LIMITED` com `Retry-After` em segundos. Página ou tamanho fora do permitido na lista de membros retorna 400 `INVALID_PARAMETER`.
+
+Consulta e aceite pelo link (`POST /v1/company-invitations/resolve`, `/accept-new-user` e `/accept`, com o token sempre no corpo): 404 `INVITATION_INVALID` (token malformado ou inexistente), 410 `INVITATION_SUPERSEDED` (link substituído por regeneração) e `INVITATION_REVOKED`, 409 `INVITATION_ALREADY_USED`, `USER_ALREADY_EXISTS`, `USER_IN_OTHER_COMPANY`, `MEMBER_ALREADY_EXISTS` e `TERMS_VERSION_MISMATCH`, 403 `INVITATION_IDENTITY_MISMATCH` (a conta autenticada não é a do e-mail convidado) e 422 `PASSWORD_TOO_WEAK`, `PASSWORD_CONFIRMATION_MISMATCH` e `TERMS_NOT_ACCEPTED`. As três rotas somam no máximo 30 tentativas por minuto por IP em cada instância da aplicação; acima disso a resposta é 429 `RATE_LIMITED` com `Retry-After`. O contador fica na memória: na Lambda, cada ambiente de execução conta separadamente e recomeça no cold start, então **não há limite global garantido** sem uma regra compartilhada na borda (por exemplo, AWS WAF rate-based, disponível para REST API e não para HTTP API).
 
 ## 4. Testes e análise de mutação (PITest)
 
