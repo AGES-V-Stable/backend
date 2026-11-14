@@ -58,6 +58,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -325,7 +326,7 @@ class BlindPayExecutionProcessorTest {
     @Test
     void acceptRequote_unknownTransfer_throwsNotFound() {
         assertThatThrownBy(() -> processor.acceptRequote(
-                UUID.randomUUID(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00")))
+                UUID.randomUUID(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"), () -> {}))
                 .isInstanceOf(NotFoundException.class);
     }
 
