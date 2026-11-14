@@ -348,7 +348,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_zeroConvertedBrlAndBlankCounterpartyFields_returnsNullPercentageAndNullCounterparty() {
-        verifiedUser();
         ExportTransactionEntity receipt = ExportTransactionEntity.builder()
                 .id(transferId)
                 .companyId(companyId)
