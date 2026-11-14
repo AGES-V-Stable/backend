@@ -206,6 +206,7 @@ class BeneficiaryServiceTest {
         entity.setAccountHolderName("Holder");
         entity.setSwiftBic("SWIFT");
         entity.setCurrency("BRL");
+        entity.setPaymentRail("wire");
         entity.setPixKey("pix@key");
         entity.setCreatedAt(OffsetDateTime.now());
         entity.setUpdatedAt(OffsetDateTime.now());
@@ -235,6 +236,7 @@ class BeneficiaryServiceTest {
         assertThat(response.getAccountHolderName()).isEqualTo("Holder");
         assertThat(response.getSwiftBic()).isEqualTo("SWIFT");
         assertThat(response.getCurrency()).isEqualTo("BRL");
+        assertThat(response.getPaymentRail()).isEqualTo("wire");
         assertThat(response.getPixKey()).isEqualTo("pix@key");
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUpdatedAt()).isNotNull();
@@ -366,6 +368,7 @@ class BeneficiaryServiceTest {
         BeneficiaryResponse result = beneficiaryService.findById(id);
 
         assertThat(result).isNotNull();
+        assertThat(result.getPaymentRail()).isEqualTo(entity.getPaymentRail());
     }
 
     @Test
