@@ -181,7 +181,9 @@ class BalanceControllerTest {
             mockMvc.perform(post("/v1/balance/mock-top-ups")
                             .principal(authenticated(companyUser(companyId)))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\\"amountBrl\\":\\"" + amount + "\\"}"))
+                            .content("""
+                                    {"amountBrl": "%s"}
+                                    """.formatted(amount)))
                     .andExpect(status().isBadRequest());
         }
 
