@@ -366,6 +366,7 @@ class BeneficiaryServiceTest {
         BeneficiaryResponse result = beneficiaryService.findById(id);
 
         assertThat(result).isNotNull();
+        assertThat(result.getPaymentRail()).isEqualTo(entity.getPaymentRail());
     }
 
     @Test
