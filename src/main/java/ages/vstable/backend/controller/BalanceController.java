@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.UUID;
 
@@ -52,7 +53,9 @@ public class BalanceController {
      */
     @PostMapping("/mock-top-ups")
     @Operation(summary = "Credita saldo fictício na própria empresa (ambientes habilitados)",
-            description = "Aceita amountBrl; não movimenta dinheiro real. Requer OWNER e KYC aprovado.")
+            description = "Aceita amountBrl; não movimenta dinheiro real. Requer OWNER e KYC aprovado. "
+                    + "O header opcional Idempotency-Key (8-128 caracteres alfanuméricos, hífen ou underscore) "
+                    + "permite repetir o mesmo pedido sem creditar duas vezes. Reuso com outro valor retorna 409.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Crédito e saldo atualizado"),
             @ApiResponse(responseCode = "400", description = "Valor inválido ou com mais de duas casas"),
@@ -63,11 +66,13 @@ public class BalanceController {
     })
     public ResponseEntity<MockTopUpResponse> addMockTopUp(
             @Valid @RequestBody MockTopUpRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String requestKey,
             Authentication authentication) {
+        if (requestKey != null && !requestKey.matches("[A-Za-z0-9_-]{8,128}")) {
+            throw new IllegalArgumentException("Idempotency-Key deve ter 8 a 128 caracteres válidos.");
+        }
         UserEntity user = CompanyAccess.companyUser(authentication).orElse(null);
-        BalanceResponse updated = balanceService.addBalance(user, request.amountBrl());
-        return ResponseEntity.ok(new MockTopUpResponse(
-                request.amountBrl().setScale(2).toPlainString(), updated.availableBalanceBrl()));
+        return ResponseEntity.ok(balanceService.addMockTopUp(user, request.amountBrl(), requestKey));
     }
 
     @PostMapping("/simulated-deposits")
