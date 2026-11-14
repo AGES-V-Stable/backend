@@ -27,6 +27,8 @@ public class BeneficiaryResponse {
     private String branchNumber;
     private String accountNumber;
     private String currency;
+    /** Rail registrado na empresa: necessário para cotação BlindPay sem suposições. */
+    private String paymentRail;
     private String walletAddress;
     private BlockchainNetwork blockchainNetwork;
     private String walletMemo;

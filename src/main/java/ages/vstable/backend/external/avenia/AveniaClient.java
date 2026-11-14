@@ -85,6 +85,7 @@ public class AveniaClient implements AveniaGateway {
         if (request == null) {
             throw new IllegalArgumentException("quote request must be provided");
         }
+        requireFinancialSubAccount(request.subAccountId());
         String uri = buildQuoteUri(request);
         return get(uri, AveniaQuoteResponse.class, "Could not obtain a quote from Avenia");
     }
@@ -92,6 +93,7 @@ public class AveniaClient implements AveniaGateway {
     @Override
     public AveniaTicketResponse createTicket(AveniaTicketRequest request) {
         validateTicket(request);
+        requireFinancialSubAccount(request.getSubAccountId());
         String uri = appendSubAccount(TICKETS_URI, request.getSubAccountId());
         String body = serialize(request);
         return post(uri, body, AveniaTicketResponse.class, "Could not create the Avenia ticket");
@@ -134,6 +136,7 @@ public class AveniaClient implements AveniaGateway {
 
     private AveniaBeneficiaryResponse createBeneficiary(
             String baseUri, Object request, String subAccountId, String errorMessage) {
+        requireFinancialSubAccount(subAccountId);
         String uri = appendSubAccount(baseUri, subAccountId);
         AveniaBeneficiaryResponse response = post(
                 uri, serialize(request), AveniaBeneficiaryResponse.class, errorMessage);
@@ -142,6 +145,17 @@ public class AveniaClient implements AveniaGateway {
                     "Avenia returned a beneficiary without id", 502, false, null);
         }
         return response;
+    }
+
+    /**
+     * Cotação, ticket e beneficiário movimentam ou preparam dinheiro: sem subAccountId a Avenia os
+     * executaria na conta principal da API key, que não é de nenhuma empresa cliente (backend#76).
+     * As chamadas de KYC de identidade continuam com a regra própria de {@link #appendSubAccount}.
+     */
+    private void requireFinancialSubAccount(String subAccountId) {
+        if (subAccountId == null || subAccountId.isBlank()) {
+            throw new IllegalArgumentException("subAccountId must be provided for financial operations");
+        }
     }
 
     private void requireBeneficiaryRequest(Object request) {

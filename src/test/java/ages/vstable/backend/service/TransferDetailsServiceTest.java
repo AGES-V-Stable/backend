@@ -2,19 +2,16 @@ package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.transaction.TransferDetailsResponse;
 import ages.vstable.backend.dto.transaction.TransferDetailsResponse.Type;
-import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.BaseTransactionEntity;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.ExportTransactionEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.CompanyRole;
-import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferMethod;
 import ages.vstable.backend.exception.TransferDetailsException;
-import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,9 +44,6 @@ class TransferDetailsServiceTest {
     private BaseTransactionRepository transactionRepository;
 
     @Mock
-    private AveniaKycVerificationRepository kycRepository;
-
-    @Mock
     private TransferReceiptProvider pdfGenerator;
 
     @InjectMocks
@@ -62,11 +56,6 @@ class TransferDetailsServiceTest {
     @BeforeEach
     void setUp() {
         user = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
-    }
-
-    private void verifiedUser() {
-        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId())).thenReturn(Optional.of(
-                AveniaKycVerificationEntity.builder().userId(user.getId()).status(ComplianceStatus.APPROVED).build()));
     }
 
     private ImportTransactionEntity payment(TransactionStatus status) {
@@ -89,7 +78,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_payment_mapsRecordedValuesAsDecimalStrings() {
-        verifiedUser();
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.SETTLED)));
 
         TransferDetailsResponse details = service.getDetails(transferId, user);
@@ -116,7 +104,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_withoutMarketReference_leavesMarketCostAndSavingsNull() {
-        verifiedUser();
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.SETTLED)));
 
         TransferDetailsResponse details = service.getDetails(transferId, user);
@@ -128,7 +115,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_receipt_invertsSourceAndDestination() {
-        verifiedUser();
         ExportTransactionEntity receipt = ExportTransactionEntity.builder()
                 .id(transferId)
                 .companyId(companyId)
@@ -171,7 +157,6 @@ class TransferDetailsServiceTest {
     }, nullValues = "null")
     void getDetails_feeUsesGrossConversionAndIncomingDestinationKeepsNetSettlement(
             boolean incoming, String settlement, String fee, String expectedBrl, String percentage) {
-        verifiedUser();
         BaseTransactionEntity transaction = incoming ? new ExportTransactionEntity() : new ImportTransactionEntity();
         transaction.setId(transferId);
         transaction.setCompanyId(companyId);
@@ -197,7 +182,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_unrecordedValues_stayNullInsteadOfZero() {
-        verifiedUser();
         BaseTransactionEntity bare = ImportTransactionEntity.builder()
                 .id(transferId)
                 .companyId(companyId)
@@ -219,7 +203,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_knownZeroFee_isReportedAsZeroNotNull() {
-        verifiedUser();
         ImportTransactionEntity free = payment(TransactionStatus.SETTLED);
         free.setServiceFeeBrl(new BigDecimal("0.00"));
         free.setSettlementAmountBrl(new BigDecimal("125000.00"));
@@ -233,7 +216,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_transactionWithoutPaymentOrReceiptDetail_hasNoType() {
-        verifiedUser();
         BaseTransactionEntity base = BaseTransactionEntity.builder()
                 .id(transferId).companyId(companyId).status(TransactionStatus.PROCESSING)
                 .foreignCurrency("USD").foreignAmount(new BigDecimal("1.00")).build();
@@ -249,7 +231,7 @@ class TransferDetailsServiceTest {
         assertThatThrownBy(() -> service.getDetails(transferId, noCompany))
                 .isInstanceOfSatisfying(TransferDetailsException.class,
                         ex -> assertThat(ex.getCode()).isEqualTo("COMPANY_ACCESS_REQUIRED"));
-        verifyNoInteractions(transactionRepository, kycRepository);
+        verifyNoInteractions(transactionRepository);
     }
 
     @Test
@@ -257,32 +239,39 @@ class TransferDetailsServiceTest {
         assertThatThrownBy(() -> service.getDetails(transferId, null))
                 .isInstanceOfSatisfying(TransferDetailsException.class,
                         ex -> assertThat(ex.getCode()).isEqualTo("COMPANY_ACCESS_REQUIRED"));
-        verifyNoInteractions(transactionRepository, kycRepository);
-    }
-
-    @Test
-    void getDetails_userWithoutApprovedKyc_isNotVerified() {
-        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId())).thenReturn(Optional.of(
-                AveniaKycVerificationEntity.builder().userId(user.getId()).status(ComplianceStatus.PENDING).build()));
-
-        assertThatThrownBy(() -> service.getDetails(transferId, user))
-                .isInstanceOfSatisfying(TransferDetailsException.class,
-                        ex -> assertThat(ex.getCode()).isEqualTo("USER_NOT_VERIFIED"));
         verifyNoInteractions(transactionRepository);
     }
 
-    @Test
-    void getDetails_userWithoutKycRecord_isNotVerified() {
-        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId())).thenReturn(Optional.empty());
+    @ParameterizedTest
+    @CsvSource({"OWNER", "OPERATOR", "VIEWER"})
+    void getDetails_activeMemberWithoutIndividualKyc_readsTheCompanyTransfer(CompanyRole role) {
+        // Arrange: a transferência é da empresa; nenhum membro precisa de KYC individual para consultá-la.
+        UserEntity member = TestCompanyUsers.member(companyId, role);
+        when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.SETTLED)));
 
-        assertThatThrownBy(() -> service.getDetails(transferId, user))
+        // Act
+        TransferDetailsResponse details = service.getDetails(transferId, member);
+
+        // Assert
+        assertThat(details.id()).isEqualTo(transferId);
+        assertThat(details.companyId()).isEqualTo(companyId);
+    }
+
+    @Test
+    void getReceipt_memberOfAnotherCompany_cannotDownloadWithoutKycGate() {
+        // Arrange: sem o gate de KYC, o isolamento continua vindo da empresa do vínculo.
+        UserEntity outsider = TestCompanyUsers.member(UUID.randomUUID(), CompanyRole.OWNER);
+        when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.SETTLED)));
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.getReceipt(transferId, outsider))
                 .isInstanceOfSatisfying(TransferDetailsException.class,
-                        ex -> assertThat(ex.getCode()).isEqualTo("USER_NOT_VERIFIED"));
+                        ex -> assertThat(ex.getCode()).isEqualTo("TRANSFER_NOT_FOUND"));
+        verify(pdfGenerator, never()).generate(any());
     }
 
     @Test
     void getDetails_transferOfAnotherCompany_looksLikeNotFound() {
-        verifiedUser();
         ImportTransactionEntity foreign = payment(TransactionStatus.SETTLED);
         foreign.setCompanyId(UUID.randomUUID());
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(foreign));
@@ -296,7 +285,6 @@ class TransferDetailsServiceTest {
     void getDetails_usesTheCompanyOfTheMembershipInsteadOfTheAccount() {
         UUID membershipCompany = UUID.randomUUID();
         TestCompanyUsers.withMembership(user, membershipCompany, CompanyRole.VIEWER, MembershipStatus.ACTIVE);
-        verifiedUser();
         ImportTransactionEntity accountCompanyTransfer = payment(TransactionStatus.SETTLED);
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(accountCompanyTransfer));
 
@@ -312,12 +300,11 @@ class TransferDetailsServiceTest {
         assertThatThrownBy(() -> service.getDetails(transferId, removed))
                 .isInstanceOfSatisfying(TransferDetailsException.class,
                         ex -> assertThat(ex.getCode()).isEqualTo("COMPANY_ACCESS_REQUIRED"));
-        verifyNoInteractions(transactionRepository, kycRepository);
+        verifyNoInteractions(transactionRepository);
     }
 
     @Test
     void getDetails_unknownTransfer_isNotFound() {
-        verifiedUser();
         when(transactionRepository.findById(transferId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getDetails(transferId, user))
@@ -327,7 +314,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getReceipt_settledTransfer_returnsPdfFromGenerator() {
-        verifiedUser();
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.SETTLED)));
         byte[] pdf = {'%', 'P', 'D', 'F'};
         when(pdfGenerator.generate(any(TransferDetailsResponse.class))).thenReturn(pdf);
@@ -340,7 +326,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getReceipt_transferNotSettled_isUnavailableAndGeneratesNothing() {
-        verifiedUser();
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(payment(TransactionStatus.PROCESSING)));
 
         assertThatThrownBy(() -> service.getReceipt(transferId, user))
@@ -351,7 +336,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getReceipt_transferOfAnotherCompany_isNotFound() {
-        verifiedUser();
         ImportTransactionEntity foreign = payment(TransactionStatus.SETTLED);
         foreign.setCompanyId(UUID.randomUUID());
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(foreign));
@@ -364,7 +348,6 @@ class TransferDetailsServiceTest {
 
     @Test
     void getDetails_zeroConvertedBrlAndBlankCounterpartyFields_returnsNullPercentageAndNullCounterparty() {
-        verifiedUser();
         ExportTransactionEntity receipt = ExportTransactionEntity.builder()
                 .id(transferId)
                 .companyId(companyId)

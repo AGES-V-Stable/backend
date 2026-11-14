@@ -84,6 +84,9 @@ class TransferServiceTest {
         @Mock
         private TwoFactorAuthService twoFactorAuthService;
 
+        @Mock
+        private CompanyFinancialAccountService companyFinancialAccountService;
+
         private TransferService service;
 
         private final UUID companyId = UUID.randomUUID();
@@ -94,9 +97,9 @@ class TransferServiceTest {
         @BeforeEach
         void setUp() {
                 service = new TransferService(aveniaTransferService, beneficiaryRepository,
-                                aveniaKycVerificationRepository, subAccountProvisioningService,
-                                baseTransactionRepository, importTransactionRepository,
-                                exportTransactionRepository, companyRepository, twoFactorAuthService);
+                                companyFinancialAccountService, baseTransactionRepository,
+                                importTransactionRepository, exportTransactionRepository,
+                                companyRepository, twoFactorAuthService);
         }
 
         private static TransferFilter noFilters() {
@@ -289,15 +292,11 @@ class TransferServiceTest {
                                 .aveniaWalletId(UUID.randomUUID())
                                 .aveniaSubAccountId("sub-1")
                                 .build();
-                AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
-                                .userId(userId)
-                                .aveniaSubAccountId("sub-1")
-                                .build();
                 when(beneficiaryRepository.findByIdAndCompanyId(beneficiaryId, companyId))
                                 .thenReturn(Optional.of(beneficiary));
-                when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(userId))
-                                .thenReturn(Optional.of(kyc));
-                when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn("sub-1");
+                // Sub-account belongs to the company, not to the currently logged-in member.
+                when(companyFinancialAccountService.requireAveniaSubAccountId(companyId))
+                                .thenReturn("sub-1");
 
                 AveniaQuoteResponse quoteResponse = new AveniaQuoteResponse(
                                 "qt-1", "BRL", "PIX", new BigDecimal("100.00"),

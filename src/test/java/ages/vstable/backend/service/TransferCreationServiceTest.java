@@ -5,7 +5,6 @@ import ages.vstable.backend.dto.transfer.CreateTransferResponse;
 import ages.vstable.backend.dto.transfer.MoneyAmount;
 import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
-import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.ImportTransactionEntity;
@@ -25,7 +24,6 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
-import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.ImportTransactionRepository;
@@ -66,10 +64,7 @@ class TransferCreationServiceTest {
     private BeneficiaryRepository beneficiaryRepository;
 
     @Mock
-    private AveniaKycVerificationRepository aveniaKycVerificationRepository;
-
-    @Mock
-    private AveniaSubAccountProvisioningService subAccountProvisioningService;
+    private CompanyFinancialAccountService companyFinancialAccountService;
 
     @Mock
     private BaseTransactionRepository baseTransactionRepository;
@@ -94,13 +89,7 @@ class TransferCreationServiceTest {
     private static final String QUOTE_TOKEN = "quote-token-should-never-leak";
 
     private void stubSubAccount() {
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
-                .id(UUID.randomUUID())
-                .userId(CURRENT_USER_ID)
-                .aveniaSubAccountId(SUB_ACCOUNT_ID)
-                .build();
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(CURRENT_USER_ID)).thenReturn(Optional.of(kyc));
-        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(companyFinancialAccountService.requireAveniaSubAccountId(CURRENT_COMPANY_ID)).thenReturn(SUB_ACCOUNT_ID);
     }
 
     private void stubBeneficiary(BeneficiaryEntity beneficiary) {
@@ -142,7 +131,7 @@ class TransferCreationServiceTest {
     private void setUpService() {
         transferService = new TransferService(
                 aveniaTransferService, beneficiaryRepository,
-                aveniaKycVerificationRepository, subAccountProvisioningService,
+                companyFinancialAccountService,
                 baseTransactionRepository, importTransactionRepository, exportTransactionRepository, companyRepository,
                 twoFactorAuthService);
     }
@@ -316,7 +305,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("beneficiaryId e paymentMethod");
 
-        verifyNoInteractions(beneficiaryRepository, subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(beneficiaryRepository, companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -330,7 +319,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("beneficiaryId e paymentMethod");
 
-        verifyNoInteractions(beneficiaryRepository, subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(beneficiaryRepository, companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -360,7 +349,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não oferece BRL via PIX para BRL via PIX");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @ParameterizedTest
@@ -382,7 +371,7 @@ class TransferCreationServiceTest {
                 .hasMessageContaining("não oferece BRL via PIX para " + expectedRoute)
                 .hasMessageContaining("saldo em token");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @ParameterizedTest
@@ -406,7 +395,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("na rede");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -422,7 +411,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("ACCOUNT_BALANCE");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -438,7 +427,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("TED");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -453,7 +442,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("invoice processada");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -468,7 +457,7 @@ class TransferCreationServiceTest {
                 CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(NotFoundException.class);
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -516,11 +505,12 @@ class TransferCreationServiceTest {
     }
 
     @Test
-    void quote_usuarioSemVerificacaoKyc_lancaUnprocessableEntityExceptionSemChamarAvenia() {
+    void quote_empresaSemContaFinanceiraEmpresarial_lancaUnprocessableEntityExceptionSemChamarAvenia() {
         setUpService();
         BeneficiaryEntity beneficiary = cryptoBeneficiary();
         stubBeneficiary(beneficiary);
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(CURRENT_USER_ID)).thenReturn(Optional.empty());
+        when(companyFinancialAccountService.requireAveniaSubAccountId(CURRENT_COMPANY_ID))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida na Avenia"));
 
         assertThatThrownBy(() -> transferService.quote(
                 requestWith(new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USDC", beneficiary.getId()),
@@ -618,7 +608,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("blockchain");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -633,7 +623,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não oferece BRL via PIX para BRL via PIX");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -648,7 +638,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não suportado pela Avenia: boleto");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -663,7 +653,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("invoice processada");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -679,7 +669,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("carteira cadastrada na Avenia");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -695,7 +685,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("blockchainNetwork");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -710,7 +700,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não corresponde à moeda do beneficiário");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -725,7 +715,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("deve ser BRL para beneficiário PIX");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     private TransferQuoteResponse quoteReturning(AveniaQuoteResponse aveniaQuote) {
@@ -935,7 +925,10 @@ class TransferCreationServiceTest {
         assertThat(persistedBase.getBeneficiary()).isEqualTo(beneficiary);
         assertThat(persistedBase.getTransferMethod()).isEqualTo(TransferMethod.PIX);
         verify(baseTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService).consumeTransferTotp(CURRENT_USER_ID, "123456");
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
+        org.mockito.InOrder approvalBeforeProvider = org.mockito.Mockito.inOrder(twoFactorAuthService, aveniaTransferService);
+        approvalBeforeProvider.verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
+        approvalBeforeProvider.verify(aveniaTransferService).createTransfer(any(), any());
     }
 
     @Test
@@ -1052,7 +1045,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("não oferece BRL via PIX para BRL via PIX");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService, importTransactionRepository);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService, importTransactionRepository);
     }
 
     @ParameterizedTest
@@ -1072,7 +1065,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("saldo em token");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService, importTransactionRepository);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService, importTransactionRepository);
     }
 
     @Test
@@ -1087,7 +1080,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("ACCOUNT_BALANCE");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService, importTransactionRepository);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService, importTransactionRepository);
     }
 
     @Test
@@ -1101,7 +1094,7 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("invoice processada");
 
-        verifyNoInteractions(subAccountProvisioningService, aveniaTransferService);
+        verifyNoInteractions(companyFinancialAccountService, aveniaTransferService);
     }
 
     @Test
@@ -1208,7 +1201,7 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService, never()).createTransfer(any(), any());
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 
     @Test
@@ -1226,21 +1219,27 @@ class TransferCreationServiceTest {
 
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        // Mesmo quando o provedor falha, a autorização já deve ter sido consumida
+        // para que um resultado incerto não permita repetir a instrução financeira.
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
     }
 
     @Test
-    void create_usuarioSemVerificacaoKyc_lancaUnprocessableEntityExceptionSemChamarAvenia() {
+    void create_empresaSemContaFinanceiraEmpresarial_lancaUnprocessableEntityExceptionSemChamarAvenia() {
         setUpService();
         BeneficiaryEntity beneficiary = cryptoBeneficiary();
         stubBeneficiary(beneficiary);
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(CURRENT_USER_ID)).thenReturn(Optional.empty());
+        when(companyFinancialAccountService.requireAveniaSubAccountId(CURRENT_COMPANY_ID))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida na Avenia"));
 
         assertThatThrownBy(() -> transferService.create(
                 createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID))
                 .isInstanceOf(UnprocessableEntityException.class);
 
         verify(aveniaTransferService, never()).createTransfer(any(), any());
+        verifyNoInteractions(aveniaTransferService, importTransactionRepository, baseTransactionRepository);
+        verify(twoFactorAuthService).validateTransferTotp(CURRENT_USER_ID, "123456");
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 
     @Test
@@ -1258,8 +1257,7 @@ class TransferCreationServiceTest {
 
         verifyNoInteractions(
                 beneficiaryRepository,
-                aveniaKycVerificationRepository,
-                subAccountProvisioningService,
+                companyFinancialAccountService,
                 aveniaTransferService,
                 importTransactionRepository,
                 baseTransactionRepository);
@@ -1279,7 +1277,7 @@ class TransferCreationServiceTest {
 
         verifyNoInteractions(
                 beneficiaryRepository,
-                subAccountProvisioningService,
+                companyFinancialAccountService,
                 aveniaTransferService,
                 importTransactionRepository);
     }
@@ -1297,8 +1295,97 @@ class TransferCreationServiceTest {
 
         verifyNoInteractions(
                 beneficiaryRepository,
-                subAccountProvisioningService,
+                companyFinancialAccountService,
                 aveniaTransferService,
                 importTransactionRepository);
+    }
+
+    // ---------------------------------------------------- titularidade empresarial (backend#76)
+
+    @Test
+    void quote_doisMembrosDaMesmaEmpresa_usamASubcontaDaEmpresaSemConsultarKycIndividual() {
+        // Arrange
+        setUpService();
+        UUID ownerId = UUID.randomUUID();
+        UUID operatorId = UUID.randomUUID();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        stubBeneficiary(beneficiary);
+        stubSubAccount();
+        when(aveniaTransferService.createQuote(any())).thenReturn(aveniaResponse());
+        TransferQuoteRequest request = requestWith(
+                new BigDecimal("100.00"), TransferAmountType.SOURCE, "BRL", "USDC", beneficiary.getId());
+
+        // Act
+        transferService.quote(request, ownerId, CURRENT_COMPANY_ID);
+        transferService.quote(request, operatorId, CURRENT_COMPANY_ID);
+
+        // Assert
+        ArgumentCaptor<AveniaQuoteRequest> captor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        verify(aveniaTransferService, times(2)).createQuote(captor.capture());
+        assertThat(captor.getAllValues()).extracting(AveniaQuoteRequest::subAccountId)
+                .containsExactly(SUB_ACCOUNT_ID, SUB_ACCOUNT_ID);
+        verify(companyFinancialAccountService, times(2)).requireAveniaSubAccountId(CURRENT_COMPANY_ID);
+    }
+
+    @Test
+    void create_operadorDaEmpresa_usaContaDaEmpresaERegistraOperadorComoAutor() {
+        // Arrange
+        setUpService();
+        UUID operatorId = UUID.randomUUID();
+        stubSubAccount();
+        stubTransactionPersistence();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        stubBeneficiary(beneficiary);
+        when(aveniaTransferService.createTransfer(any(), any())).thenReturn(new AveniaTransferResult(
+                aveniaResponse(), new AveniaTicketResponse(UUID.randomUUID(), null, null, "UNPAID", null, null)));
+        CreateTransferRequest request = createRequestWith(beneficiary.getId(), null);
+
+        // Act
+        transferService.create(request, operatorId, CURRENT_COMPANY_ID);
+
+        // Assert
+        ArgumentCaptor<AveniaQuoteRequest> quoteCaptor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        verify(aveniaTransferService).createTransfer(quoteCaptor.capture(), any());
+        assertThat(quoteCaptor.getValue().subAccountId()).isEqualTo(SUB_ACCOUNT_ID);
+        ArgumentCaptor<ImportTransactionEntity> transactionCaptor = ArgumentCaptor.forClass(ImportTransactionEntity.class);
+        verify(importTransactionRepository).save(transactionCaptor.capture());
+        assertThat(transactionCaptor.getValue().getCreatorUserId()).isEqualTo(operatorId);
+        assertThat(transactionCaptor.getValue().getCompanyId()).isEqualTo(CURRENT_COMPANY_ID);
+        verify(twoFactorAuthService).validateTransferTotp(operatorId, "123456");
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(operatorId, "123456");
+    }
+
+    @Test
+    void createConfirmedOffer_empresaSemContaFinanceiraEmpresarial_naoCriaTicketNemPersiste() {
+        // Arrange
+        setUpService();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        stubBeneficiary(beneficiary);
+        when(companyFinancialAccountService.requireAveniaSubAccountId(CURRENT_COMPANY_ID))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida na Avenia"));
+
+        // Act / Assert
+        assertThatThrownBy(() -> transferService.createConfirmedOffer(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID, quote -> { }))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verifyNoInteractions(aveniaTransferService, importTransactionRepository);
+    }
+
+    @Test
+    void create_beneficiarioCadastradoNaSubcontaIndividualLegada_bloqueiaNaContaDaEmpresa() {
+        // Arrange: beneficiário criado antes da #76, na subconta de KYC individual de um membro.
+        setUpService();
+        stubSubAccount();
+        BeneficiaryEntity beneficiary = cryptoBeneficiary();
+        beneficiary.setAveniaSubAccountId("legacy-individual-kyc-sub-account");
+        stubBeneficiary(beneficiary);
+
+        // Act / Assert
+        assertThatThrownBy(() -> transferService.create(
+                createRequestWith(beneficiary.getId(), null), CURRENT_USER_ID, CURRENT_COMPANY_ID))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .hasMessageContaining("conta da empresa");
+        verifyNoInteractions(aveniaTransferService, importTransactionRepository);
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 }

@@ -241,7 +241,7 @@ class AveniaTransferServiceTest {
         AveniaQuoteRequest quoteRequest = new AveniaQuoteRequest(
                 "USD", "INTERNAL", "usd", "SWIFT",
                 BigDecimal.TEN, null, false, false, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, "sub-1");
         gateway.quoteResponse = new AveniaQuoteResponse(
                 "same-currency-token", "USD", "INTERNAL", BigDecimal.TEN,
                 "USD", "SWIFT", BigDecimal.TEN, BigDecimal.ZERO,
@@ -516,6 +516,43 @@ class AveniaTransferServiceTest {
                 "token", inputCurrency, inputPaymentMethod, inputAmount,
                 outputCurrency, outputPaymentMethod, outputAmount, markupAmount, markupCurrency,
                 false, false, appliedFees, basePrice, "BRLAUSD");
+    }
+
+    @ParameterizedTest
+    @MethodSource("missingSubAccounts")
+    void quoteWithoutSubAccount_isRejectedBeforeReachingMainApiKeyAccount(String subAccountId) {
+        // Arrange
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+
+        // Act / Assert
+        assertThrows(IllegalArgumentException.class, () -> service.createQuote(quoteRequestFor(subAccountId)));
+        assertEquals(0, gateway.quoteCalls);
+    }
+
+    @ParameterizedTest
+    @MethodSource("missingSubAccounts")
+    void transferWithoutSubAccount_isRejectedWithoutQuoteOrTicket(String subAccountId) {
+        // Arrange
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+
+        // Act / Assert
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createTransfer(quoteRequestFor(subAccountId), AveniaTicketRequest.builder().build()));
+        assertEquals(0, gateway.quoteCalls);
+        assertEquals(0, gateway.ticketCalls);
+    }
+
+    static Stream<String> missingSubAccounts() {
+        return Stream.of(null, "", "   ");
+    }
+
+    private AveniaQuoteRequest quoteRequestFor(String subAccountId) {
+        return new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", "USD", "SWIFT",
+                BigDecimal.TEN, null, false, false, "PERMIT",
+                null, null, null, null, null, null, subAccountId);
     }
 
     private AveniaQuoteRequest quoteRequest() {

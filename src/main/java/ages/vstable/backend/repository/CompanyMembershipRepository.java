@@ -1,6 +1,7 @@
 package ages.vstable.backend.repository;
 
 import ages.vstable.backend.entity.CompanyMembershipEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.MembershipStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,6 +19,9 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
     Optional<CompanyMembershipEntity> findFirstByUserIdAndStatusOrderByRemovedAtDesc(UUID userId, MembershipStatus status);
 
     List<CompanyMembershipEntity> findByCompanyIdAndStatus(UUID companyId, MembershipStatus status);
+
+    /** Proprietários com vínculo vigente, para o contato responsável do painel administrativo. */
+    List<CompanyMembershipEntity> findByRoleAndStatus(CompanyRole role, MembershipStatus status);
 
     /** Indica se o usuário já teve algum vínculo, ativo ou removido. */
     boolean existsByUserId(UUID userId);

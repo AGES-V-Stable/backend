@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.util.OptionalLong;
 
 @Service
 public class TotpService {
@@ -69,30 +70,39 @@ public class TotpService {
      * Valida o código TOTP de 6 dígitos considerando a janela atual de 30s e ±1 janela de tolerância.
      */
     public boolean verifyCode(String base32Secret, String code) {
+        return matchingTimeStep(base32Secret, code).isPresent();
+    }
+
+    /**
+     * Retorna o passo temporal RFC 6238 de um código válido. A identidade e este passo
+     * formam a reserva persistente anti-replay compartilhada entre as instâncias Lambda.
+     * Se um código coincidir em mais de uma janela da tolerância, usa a mais recente.
+     */
+    public OptionalLong matchingTimeStep(String base32Secret, String code) {
         if (base32Secret == null || base32Secret.isBlank() || code == null) {
-            return false;
+            return OptionalLong.empty();
         }
         String normalizedCode = code.trim();
         if (!normalizedCode.matches("^\\d{6}$")) {
-            return false;
+            return OptionalLong.empty();
         }
 
         byte[] keyBytes;
         try {
             keyBytes = decodeBase32(base32Secret);
         } catch (IllegalArgumentException e) {
-            return false;
+            return OptionalLong.empty();
         }
 
         long currentWindow = Math.floorDiv(clock.instant().getEpochSecond(), TIME_STEP_SECONDS);
-
+        long matched = Long.MIN_VALUE;
         for (int offset = -WINDOW_TOLERANCE; offset <= WINDOW_TOLERANCE; offset++) {
-            String candidate = generateCodeForWindow(keyBytes, currentWindow + offset);
-            if (constantTimeEquals(candidate, normalizedCode)) {
-                return true;
+            long candidateStep = currentWindow + offset;
+            if (constantTimeEquals(generateCodeForWindow(keyBytes, candidateStep), normalizedCode)) {
+                matched = Math.max(matched, candidateStep);
             }
         }
-        return false;
+        return matched == Long.MIN_VALUE ? OptionalLong.empty() : OptionalLong.of(matched);
     }
 
     /**
