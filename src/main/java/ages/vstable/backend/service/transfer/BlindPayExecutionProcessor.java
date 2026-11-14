@@ -194,12 +194,20 @@ public class BlindPayExecutionProcessor {
      * O usuário aceitou a nova cotação de payout exibida em REQUOTE_REQUIRED. Os valores
      * informados precisam ser exatamente os da nova cotação; se ela já expirou, outra é
      * pedida e a execução volta a exigir confirmação.
+     *
+     * <p>{@code authorization} roda na mesma transação, com a execução bloqueada, depois das
+     * validações e antes de qualquer mudança de estado: se lançar exceção, nada é alterado e
+     * nenhum provedor é chamado.
      */
-    public void acceptRequote(UUID executionId, UUID companyId, BigDecimal sourceAmount, BigDecimal targetAmount) {
+    public void acceptRequote(UUID executionId, UUID companyId, BigDecimal sourceAmount, BigDecimal targetAmount,
+                              Runnable authorization) {
         TransferExecutionStatus next = transactions.execute(status -> {
-            executionRepository.findByIdAndCompanyId(executionId, companyId)
+            // A primeira leitura da execução nesta transação já é a bloqueada: uma leitura anterior
+            // deixaria a entidade no contexto de persistência e o bloqueio não atualizaria o status,
+            // permitindo que duas confirmações simultâneas passassem pela verificação abaixo.
+            TransferExecutionEntity execution = executionRepository.findForUpdate(executionId)
+                    .filter(locked -> locked.getCompanyId().equals(companyId))
                     .orElseThrow(() -> new NotFoundException("Transfer not found"));
-            TransferExecutionEntity execution = executionRepository.findForUpdate(executionId).orElseThrow();
             if (execution.getStatus() != TransferExecutionStatus.REQUOTE_REQUIRED) {
                 throw new ConflictException("There is no pending re-quote for this transfer");
             }
@@ -207,6 +215,7 @@ public class BlindPayExecutionProcessor {
                     || !sameAmount(targetAmount, execution.getPayoutQuoteReceiverAmount())) {
                 throw new UnprocessableEntityException("Confirmed amounts do not match the new quote");
             }
+            authorization.run();
             if (isUsable(execution.getPayoutQuoteExpiresAt())) {
                 execution.setTargetAmount(execution.getPayoutQuoteReceiverAmount());
                 execution.setStatus(TransferExecutionStatus.PAYOUT_SUBMITTING);

@@ -925,7 +925,10 @@ class TransferCreationServiceTest {
         assertThat(persistedBase.getBeneficiary()).isEqualTo(beneficiary);
         assertThat(persistedBase.getTransferMethod()).isEqualTo(TransferMethod.PIX);
         verify(baseTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService).consumeTransferTotp(CURRENT_USER_ID, "123456");
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
+        org.mockito.InOrder approvalBeforeProvider = org.mockito.Mockito.inOrder(twoFactorAuthService, aveniaTransferService);
+        approvalBeforeProvider.verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
+        approvalBeforeProvider.verify(aveniaTransferService).createTransfer(any(), any());
     }
 
     @Test
@@ -1198,7 +1201,7 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService, never()).createTransfer(any(), any());
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 
     @Test
@@ -1216,7 +1219,9 @@ class TransferCreationServiceTest {
 
         verify(baseTransactionRepository, never()).save(any());
         verify(importTransactionRepository, never()).save(any());
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        // Mesmo quando o provedor falha, a autorização já deve ter sido consumida
+        // para que um resultado incerto não permita repetir a instrução financeira.
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(CURRENT_USER_ID, "123456");
     }
 
     @Test
@@ -1234,7 +1239,7 @@ class TransferCreationServiceTest {
         verify(aveniaTransferService, never()).createTransfer(any(), any());
         verifyNoInteractions(aveniaTransferService, importTransactionRepository, baseTransactionRepository);
         verify(twoFactorAuthService).validateTransferTotp(CURRENT_USER_ID, "123456");
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 
     @Test
@@ -1347,7 +1352,7 @@ class TransferCreationServiceTest {
         assertThat(transactionCaptor.getValue().getCreatorUserId()).isEqualTo(operatorId);
         assertThat(transactionCaptor.getValue().getCompanyId()).isEqualTo(CURRENT_COMPANY_ID);
         verify(twoFactorAuthService).validateTransferTotp(operatorId, "123456");
-        verify(twoFactorAuthService).consumeTransferTotp(operatorId, "123456");
+        verify(twoFactorAuthService).consumeTransferTotpBeforeExternalCall(operatorId, "123456");
     }
 
     @Test
@@ -1381,6 +1386,6 @@ class TransferCreationServiceTest {
                 .isInstanceOf(UnprocessableEntityException.class)
                 .hasMessageContaining("conta da empresa");
         verifyNoInteractions(aveniaTransferService, importTransactionRepository);
-        verify(twoFactorAuthService, never()).consumeTransferTotp(any(), any());
+        verify(twoFactorAuthService, never()).consumeTransferTotpBeforeExternalCall(any(), any());
     }
 }
