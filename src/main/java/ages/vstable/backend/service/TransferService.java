@@ -138,11 +138,13 @@ public class TransferService {
         AveniaTicketRequest ticketRequest = buildAveniaTicketRequest(
                 beneficiary, request.getPaymentMethod(), request.getDescription());
 
+        // Confirma autorização de forma durável ANTES da chamada que pode criar um
+        // ticket financeiro. Falha de provedor não libera o mesmo TOTP para replay.
+        twoFactorAuthService.consumeTransferTotpBeforeExternalCall(currentUserId, request.getTotpCode());
         AveniaTransferResult result = aveniaTransferService.createTransfer(quoteRequest, ticketRequest);
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
         persistTransaction(beneficiary, request, result, status, currentUserId);
-        twoFactorAuthService.consumeTransferTotp(currentUserId, request.getTotpCode());
 
         CreateTransferResponse response = new CreateTransferResponse(status);
         OperationalLog.milestone("transfer.creation.completed", "success");
