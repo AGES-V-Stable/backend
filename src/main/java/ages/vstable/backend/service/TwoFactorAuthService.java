@@ -32,6 +32,7 @@ public class TwoFactorAuthService {
     private static final long LOCKOUT_SECONDS = 15 * 60;
 
     private final TotpService totpService;
+    private final TotpReplayStore replayStore;
     private final UserRepository userRepository;
     private final AdministratorRepository administratorRepository;
     private final JwtTokenUtils jwtTokenUtils;
@@ -216,6 +217,9 @@ public class TwoFactorAuthService {
         String normalizedCode = code.trim();
         AtomicReference<String> previousCode = new AtomicReference<>();
         AtomicBoolean reserved = new AtomicBoolean(false);
+        // A escrita condicional no PostgreSQL é o bloqueio entre Lambdas. Ela participa da
+        // transação da confirmação e é revertida automaticamente em caso de rollback.
+        replayStore.consume(email, verifiedTimeStep(user.getTwoFactorSecret(), normalizedCode));
         lastUsedCodeByAccount.compute(email, (account, currentCode) -> {
             if (normalizedCode.equals(currentCode)) {
                 return currentCode;
@@ -257,7 +261,7 @@ public class TwoFactorAuthService {
      */
     public void consumeTransferTotp(UUID userId, String code) {
         UserEntity user = loadAuthenticatedUserForTotp(userId);
-        consumeTotpCode(user.getEmail(), code);
+        consumeTotpCode(user.getEmail(), user.getTwoFactorSecret(), code);
     }
 
     private UserEntity loadAuthenticatedUserForTotp(UUID userId) {
@@ -270,7 +274,7 @@ public class TwoFactorAuthService {
 
     private void verifyTotpWithSecurityChecks(String email, String secret, String code) {
         validateTotpWithoutConsuming(email, secret, code);
-        consumeTotpCode(email, code);
+        consumeTotpCode(email, secret, code);
     }
 
     private void validateTotpWithoutConsuming(String email, String secret, String code) {
@@ -281,13 +285,20 @@ public class TwoFactorAuthService {
         }
         // Anti-Replay: impede reutilizar exatamente o mesmo código de 6 dígitos já consumido
         String previousCode = lastUsedCodeByAccount.get(email);
-        if (normalizedCode.equals(previousCode)) {
+        if (normalizedCode.equals(previousCode)
+                || replayStore.wasConsumed(email, verifiedTimeStep(secret, normalizedCode))) {
             throw new BadCredentialsException("TOTP code has already been used");
         }
     }
 
-    private void consumeTotpCode(String email, String code) {
+    private long verifiedTimeStep(String secret, String code) {
+        return totpService.matchingTimeStep(secret, code)
+                .orElseThrow(() -> new BadCredentialsException("Invalid 2FA verification code"));
+    }
+
+    private void consumeTotpCode(String email, String secret, String code) {
         String normalizedCode = code == null ? "" : code.trim();
+        replayStore.consume(email, verifiedTimeStep(secret, normalizedCode));
         lastUsedCodeByAccount.put(email, normalizedCode);
         failedAttemptsByAccount.remove(email);
         lockedUntilByAccount.remove(email);
