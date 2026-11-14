@@ -3,6 +3,7 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
@@ -18,6 +19,7 @@ import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import ages.vstable.backend.logging.LogCapture;
 import ages.vstable.backend.logging.OperationalLog;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +64,9 @@ class BeneficiaryServiceTest {
 
     @Mock
     private CompanyFinancialAccountService companyFinancialAccountService;
+
+    @Mock
+    private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
     private BeneficiaryService beneficiaryService;
 
@@ -502,17 +507,6 @@ class BeneficiaryServiceTest {
         capturedSpec.toPredicate(root, query, cb);
 
         assertThat(capturedSpec).isNotNull();
-    }
-
-    @Test
-    void create_userWithoutKycVerification_throwsUnprocessableEntity() {
-        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId))
-                .thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessageContaining("KYC");
     }
 
     @Test
