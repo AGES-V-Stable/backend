@@ -87,6 +87,17 @@ class TotpReplayStoreIntegrationTest {
     }
 
     @Test
+    void differentRolesAndReenrolledSecrets_doNotShareConsumption() {
+        // Mesmo e-mail pode existir como administrador e cliente sem compartilhar
+        // autenticação; outra geração de segredo pode reutilizar a mesma janela.
+        firstInstance.consume("user:123:old-secret", 800L);
+        secondInstance.consume("admin:123:old-secret", 800L);
+        secondInstance.consume("user:123:new-secret", 800L);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM public.totp_used_steps", Integer.class))
+                .isEqualTo(3);
+    }
+
+    @Test
     void rolledBackConfirmation_doesNotConsumeCodeInEitherInstance() {
         String email = "rollback@example.test";
 
