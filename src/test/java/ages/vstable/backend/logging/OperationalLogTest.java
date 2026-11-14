@@ -61,4 +61,48 @@ class OperationalLogTest {
             assertThat(event.getThrowableProxy()).isNull();
         }
     }
+
+    @Test
+    void elapsedMillisComputesPositiveDurationFromNanoTimestamp() {
+        long startedAt = System.nanoTime() - java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(50);
+
+        long elapsed = OperationalLog.elapsedMillis(startedAt);
+
+        assertThat(elapsed).isBetween(20L, 1000L);
+    }
+
+    @Test
+    void authenticationEmitsWarningEvent() {
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            OperationalLog.authentication("invalid_token");
+
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "authentication.rejected")
+                    .containsEntry("outcome", "invalid_token");
+        }
+    }
+
+    @Test
+    void unexpectedCapsCausesAtEightAndStackFramesAtForty() {
+        Throwable current = new RuntimeException("cause-9");
+        for (int i = 8; i >= 0; i--) {
+            Throwable next = new RuntimeException("cause-" + i, current);
+            StackTraceElement[] trace = new StackTraceElement[45];
+            for (int f = 0; f < 45; f++) {
+                trace[f] = new StackTraceElement("CauseClass" + i, "methodFrame" + f, "CauseClass" + i + ".java", f + 1);
+            }
+            next.setStackTrace(trace);
+            current = next;
+        }
+
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            OperationalLog.unexpected(current);
+
+            String stackFrames = String.valueOf(LogCapture.fields(capture.events().getFirst()).get("stackFrames"));
+            assertThat(stackFrames)
+                    .contains("CauseClass0", "CauseClass7", "methodFrame0", "methodFrame39")
+                    .doesNotContain("CauseClass8", "CauseClass9", "methodFrame40");
+        }
+    }
 }

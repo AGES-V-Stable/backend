@@ -9,8 +9,10 @@ import ages.vstable.backend.entity.TransferExecutionEntity;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.TransactionStatus;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -34,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -50,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -70,6 +73,7 @@ class BlindPayExecutionProcessorTest {
     @Mock private BaseTransactionRepository baseTransactionRepository;
     @Mock private BlindPayGateway blindPayGateway;
     @Mock private BlindPayProvisioningService provisioningService;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private final Map<UUID, TransferExecutionEntity> executions = new HashMap<>();
     private BlindPayExecutionProcessor processor;
@@ -82,7 +86,7 @@ class BlindPayExecutionProcessorTest {
     void setUp() {
         processor = new BlindPayExecutionProcessor(executionRepository, providerQuoteRepository, companyRepository,
                 beneficiaryRepository, baseTransactionRepository, blindPayGateway, provisioningService,
-                mock(PlatformTransactionManager.class), Clock.fixed(NOW, ZoneOffset.UTC));
+                transactionManager, Clock.fixed(NOW, ZoneOffset.UTC));
 
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company).build();
@@ -92,7 +96,8 @@ class BlindPayExecutionProcessorTest {
         offer = ProviderQuoteEntity.builder().id(UUID.randomUUID()).quoteRequest(request)
                 .provider(IntegrationProvider.BLINDPAY).build();
         transaction = BaseTransactionEntity.builder().id(UUID.randomUUID())
-                .status(TransactionStatus.AWAITING_PAYMENT).foreignAmount(new BigDecimal("990.00")).build();
+                .status(TransactionStatus.AWAITING_PAYMENT).foreignAmount(new BigDecimal("990.00"))
+                .updatedAt(NOW_UTC.minusMinutes(10)).build();
 
         when(executionRepository.findById(any())).thenAnswer(call -> Optional.ofNullable(executions.get(call.getArgument(0))));
         when(executionRepository.findForUpdate(any())).thenAnswer(call -> Optional.ofNullable(executions.get(call.getArgument(0))));
@@ -121,6 +126,8 @@ class BlindPayExecutionProcessorTest {
     void start_brlExecution_createsPayinWithStableKeyAndWaitsForFunds() {
         // Arrange
         TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PENDING_SUBMISSION);
+        execution.setFailureCode("PREV_CODE");
+        execution.setFailureMessage("Previous transient failure");
         when(blindPayGateway.createEvmPayin("pq_000000000001", key(execution, "payin")))
                 .thenReturn(payin("pi_000000000001", "processing", null));
 
@@ -128,11 +135,36 @@ class BlindPayExecutionProcessorTest {
         processor.start(execution.getId());
 
         // Assert
+        ArgumentCaptor<TransactionDefinition> txDef = ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(transactionManager, atLeastOnce()).getTransaction(txDef.capture());
+        assertThat(txDef.getValue().getPropagationBehavior()).isEqualTo(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
         assertThat(execution.getExternalPayinId()).isEqualTo("pi_000000000001");
         assertThat(execution.getFundingInstructions()).isEqualTo("pix-copy-paste");
+        assertThat(execution.getFailureCode()).isNull();
+        assertThat(execution.getFailureMessage()).isNull();
+        assertThat(execution.getUpdatedAt()).isEqualTo(NOW_UTC);
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.AWAITING_PAYMENT);
+        assertThat(transaction.getUpdatedAt()).isEqualTo(NOW_UTC);
         verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void start_brlExecutionWithImmediatelyCompletedPayin_appliesPayinAndSubmitsPayout() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PENDING_SUBMISSION);
+        when(blindPayGateway.createEvmPayin("pq_000000000001", key(execution, "payin")))
+                .thenReturn(payin("pi_000000000001", "completed", new BigDecimal("18012")));
+        when(blindPayGateway.createEvmPayout(any(), anyString()))
+                .thenReturn(payout("po_000000000001", "completed"));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
+        assertThat(execution.getFundedAmount()).isEqualByComparingTo("180.12");
+        assertThat(execution.getExternalPayoutId()).isEqualTo("po_000000000001");
     }
 
     @Test
@@ -146,11 +178,17 @@ class BlindPayExecutionProcessorTest {
         // Act
         processor.start(execution.getId());
         TransferExecutionStatus afterTimeout = execution.getStatus();
+        String failureCodeAfterTimeout = execution.getFailureCode();
+        String failureMsgAfterTimeout = execution.getFailureMessage();
         processor.reconcile(execution.getId());
 
         // Assert
         assertThat(afterTimeout).isEqualTo(TransferExecutionStatus.PENDING_SUBMISSION);
+        assertThat(failureCodeAfterTimeout).isEqualTo("PAYIN_UNCERTAIN");
+        assertThat(failureMsgAfterTimeout).isEqualTo("timeout");
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(execution.getFailureCode()).isNull();
+        assertThat(execution.getFailureMessage()).isNull();
         verify(blindPayGateway, times(2)).createEvmPayin("pq_000000000001", key(execution, "payin"));
     }
 
@@ -163,6 +201,7 @@ class BlindPayExecutionProcessorTest {
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FAILED);
         assertThat(execution.getFailureCode()).isEqualTo("QUOTE_EXPIRED");
+        assertThat(execution.getFailureMessage()).isEqualTo("rejected");
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.FAILED);
     }
 
@@ -182,10 +221,15 @@ class BlindPayExecutionProcessorTest {
     void payinCompleted_withValidQuote_sendsPayoutFromManagedWallet() {
         // Arrange
         TransferExecutionEntity execution = awaitingFunds();
+        execution.setFailureCode("PREV_PAYIN_ERR");
+        execution.setFailureMessage("Previous payin sync error");
         when(blindPayGateway.getPayin("pi_000000000001"))
                 .thenReturn(payin("pi_000000000001", "completed", new BigDecimal("18012")));
-        when(blindPayGateway.createEvmPayout(any(), anyString()))
-                .thenReturn(payout("po_000000000001", "processing"));
+        when(blindPayGateway.createEvmPayout(any(), anyString())).thenAnswer(inv -> {
+            assertThat(execution.getFailureCode()).isNull();
+            assertThat(execution.getFailureMessage()).isNull();
+            return payout("po_000000000001", "processing");
+        });
 
         // Act
         processor.onPayinEvent("pi_000000000001");
@@ -210,7 +254,7 @@ class BlindPayExecutionProcessorTest {
         when(blindPayGateway.getPayin("pi_000000000001"))
                 .thenReturn(payin("pi_000000000001", "completed", new BigDecimal("18012")));
         when(blindPayGateway.createQuote(any(), eq(key(execution, "payout-quote:1"))))
-                .thenReturn(payoutQuote("qu_000000000002", "18012", "99500"));
+                .thenReturn(payoutQuote("qu_000000000002", "17950", "99500"));
         when(blindPayGateway.createEvmPayout(any(), anyString())).thenReturn(payout("po_000000000001", "processing"));
 
         // Act
@@ -226,26 +270,31 @@ class BlindPayExecutionProcessorTest {
         ArgumentCaptor<BlindPayEvmPayoutRequest> payout = ArgumentCaptor.forClass(BlindPayEvmPayoutRequest.class);
         verify(blindPayGateway).createEvmPayout(payout.capture(), eq(key(execution, "payout:1")));
         assertThat(payout.getValue().quoteId()).isEqualTo("qu_000000000002");
+        assertThat(execution.getPayoutQuoteSenderAmount()).isEqualByComparingTo("179.50");
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
     }
 
     @Test
     void payinCompleted_requoteDeliversLess_requiresNewConfirmationAndDoesNotPay() {
         // Arrange
-        TransferExecutionEntity execution = awaitingFunds();
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.FUNDS_RECEIVED);
+        execution.setFundedAmount(new BigDecimal("180.12"));
         execution.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
-        when(blindPayGateway.getPayin("pi_000000000001"))
-                .thenReturn(payin("pi_000000000001", "completed", new BigDecimal("18012")));
+        execution.setFailureCode("PREV_QUOTE_ERR");
+        execution.setFailureMessage("Previous quote timeout");
         when(blindPayGateway.createQuote(any(), anyString()))
-                .thenReturn(payoutQuote("qu_000000000002", "18012", "98000"));
+                .thenReturn(payoutQuote("qu_000000000002", "17950", "98000"));
 
         // Act
-        processor.onPayinEvent("pi_000000000001");
+        processor.reconcile(execution.getId());
 
         // Assert
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REQUOTE_REQUIRED);
+        assertThat(execution.getPayoutQuoteSenderAmount()).isEqualByComparingTo("179.50");
         assertThat(execution.getPayoutQuoteReceiverAmount()).isEqualByComparingTo("980.00");
         assertThat(execution.getTargetAmount()).isEqualByComparingTo("990.00");
+        assertThat(execution.getFailureCode()).isNull();
+        assertThat(execution.getFailureMessage()).isNull();
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.HELD);
         verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
     }
@@ -263,7 +312,15 @@ class BlindPayExecutionProcessorTest {
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
         assertThat(execution.getTargetAmount()).isEqualByComparingTo("980.00");
         assertThat(transaction.getForeignAmount()).isEqualByComparingTo("980.00");
+        verify(executionRepository, times(2)).save(execution);
         verify(blindPayGateway).createEvmPayout(any(), eq(key(execution, "payout:1")));
+    }
+
+    @Test
+    void acceptRequote_unknownTransfer_throwsNotFound() {
+        assertThatThrownBy(() -> processor.acceptRequote(
+                UUID.randomUUID(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00")))
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -305,19 +362,25 @@ class BlindPayExecutionProcessorTest {
     void payoutCompleted_isOnlyMarkedCompletedAfterProviderConfirmation() {
         // Arrange
         TransferExecutionEntity execution = payoutProcessing();
+        execution.setFailureCode("PREV_SYNC_ERR");
+        execution.setFailureMessage("Previous payout sync error");
         when(blindPayGateway.getPayout("po_000000000001"))
                 .thenReturn(payout("po_000000000001", "processing"))
                 .thenReturn(payout("po_000000000001", "completed"));
 
         // Act
-        processor.onPayoutEvent("po_000000000001");
+        boolean firstHandled = processor.onPayoutEvent("po_000000000001");
         TransferExecutionStatus beforeConfirmation = execution.getStatus();
-        processor.onPayoutEvent("po_000000000001");
+        boolean secondHandled = processor.onPayoutEvent("po_000000000001");
 
         // Assert
+        assertThat(firstHandled).isTrue();
+        assertThat(secondHandled).isTrue();
         assertThat(beforeConfirmation).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
         assertThat(execution.getCompletedAt()).isEqualTo(NOW_UTC);
+        assertThat(execution.getFailureCode()).isNull();
+        assertThat(execution.getFailureMessage()).isNull();
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.SETTLED);
         assertThat(transaction.getSettledAt()).isEqualTo(NOW_UTC);
     }
@@ -331,6 +394,7 @@ class BlindPayExecutionProcessorTest {
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FAILED);
         assertThat(execution.getFailureCode()).isEqualTo("PAYOUT_FAILED");
+        assertThat(execution.getFailureMessage()).isEqualTo("BlindPay payout failed");
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.FAILED);
     }
 
@@ -342,6 +406,8 @@ class BlindPayExecutionProcessorTest {
         processor.onPayoutEvent("po_000000000001");
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REFUNDED);
+        assertThat(execution.getFailureCode()).isEqualTo("PAYOUT_REFUNDED");
+        assertThat(execution.getFailureMessage()).isEqualTo("BlindPay payout was refunded");
         assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.CANCELED);
     }
 
@@ -354,6 +420,49 @@ class BlindPayExecutionProcessorTest {
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.REFUNDED);
         assertThat(execution.getFailureCode()).isEqualTo("PAYIN_REFUNDED");
+        assertThat(execution.getFailureMessage()).isEqualTo("BlindPay payin was refunded");
+        verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void payinFailed_marksExecutionFailed() {
+        TransferExecutionEntity execution = awaitingFunds();
+        when(blindPayGateway.getPayin("pi_000000000001")).thenReturn(payin("pi_000000000001", "failed", null));
+
+        processor.onPayinEvent("pi_000000000001");
+
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FAILED);
+        assertThat(execution.getFailureCode()).isEqualTo("PAYIN_FAILED");
+        assertThat(execution.getFailureMessage()).isEqualTo("BlindPay payin failed");
+    }
+
+    @Test
+    void payinCompleted_zeroReceiverAmount_throwsInvalidResponse() {
+        TransferExecutionEntity execution = awaitingFunds();
+        when(blindPayGateway.getPayin("pi_000000000001"))
+                .thenReturn(payin("pi_000000000001", "completed", BigDecimal.ZERO));
+
+        processor.onPayinEvent("pi_000000000001");
+
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(execution.getFailureMessage()).isEqualTo("BlindPay payin has no receiver amount");
+        verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
+    }
+
+    @Test
+    void payinCompleted_whenAlreadyFundsReceived_doesNotAdvanceFromPayinTransition() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.FUNDS_RECEIVED);
+        execution.setExternalPayinId("pi_000000000001");
+        execution.setFundedAmount(new BigDecimal("180.12"));
+        when(blindPayGateway.getPayin("pi_000000000001"))
+                .thenReturn(payin("pi_000000000001", "completed", new BigDecimal("18012")));
+
+        // Act
+        processor.onPayinEvent("pi_000000000001");
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FUNDS_RECEIVED);
         verify(blindPayGateway, never()).createEvmPayout(any(), anyString());
     }
 
@@ -397,14 +506,81 @@ class BlindPayExecutionProcessorTest {
     }
 
     @Test
+    void payoutRejected_withExpiredQuoteAndNoPriorUncertainAttempt_requotesAndAdvances() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PAYOUT_SUBMITTING);
+        execution.setFundedAmount(new BigDecimal("180.12"));
+        execution.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
+        when(blindPayGateway.createEvmPayout(any(), eq(key(execution, "payout:0"))))
+                .thenThrow(rejected("QUOTE_EXPIRED"));
+        when(blindPayGateway.createQuote(any(), eq(key(execution, "payout-quote:1")))).thenAnswer(inv -> {
+            assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FUNDS_RECEIVED);
+            assertThat(execution.getFailureCode()).isEqualTo("QUOTE_EXPIRED");
+            assertThat(execution.getFailureMessage()).isEqualTo("rejected");
+            return payoutQuote("qu_000000000002", "18012", "99500");
+        });
+        when(blindPayGateway.createEvmPayout(any(), eq(key(execution, "payout:1"))))
+                .thenReturn(payout("po_000000000001", "processing"));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
+        verify(blindPayGateway).createQuote(any(), eq(key(execution, "payout-quote:1")));
+        verify(blindPayGateway).createEvmPayout(any(), eq(key(execution, "payout:1")));
+    }
+
+    @Test
+    void payoutRejected_withUsableQuote_goesToManualReconciliation() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PAYOUT_SUBMITTING);
+        execution.setFundedAmount(new BigDecimal("180.12"));
+        execution.setPayoutQuoteExpiresAt(NOW_UTC.plusMinutes(5));
+        when(blindPayGateway.createEvmPayout(any(), anyString())).thenThrow(rejected("BANK_ACCOUNT_REJECTED"));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(execution.getFailureCode()).isEqualTo("BANK_ACCOUNT_REJECTED");
+        assertThat(execution.getFailureMessage()).isEqualTo("rejected");
+        verify(blindPayGateway, never()).createQuote(any(), anyString());
+    }
+
+    @Test
+    void payoutRejected_dueToComplianceError_goesToManualReconciliationEvenWhenQuoteExpired() {
+        // Arrange
+        TransferExecutionEntity execution = brlExecution(TransferExecutionStatus.PAYOUT_SUBMITTING);
+        execution.setFundedAmount(new BigDecimal("180.12"));
+        execution.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
+        when(provisioningService.ensureManagedWallet(company, "base_sepolia"))
+                .thenThrow(new BlindPayComplianceException("KYB suspended"));
+
+        // Act
+        processor.start(execution.getId());
+
+        // Assert
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(execution.getFailureCode()).isEqualTo("COMPLIANCE_NOT_APPROVED");
+        assertThat(execution.getFailureMessage()).isEqualTo("KYB suspended");
+        verify(blindPayGateway, never()).createQuote(any(), anyString());
+    }
+
+    @Test
     void payinUnknownToBackend_isIgnored() {
         assertThat(processor.onPayinEvent("pi_unknown")).isFalse();
+        assertThat(processor.onPayoutEvent("po_unknown")).isFalse();
         verify(blindPayGateway, never()).getPayin(anyString());
+        verify(blindPayGateway, never()).getPayout(anyString());
     }
 
     @Test
     void tokenExecution_sendsPayoutDirectlyFromAvailableBalance() {
         TransferExecutionEntity execution = tokenExecution();
+        execution.setFailureCode("PREV_ERR");
+        execution.setFailureMessage("Previous error");
         when(blindPayGateway.createEvmPayout(any(), anyString())).thenReturn(payout("po_000000000009", "processing"));
 
         processor.start(execution.getId());
@@ -413,6 +589,8 @@ class BlindPayExecutionProcessorTest {
         verify(blindPayGateway).createEvmPayout(request.capture(), eq(key(execution, "payout:0")));
         assertThat(request.getValue().quoteId()).isEqualTo("qu_000000000009");
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.PAYOUT_PROCESSING);
+        assertThat(execution.getFailureCode()).isNull();
+        assertThat(execution.getFailureMessage()).isNull();
         verify(blindPayGateway, never()).createEvmPayin(anyString(), anyString());
     }
 
@@ -425,6 +603,7 @@ class BlindPayExecutionProcessorTest {
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.FAILED);
         assertThat(execution.getFailureCode()).isEqualTo("PAYOUTS_INSUFFICIENT_BALANCE");
+        assertThat(execution.getFailureMessage()).isEqualTo("rejected");
     }
 
     @Test
@@ -437,7 +616,124 @@ class BlindPayExecutionProcessorTest {
         processor.reconcile(execution.getId());
 
         assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(execution.getFailureCode()).isEqualTo("PAYOUT_QUOTE_ATTEMPTS_EXCEEDED");
+        assertThat(execution.getFailureMessage())
+                .isEqualTo("Funds are held in the BlindPay wallet; payout needs manual follow-up");
+        assertThat(transaction.getStatus()).isEqualTo(TransactionStatus.HELD);
+        verify(executionRepository).save(execution);
         verify(blindPayGateway, never()).createQuote(any(), anyString());
+    }
+
+    @Test
+    void reconcile_awaitingFundsAndPayoutProcessing_syncsFromProviderAndRecordsFailures() {
+        // Arrange
+        TransferExecutionEntity awaiting = awaitingFunds();
+        when(blindPayGateway.getPayin("pi_000000000001"))
+                .thenThrow(BlindPayIntegrationException.response("payin lookup error", 502, "UPSTREAM_502", "t1", null))
+                .thenReturn(payin("pi_000000000001", "refunded", null));
+
+        TransferExecutionEntity processing = payoutProcessing();
+        processing.setFailureCode("PAYOUT_UNCERTAIN");
+        when(blindPayGateway.getPayout("po_000000000001"))
+                .thenThrow(BlindPayIntegrationException.response("payout lookup error", 502, "PAYOUT_502", "t2", null))
+                .thenReturn(payout("po_000000000001", "completed"));
+
+        // Act & Assert - awaiting funds error then success
+        processor.reconcile(awaiting.getId());
+        assertThat(awaiting.getStatus()).isEqualTo(TransferExecutionStatus.AWAITING_FUNDS);
+        assertThat(awaiting.getFailureCode()).isEqualTo("UPSTREAM_502");
+        assertThat(awaiting.getFailureMessage()).isEqualTo("payin lookup error");
+
+        processor.reconcile(awaiting.getId());
+        assertThat(awaiting.getStatus()).isEqualTo(TransferExecutionStatus.REFUNDED);
+
+        // Act & Assert - payout processing error overwrites PAYOUT_UNCERTAIN since not PAYOUT_SUBMITTING, then completes
+        processor.onPayoutEvent("po_000000000001");
+        assertThat(processing.getFailureCode()).isEqualTo("PAYOUT_502");
+        assertThat(processing.getFailureMessage()).isEqualTo("payout lookup error");
+
+        processor.reconcile(processing.getId());
+        assertThat(processing.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
+    }
+
+    @Test
+    void requotePayout_handlesComplianceIllegalArgumentIntegrationAndIncompleteQuotes() {
+        // Arrange
+        TransferExecutionEntity complianceExec = brlExecution(TransferExecutionStatus.FUNDS_RECEIVED);
+        complianceExec.setFundedAmount(new BigDecimal("180.12"));
+        complianceExec.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
+
+        TransferExecutionEntity illegalArgExec = brlExecution(TransferExecutionStatus.FUNDS_RECEIVED);
+        illegalArgExec.setFundedAmount(new BigDecimal("180.12"));
+        illegalArgExec.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
+
+        TransferExecutionEntity integrationExec = brlExecution(TransferExecutionStatus.FUNDS_RECEIVED);
+        integrationExec.setFundedAmount(new BigDecimal("180.12"));
+        integrationExec.setPayoutQuoteExpiresAt(NOW_UTC.minusSeconds(1));
+
+        when(blindPayGateway.createQuote(any(), eq(key(complianceExec, "payout-quote:1"))))
+                .thenThrow(new BlindPayComplianceException("KYB blocked"));
+        when(blindPayGateway.createQuote(any(), eq(key(illegalArgExec, "payout-quote:1"))))
+                .thenThrow(new IllegalArgumentException("Amount too small"));
+        when(blindPayGateway.createQuote(any(), eq(key(integrationExec, "payout-quote:1"))))
+                .thenThrow(BlindPayIntegrationException.response("quote err", 500, "QUOTE_500", "t", null))
+                .thenReturn(payoutQuote("qu_zero_sender", "0", "99000"))
+                .thenReturn(payoutQuote("qu_zero_receiver", "18012", "0"));
+
+        // Act & Assert
+        processor.reconcile(complianceExec.getId());
+        assertThat(complianceExec.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(complianceExec.getFailureCode()).isEqualTo("COMPLIANCE_NOT_APPROVED");
+        assertThat(complianceExec.getFailureMessage()).isEqualTo("KYB blocked");
+
+        processor.reconcile(illegalArgExec.getId());
+        assertThat(illegalArgExec.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(illegalArgExec.getFailureCode()).isEqualTo("INVALID_PAYOUT_REQUEST");
+        assertThat(illegalArgExec.getFailureMessage()).isEqualTo("Amount too small");
+
+        processor.reconcile(integrationExec.getId());
+        assertThat(integrationExec.getStatus()).isEqualTo(TransferExecutionStatus.FUNDS_RECEIVED);
+        assertThat(integrationExec.getFailureCode()).isEqualTo("QUOTE_500");
+        assertThat(integrationExec.getFailureMessage()).isEqualTo("quote err");
+
+        processor.reconcile(integrationExec.getId());
+        assertThat(integrationExec.getFailureCode()).isNull();
+        assertThat(integrationExec.getFailureMessage()).isEqualTo("BlindPay returned an incomplete payout quote");
+
+        processor.reconcile(integrationExec.getId());
+        assertThat(integrationExec.getFailureMessage()).isEqualTo("BlindPay returned an incomplete payout quote");
+    }
+
+    @Test
+    void recordFailure_ignoresTerminalExecutionAndTruncatesAtBoundary() {
+        // Arrange
+        TransferExecutionEntity completed = brlExecution(TransferExecutionStatus.COMPLETED);
+        completed.setExternalPayinId("pi_completed");
+        when(blindPayGateway.getPayin("pi_completed"))
+                .thenThrow(BlindPayIntegrationException.communication("should be ignored", null));
+
+        TransferExecutionEntity active = awaitingFunds();
+        String msg500 = "a".repeat(500);
+        String msg501 = "b".repeat(501);
+        when(blindPayGateway.getPayin("pi_000000000001"))
+                .thenThrow(BlindPayIntegrationException.response(msg500, 400, "   ", "t", null))
+                .thenThrow(BlindPayIntegrationException.response(msg501, 400, null, "t", null));
+
+        // Act & Assert - terminal execution is untouched
+        processor.onPayinEvent("pi_completed");
+        assertThat(completed.getFailureCode()).isNull();
+        assertThat(completed.getFailureMessage()).isNull();
+
+        // Act & Assert - 500-char message kept in full, 501-char message truncated to 500
+        processor.onPayinEvent("pi_000000000001");
+        assertThat(active.getFailureMessage()).isEqualTo(msg500);
+
+        processor.onPayinEvent("pi_000000000001");
+        assertThat(active.getFailureMessage()).hasSize(500).isEqualTo(msg501.substring(0, 500));
+
+        // Unknown execution id throws NotFoundException
+        assertThatThrownBy(() -> processor.start(UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
     }
 
     private TransferExecutionEntity awaitingFunds() {
@@ -491,7 +787,7 @@ class BlindPayExecutionProcessorTest {
                 .payoutQuoteReceiverAmount(new BigDecimal("990.00"))
                 .payoutQuoteExpiresAt(NOW_UTC.plusMinutes(4))
                 .createdAt(NOW_UTC)
-                .updatedAt(NOW_UTC)
+                .updatedAt(NOW_UTC.minusMinutes(10))
                 .build();
         executions.put(execution.getId(), execution);
         return execution;

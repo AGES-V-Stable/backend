@@ -143,9 +143,13 @@ class BlindPayComplianceControllerSecurityTest {
     @EnumSource(value = CompanyRole.class, names = {"OPERATOR", "VIEWER"})
     void readEndpoints_nonOwnerMember_areAllowed(CompanyRole role) throws Exception {
         UserEntity member = member(role);
+        when(complianceService.getRfi(same(member)))
+                .thenReturn(ages.vstable.backend.dto.blindpay.BlindPayRfiDetailsResponse.none());
 
         mockMvc.perform(get("/v1/blindpay/compliance").with(user(member))).andExpect(status().isOk());
-        mockMvc.perform(get("/v1/blindpay/compliance/rfi").with(user(member))).andExpect(status().isOk());
+        mockMvc.perform(get("/v1/blindpay/compliance/rfi").with(user(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.open").value(false));
 
         verify(complianceService).getStatus(same(member));
         verify(complianceService).getRfi(same(member));
@@ -201,6 +205,21 @@ class BlindPayComplianceControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFYING"));
         verify(complianceService).submitKyb(same(principal), any());
+    }
+
+    @Test
+    void updateKyb_owner_forwardsRequestToTheService() throws Exception {
+        when(complianceService.updateKyb(same(principal), any())).thenReturn(new BlindPayComplianceStatusResponse(
+                BlindPayOnboardingStatus.VERIFYING, false, true, true, false, true, "verifying", null,
+                List.of(), List.of(), null, null, false));
+
+        mockMvc.perform(put("/v1/blindpay/compliance/kyb")
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_KYB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFYING"));
+        verify(complianceService).updateKyb(same(principal), any());
     }
 
     @Test

@@ -298,6 +298,32 @@ class SupportChatServiceTest {
                 .isInstanceOf(BadCredentialsException.class);
     }
 
+    @Test
+    @DisplayName("resolveRateLimitKey distinguishes users, admins, null emails, and generic principals")
+    void resolveRateLimitKey_distinguishesPrincipalTypesAndNullEmails() {
+        UserEntity userWithEmail = UserEntity.builder().email("Alice@VStable.com").build();
+        UserEntity userWithoutEmail = UserEntity.builder().id(UUID.randomUUID()).email(null).build();
+        AdministratorEntity adminWithEmail = AdministratorEntity.builder().email("Admin@VStable.com").build();
+        AdministratorEntity adminWithoutEmail = AdministratorEntity.builder().id(UUID.randomUUID()).email(null).build();
+
+        String userKey = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                supportChatService, "resolveRateLimitKey", userWithEmail);
+        String userNullEmailKey = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                supportChatService, "resolveRateLimitKey", userWithoutEmail);
+        String adminKey = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                supportChatService, "resolveRateLimitKey", adminWithEmail);
+        String adminNullEmailKey = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                supportChatService, "resolveRateLimitKey", adminWithoutEmail);
+        String genericKey = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                supportChatService, "resolveRateLimitKey", "service-account-1");
+
+        assertThat(userKey).isEqualTo("user:alice@vstable.com");
+        assertThat(userNullEmailKey).isEqualTo("principal:" + userWithoutEmail);
+        assertThat(adminKey).isEqualTo("admin:admin@vstable.com");
+        assertThat(adminNullEmailKey).isEqualTo("principal:" + adminWithoutEmail);
+        assertThat(genericKey).isEqualTo("principal:service-account-1");
+    }
+
     /** Verifica o contexto efetivamente entregue ao provedor de IA, conforme o vínculo carregado na requisição. */
     @Nested
     class CompanyContextSentToProvider {
