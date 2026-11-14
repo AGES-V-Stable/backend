@@ -9,6 +9,7 @@ import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -37,8 +39,17 @@ class BalanceServiceTest {
     @Mock
     private AveniaKycVerificationRepository kycRepository;
 
+    @Spy
+    private SimulatedDepositProperties simulatedDeposits = enabled(true);
+
     @InjectMocks
     private BalanceService service;
+
+    private static SimulatedDepositProperties enabled(boolean enabled) {
+        SimulatedDepositProperties properties = new SimulatedDepositProperties();
+        properties.setEnabled(enabled);
+        return properties;
+    }
 
     private final UUID companyId = UUID.randomUUID();
 
@@ -111,7 +122,8 @@ class BalanceServiceTest {
                 .thenReturn(Optional.of(verification));
 
         assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(ForbiddenException.class)
+                .hasFieldOrPropertyWithValue("code", "KYC_NOT_APPROVED");
 
         verifyNoInteractions(companyRepository);
     }
@@ -130,5 +142,37 @@ class BalanceServiceTest {
         assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
                 .isInstanceOf(ForbiddenException.class);
         verifyNoInteractions(kycRepository, companyRepository);
+    }
+
+    @Test
+    void addBalance_disabledInTheEnvironment_isNotFoundBeforeAnyCheckOrLookup() {
+        // Arrange: fora dos ambientes de teste o crédito simulado não existe.
+        simulatedDeposits.setEnabled(false);
+        UserEntity user = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("20.50")))
+                .isInstanceOf(NotFoundException.class)
+                .hasFieldOrPropertyWithValue("code", "SIMULATED_DEPOSITS_DISABLED");
+        verifyNoInteractions(kycRepository, companyRepository);
+    }
+
+    @Test
+    void addBalance_overTheLimit_isConflictAndKeepsTheBalance() {
+        // Arrange
+        UserEntity user = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
+        CompanyEntity company = CompanyEntity.builder()
+                .id(companyId)
+                .availableBalanceBrl(new BigDecimal("9999999999999.00"))
+                .build();
+        when(kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()))
+                .thenReturn(Optional.of(AveniaKycVerificationEntity.builder().status(ComplianceStatus.APPROVED).build()));
+        when(companyRepository.findByIdForUpdate(companyId)).thenReturn(Optional.of(company));
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.addBalance(user, new BigDecimal("1.00")))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("code", "BALANCE_LIMIT_EXCEEDED");
+        assertThat(company.getAvailableBalanceBrl()).isEqualByComparingTo("9999999999999.00");
     }
 }

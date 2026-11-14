@@ -27,7 +27,7 @@ public class BalanceService {
 
     private static final BigDecimal MAX_BALANCE = new BigDecimal("9999999999999.99");
     private final AveniaKycVerificationRepository kycRepository;
-
+    private final SimulatedDepositProperties simulatedDeposits;
 
     @Transactional(readOnly = true)
     public BalanceResponse getBalance(UUID companyId) {
@@ -41,12 +41,17 @@ public class BalanceService {
 
     @Transactional
     public BalanceResponse addBalance(UserEntity user, BigDecimal amount) {
+        if (!simulatedDeposits.isEnabled()) {
+            // Fora dos ambientes de teste a rota se comporta como inexistente: nenhum saldo fictício em produção.
+            throw new NotFoundException("SIMULATED_DEPOSITS_DISABLED",
+                    "O crédito simulado não está disponível neste ambiente.");
+        }
         CompanyAccess.requireOwner(user);
 
         boolean verified = kycRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()).map(kyc -> kyc.getStatus() == ComplianceStatus.APPROVED).orElse(false);
 
         if (!verified) {
-            throw new ForbiddenException("É necessário ter a identidade verificada.");
+            throw new ForbiddenException("KYC_NOT_APPROVED", "É necessário ter a identidade verificada.");
         }
 
         CompanyEntity company = companyRepository.findByIdForUpdate(user.getMembership().getCompanyId()).orElseThrow(() -> new NotFoundException("Company not found"));
@@ -58,7 +63,7 @@ public class BalanceService {
 
         BigDecimal updatedBalance = currentBalance.add(amount);
         if (updatedBalance.compareTo(MAX_BALANCE) > 0) {
-            throw new ConflictException("O novo saldo excedeu o limite permitido.");
+            throw new ConflictException("BALANCE_LIMIT_EXCEEDED", "O novo saldo excedeu o limite permitido.");
         }
 
         company.setAvailableBalanceBrl(updatedBalance);

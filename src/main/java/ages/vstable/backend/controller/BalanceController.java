@@ -45,6 +45,16 @@ public class BalanceController {
     }
 
     @PostMapping("/simulated-deposits")
+    @Operation(summary = "Credita saldo simulado em BRL na empresa do proprietário autenticado",
+            description = "Só existe nos ambientes com balance.simulated-deposits.enabled=true; não movimenta dinheiro real.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Saldo atualizado da empresa"),
+            @ApiResponse(responseCode = "400", description = "Valor ausente, não positivo ou com mais de duas casas decimais"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado"),
+            @ApiResponse(responseCode = "403", description = "Não é o proprietário (OWNER_REQUIRED, COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED) ou KYC não aprovado (KYC_NOT_APPROVED)"),
+            @ApiResponse(responseCode = "404", description = "Crédito simulado desabilitado no ambiente (SIMULATED_DEPOSITS_DISABLED) ou empresa não encontrada"),
+            @ApiResponse(responseCode = "409", description = "O novo saldo passaria do limite (BALANCE_LIMIT_EXCEEDED)"),
+    })
     public ResponseEntity<BalanceResponse> addSimulatedBalance(
             @Valid @RequestBody AddBalanceRequest request,
             Authentication authentication) {
