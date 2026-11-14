@@ -14,6 +14,7 @@ import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
@@ -21,15 +22,24 @@ import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.support.TestCompanyUsers;
 import ages.vstable.backend.utils.JwtTokenUtils;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -74,6 +84,8 @@ class OnboardingServiceTest {
     private CompanyMembershipService companyMembershipService;
 
     private OnboardingService onboardingService;
+    private Logger operationalLogger;
+    private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
@@ -83,6 +95,15 @@ class OnboardingServiceTest {
                 userRepository, administratorRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
                 companyMembershipService);
+        operationalLogger = (Logger) LoggerFactory.getLogger(OperationalLog.class);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        operationalLogger.addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        operationalLogger.detachAppender(logAppender);
     }
 
     @Test
@@ -124,11 +145,24 @@ class OnboardingServiceTest {
         assertThat(savedUser.getCompanyId()).isEqualTo(companyId);
         assertThat(savedUser.getPasswordHash()).isEqualTo("hash-bcrypt");
         assertThat(savedUser.getPasswordSalt()).isNotBlank();
+        assertThat(savedUser.getTwoFactorEnabled()).isFalse();
+        assertThat(savedUser.getCreatedAt()).isNotNull();
+        assertThat(savedUser.getUpdatedAt()).isNotNull();
 
         ArgumentCaptor<AveniaKycVerificationEntity> kycCaptor = ArgumentCaptor.forClass(AveniaKycVerificationEntity.class);
         org.mockito.Mockito.verify(aveniaKycVerificationRepository).save(kycCaptor.capture());
-        assertThat(kycCaptor.getValue().getUserId()).isEqualTo(userId);
-        assertThat(kycCaptor.getValue().getStatus()).isEqualTo(ComplianceStatus.PENDING);
+        AveniaKycVerificationEntity savedKyc = kycCaptor.getValue();
+        assertThat(savedKyc.getUserId()).isEqualTo(userId);
+        assertThat(savedKyc.getStatus()).isEqualTo(ComplianceStatus.PENDING);
+        assertThat(savedKyc.getResponsePayload()).isEqualTo("{}");
+        assertThat(savedKyc.getCreatedAt()).isNotNull();
+        assertThat(savedKyc.getUpdatedAt()).isNotNull();
+        assertThat(logAppender.list)
+                .flatExtracting(ILoggingEvent::getKeyValuePairs)
+                .anySatisfy(kv -> {
+                    assertThat(kv.key).isEqualTo("event");
+                    assertThat(kv.value).isEqualTo("onboarding.completed");
+                });
     }
 
     @Test
@@ -160,7 +194,7 @@ class OnboardingServiceTest {
 
     @Test
     void performOnboarding_emailAlreadyRegistered_throwsConflict() {
-        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(userRepository.findFirstByEmailIgnoreCase("joao@example.com")).thenReturn(Optional.of(new UserEntity()));
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -168,7 +202,7 @@ class OnboardingServiceTest {
 
     @Test
     void performOnboarding_emailBelongsToAdministrator_throwsConflict() {
-        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(administratorRepository.existsByEmailIgnoreCase("joao@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -239,11 +273,13 @@ class OnboardingServiceTest {
                 .isInstanceOf(ConflictException.class);
     }
 
-    @Test
-    void performOnboarding_emailConstraintRaceCondition_returnsConflict() {
-        // Arrange: outra requisição gravou o mesmo e-mail depois da verificação prévia.
+    @ParameterizedTest
+    @ValueSource(strings = {OnboardingService.EMAIL_UNIQUE_CONSTRAINT,
+            OnboardingService.EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT})
+    void performOnboarding_emailConstraintRaceCondition_returnsConflict(String constraint) {
+        // Arrange: outra requisição gravou o mesmo e-mail (com ou sem as mesmas maiúsculas) depois da verificação.
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(OnboardingService.EMAIL_UNIQUE_CONSTRAINT));
+        when(userRepository.saveAndFlush(any())).thenThrow(uniqueViolation(constraint));
 
         // Act / Assert
         assertThatThrownBy(() -> onboardingService.performOnboarding(validRequest()))
@@ -319,11 +355,63 @@ class OnboardingServiceTest {
     @Test
     void performOnboarding_passwordWithoutSpecialCharacter_throwsUnprocessable() {
         OnboardingRequestDTO request = validRequest();
-        request.setPassword("Senha1234");
-        request.setConfirmPassword("Senha1234");
+        request.setPassword("aAzZ0912");
+        request.setConfirmPassword("aAzZ0912");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @Test
+    void performOnboarding_nullPassword_throwsUnprocessable() {
+        OnboardingRequestDTO request = validRequest();
+        request.setPassword(null);
+        request.setConfirmPassword("Senha@123");
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Abcde1@",
+            "Senha12\n@",
+            "Senha12\r@",
+            "Senha12\u0085@",
+            "Senha12\u2028@",
+            "Senha12\u2029@",
+            "Abcdefg@",
+            "aAzZ0912"
+    })
+    void performOnboarding_rejectsPasswordsViolatingLengthLineBreakOrCharacterClassRules(String invalidPassword) {
+        OnboardingRequestDTO request = validRequest();
+        request.setPassword(invalidPassword);
+        request.setConfirmPassword(invalidPassword);
+
+        assertThatThrownBy(() -> onboardingService.performOnboarding(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Abcdef0@",
+            "Abcdef9@",
+            "Abcdef0[",
+            "Abcdef9`",
+            "Abcdef0{",
+            "Abcdef9/",
+            "Abcdef0:"
+    })
+    void performOnboarding_acceptsEightCharacterPasswordsAtDigitAndSpecialCharacterBoundaries(String validPassword) {
+        stubCompanyAndUserPersistence(UUID.randomUUID(), UUID.randomUUID());
+        when(passwordEncoder.encode(validPassword)).thenReturn("hash-bcrypt");
+        OnboardingRequestDTO request = validRequest();
+        request.setPassword(validPassword);
+        request.setConfirmPassword(validPassword);
+
+        OnboardingResponseDTO response = onboardingService.performOnboarding(request);
+
+        assertThat(response.getAccessToken()).isEqualTo("jwt-token-123");
     }
 
     // --- Conta e empresa em etapas separadas (backend#64) ---
@@ -349,6 +437,15 @@ class OnboardingServiceTest {
         assertThat(saved.getValue().getFullName()).isEqualTo("Joao da Silva");
         assertThat(saved.getValue().getPasswordHash()).isEqualTo("hash-bcrypt");
         assertThat(saved.getValue().getPasswordSalt()).isNotBlank();
+        assertThat(saved.getValue().getTwoFactorEnabled()).isFalse();
+        assertThat(saved.getValue().getCreatedAt()).isNotNull();
+        assertThat(saved.getValue().getUpdatedAt()).isNotNull();
+        assertThat(logAppender.list)
+                .flatExtracting(ILoggingEvent::getKeyValuePairs)
+                .anySatisfy(kv -> {
+                    assertThat(kv.key).isEqualTo("event");
+                    assertThat(kv.value).isEqualTo("onboarding.account_created");
+                });
         verify(companyRepository, never()).saveAndFlush(any());
         verify(companyMembershipService, never()).assignOwner(any(), any(), any());
         verify(aveniaKycVerificationRepository, never()).save(any());
@@ -368,7 +465,7 @@ class OnboardingServiceTest {
 
     @Test
     void createAccount_emailAlreadyRegistered_throwsConflictWithoutSaving() {
-        when(userRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(userRepository.findFirstByEmailIgnoreCase("joao@example.com")).thenReturn(Optional.of(new UserEntity()));
 
         assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
                 .isInstanceOf(ConflictException.class)
@@ -378,7 +475,7 @@ class OnboardingServiceTest {
 
     @Test
     void createAccount_emailBelongsToAdministrator_throwsConflictWithoutSaving() {
-        when(administratorRepository.existsByEmail("joao@example.com")).thenReturn(true);
+        when(administratorRepository.existsByEmailIgnoreCase("joao@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> onboardingService.createAccount(accountRequest()))
                 .isInstanceOf(ConflictException.class);
@@ -416,6 +513,20 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void createAccount_passwordLongerThan72Utf8Bytes_throwsUnprocessableWithoutSaving() {
+        // Arrange: 37 caracteres "é" ocupam 74 bytes, acima do limite do BCrypt
+        AccountRequestDTO request = accountRequest();
+        String tooLong = "1@" + "é".repeat(36);
+        request.setPassword(tooLong);
+        request.setConfirmPassword(tooLong);
+
+        // Act / Assert
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void registerCompany_userWithoutCompany_createsCompanyOwnerMembershipAndPendingKyc() {
         // Arrange
         UUID companyId = UUID.randomUUID();
@@ -438,6 +549,13 @@ class OnboardingServiceTest {
         assertThat(response.getKycVerificationId()).isEqualTo(kycId);
         assertThat(response.getAccessToken()).isNull();
         assertThat(user.getCompanyId()).isEqualTo(companyId);
+        assertThat(user.getUpdatedAt()).isNotNull();
+        assertThat(logAppender.list)
+                .flatExtracting(ILoggingEvent::getKeyValuePairs)
+                .anySatisfy(kv -> {
+                    assertThat(kv.key).isEqualTo("event");
+                    assertThat(kv.value).isEqualTo("onboarding.company_registered");
+                });
         InOrder order = inOrder(companyRepository, userRepository, companyMembershipService,
                 aveniaKycVerificationRepository);
         order.verify(companyRepository).saveAndFlush(any());

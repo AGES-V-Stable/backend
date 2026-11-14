@@ -191,4 +191,37 @@ class ComplianceDocumentControllerTest {
                         .content(body))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void postAndPut_removedMember_returns403AccessRevokedWithoutCallingService() throws Exception {
+        UUID progressoId = UUID.randomUUID();
+        ages.vstable.backend.entity.UserEntity removed = ages.vstable.backend.support.TestCompanyUsers.removedMember(
+                UUID.randomUUID(), ages.vstable.backend.entity.enums.CompanyRole.OPERATOR);
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        removed, null, removed.getAuthorities());
+
+        String postBody = payload(new HashMap<>() {{
+            put("documentType", "ID");
+            put("doubleSided", true);
+        }});
+        mockMvc.perform(post("/v1/onboarding/{id}/compliance/documento", progressoId)
+                        .principal(auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(postBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        String putBody = payload(new HashMap<>() {{
+            put("documentoId", "doc-123");
+        }});
+        mockMvc.perform(put("/v1/onboarding/{id}/compliance/documento", progressoId)
+                        .principal(auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(putBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        org.mockito.Mockito.verifyNoInteractions(complianceDocumentoService);
+    }
 }

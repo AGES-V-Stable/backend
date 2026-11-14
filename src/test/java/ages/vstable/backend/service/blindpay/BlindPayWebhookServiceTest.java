@@ -222,10 +222,12 @@ class BlindPayWebhookServiceTest {
         // Arrange
         UUID idempotencyKey = UUID.randomUUID();
         BlindPayTosSessionEntity session = session(idempotencyKey);
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
         ProviderAccountEntity account = account(null);
         account.setStatus(BlindPayOnboardingStatus.TOS_PENDING.name());
         account.setTosId(null);
         account.setTosAcceptedAt(null);
+        account.setUpdatedAt(past);
         when(tosSessionRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(session));
         when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account));
@@ -237,9 +239,98 @@ class BlindPayWebhookServiceTest {
         assertThat(result).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
         assertThat(session.getStatus()).isEqualTo(BlindPayTosSessionEntity.STATUS_ACCEPTED);
         assertThat(session.getTosId()).isEqualTo("to_000000000001");
+        assertThat(session.getAcceptedAt()).isNotNull();
         assertThat(account.getTosId()).isEqualTo("to_000000000001");
         assertThat(account.getTosAcceptedAt()).isNotNull();
+        assertThat(account.getUpdatedAt()).isAfter(past);
         assertThat(account.getStatus()).isEqualTo(BlindPayOnboardingStatus.TOS_ACCEPTED.name());
+    }
+
+    @Test
+    void handle_tosAcceptAndCustomerChangedEdgeCases_coverAllBranchesAndTruncation() {
+        // 1. Null eventType and 50/51-char eventType truncation
+        assertThat(deliver("msg_null", "{}")).isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        verify(webhookEventRepository).insertIfAbsent(eq("msg_null"), eq(null), any());
+
+        String type50 = "e".repeat(50);
+        String type51 = "f".repeat(51);
+        assertThat(deliver("msg_50", "{\"webhook_event\":\"" + type50 + "\"}"))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        verify(webhookEventRepository).insertIfAbsent(eq("msg_50"), eq(type50), any());
+
+        assertThat(deliver("msg_51", "{\"webhook_event\":\"" + type51 + "\"}"))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        verify(webhookEventRepository).insertIfAbsent(eq("msg_51"), eq(type51.substring(0, 50)), any());
+
+        // 2. customer.update with id=null and customer_id present, or both null
+        ProviderAccountEntity linked = linkedAccount();
+        String customerByCustomerIdField = """
+                {"webhook_event":"customer.update","id":null,"customer_id":"%s","kyc_status":"approved",
+                 "aml_status":"clear","external_id":"%s","instance_id":"%s","is_tos_accepted":true}
+                """.formatted(CUSTOMER_ID, company.getId(), INSTANCE_ID);
+        assertThat(deliver("msg_cid", customerByCustomerIdField)).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        assertThat(linked.getStatus()).isEqualTo(BlindPayOnboardingStatus.APPROVED.name());
+
+        assertThat(deliver("msg_no_cid", "{\"webhook_event\":\"customer.update\"}")).isEqualTo(BlindPayWebhookService.Result.IGNORED);
+
+        // 3. unlinkedAccount ignores company account that already has an externalCustomerId
+        when(providerAccountRepository.findByProviderAndExternalCustomerId(IntegrationProvider.BLINDPAY, "re_new"))
+                .thenReturn(Optional.empty());
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account(CUSTOMER_ID)));
+        String differentCustomerForAlreadyLinkedCompany = """
+                {"webhook_event":"customer.new","id":"re_new","kyc_status":"verifying",
+                 "external_id":"%s","instance_id":"%s"}
+                """.formatted(company.getId(), INSTANCE_ID);
+        assertThat(deliver("msg_already_linked", differentCustomerForAlreadyLinkedCompany))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+
+        // 4. tos.accept with id="to_..." (when tos_id is null), non-tos id, null idempotency_key, missing account, or linked account
+        UUID key1 = UUID.randomUUID();
+        BlindPayTosSessionEntity session1 = session(key1);
+        ProviderAccountEntity linkedWithTos = account(CUSTOMER_ID);
+        linkedWithTos.setTosId("to_existing");
+        linkedWithTos.setKycStatus("approved");
+        linkedWithTos.setAmlStatus("clear");
+        when(tosSessionRepository.findByIdempotencyKey(key1)).thenReturn(Optional.of(session1));
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(linkedWithTos));
+        String tosByIdField = """
+                {"webhook_event":"tos.accept","id":"to_000000000099","idempotency_key":"%s","instance_id":"%s"}
+                """.formatted(key1, INSTANCE_ID);
+        assertThat(deliver("msg_tos_id", tosByIdField)).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        assertThat(linkedWithTos.getTosId()).isEqualTo("to_existing");
+        assertThat(linkedWithTos.getStatus()).isEqualTo(BlindPayOnboardingStatus.APPROVED.name());
+
+        UUID key2 = UUID.randomUUID();
+        BlindPayTosSessionEntity session2 = session(key2);
+        ProviderAccountEntity linkedWithoutTos = account(CUSTOMER_ID);
+        linkedWithoutTos.setTosId(null);
+        linkedWithoutTos.setKycStatus("verifying");
+        when(tosSessionRepository.findByIdempotencyKey(key2)).thenReturn(Optional.of(session2));
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(linkedWithoutTos));
+        assertThat(deliver("msg_tos_linked_null_tos", tosAccept(key2, CUSTOMER_ID)))
+                .isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        assertThat(linkedWithoutTos.getTosId()).isEqualTo("to_000000000001");
+
+        // Missing tosId / non-"to_" id / missing account
+        assertThat(deliver("msg_tos_bad_id",
+                "{\"webhook_event\":\"tos.accept\",\"id\":\"ev_123\",\"idempotency_key\":\"" + UUID.randomUUID() + "\"}"))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        assertThat(deliver("msg_tos_no_id",
+                "{\"webhook_event\":\"tos.accept\",\"idempotency_key\":\"" + UUID.randomUUID() + "\"}"))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        assertThat(deliver("msg_tos_no_key",
+                "{\"webhook_event\":\"tos.accept\",\"tos_id\":\"to_000000000001\"}"))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
+
+        UUID keyMissingAcc = UUID.randomUUID();
+        when(tosSessionRepository.findByIdempotencyKey(keyMissingAcc)).thenReturn(Optional.of(session(keyMissingAcc)));
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.empty());
+        assertThat(deliver("msg_tos_no_acc", tosAccept(keyMissingAcc, null)))
+                .isEqualTo(BlindPayWebhookService.Result.IGNORED);
     }
 
     @Test

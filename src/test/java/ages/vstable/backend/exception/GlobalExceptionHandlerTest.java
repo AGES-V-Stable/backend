@@ -151,6 +151,20 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleUnprocessableEntity_withRuleCode_returns422WithThatCode() {
+        // Arrange
+        UnprocessableEntityException ex = new UnprocessableEntityException("PASSWORD_TOO_WEAK", "Senha fraca");
+
+        // Act
+        ResponseEntity<Map<String, String>> response = handler.handleUnprocessableEntity(ex);
+
+        // Assert
+        assertThat(response.getStatusCode().value()).isEqualTo(422);
+        assertThat(response.getBody()).containsEntry("code", "PASSWORD_TOO_WEAK");
+        assertThat(response.getBody()).containsEntry("message", "Senha fraca");
+    }
+
+    @Test
     void handleAccessDenied_returns403() {
         AccessDeniedException ex = new AccessDeniedException("Denied");
         ResponseEntity<Map<String, String>> response = handler.handleAccessDenied(ex);
@@ -206,7 +220,19 @@ class GlobalExceptionHandlerTest {
     @Test
     void handleUnexpected_returns500() {
         Exception ex = new Exception("Error");
-        ResponseEntity<Map<String, String>> response = handler.handleUnexpected(ex);
+        ch.qos.logback.classic.Logger opLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ages.vstable.backend.logging.OperationalLog.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        opLogger.addAppender(appender);
+        ResponseEntity<Map<String, String>> response;
+        try {
+            response = handler.handleUnexpected(ex);
+            assertThat(appender.list).isNotEmpty();
+        } finally {
+            opLogger.detachAppender(appender);
+        }
         assertThat(response.getBody()).containsEntry("code", "INTERNAL_ERROR");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).containsEntry("message", "Internal error");
@@ -228,5 +254,79 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().get("message")).contains("file");
+    }
+
+    @Test
+    void handleGone_returns410WithCodeAndMessage() {
+        GoneException ex = new GoneException("INVITATION_EXPIRED", "Invitation expired");
+
+        ResponseEntity<Map<String, String>> response = handler.handleGone(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GONE);
+        assertThat(response.getBody())
+                .containsEntry("code", "INVITATION_EXPIRED")
+                .containsEntry("message", "Invitation expired");
+    }
+
+    @Test
+    void handleInvalidParameter_returns400WithCodeAndMessage() {
+        InvalidParameterException ex = new InvalidParameterException("Invalid query parameter");
+
+        ResponseEntity<Map<String, String>> response = handler.handleInvalidParameter(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .containsEntry("code", "INVALID_PARAMETER")
+                .containsEntry("message", "Invalid query parameter");
+    }
+
+    @Test
+    void handleValidation_distinguishesOnboardingEmailFormatErrorsFromOtherFieldErrors() {
+        ages.vstable.backend.dto.onboarding.AccountRequestDTO target =
+                new ages.vstable.backend.dto.onboarding.AccountRequestDTO();
+
+        org.springframework.validation.BeanPropertyBindingResult exactEmailCodeBinding =
+                new org.springframework.validation.BeanPropertyBindingResult(target, "accountRequestDTO");
+        exactEmailCodeBinding.addError(new org.springframework.validation.FieldError(
+                "accountRequestDTO", "email", "bad", false, new String[]{"Email"}, null, "must be a valid email"));
+        org.springframework.web.bind.MethodArgumentNotValidException exactEmailEx =
+                mock(org.springframework.web.bind.MethodArgumentNotValidException.class);
+        when(exactEmailEx.getTarget()).thenReturn(target);
+        when(exactEmailEx.getBindingResult()).thenReturn(exactEmailCodeBinding);
+
+        ResponseEntity<Map<String, String>> exactEmailResponse = handler.handleValidation(exactEmailEx);
+        assertThat(exactEmailResponse.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(exactEmailResponse.getBody())
+                .containsEntry("code", "UNPROCESSABLE_CONTENT")
+                .containsEntry("message", "Email has an invalid format");
+
+        org.springframework.validation.BeanPropertyBindingResult prefixedEmailCodeBinding =
+                new org.springframework.validation.BeanPropertyBindingResult(target, "accountRequestDTO");
+        prefixedEmailCodeBinding.addError(new org.springframework.validation.FieldError(
+                "accountRequestDTO", "email", "bad", false, new String[]{"Email.accountRequestDTO.email"}, null, "invalid"));
+        org.springframework.web.bind.MethodArgumentNotValidException prefixedEmailEx =
+                mock(org.springframework.web.bind.MethodArgumentNotValidException.class);
+        when(prefixedEmailEx.getTarget()).thenReturn(target);
+        when(prefixedEmailEx.getBindingResult()).thenReturn(prefixedEmailCodeBinding);
+
+        ResponseEntity<Map<String, String>> prefixedEmailResponse = handler.handleValidation(prefixedEmailEx);
+        assertThat(prefixedEmailResponse.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+
+        org.springframework.validation.BeanPropertyBindingResult nonEmailCodeBinding =
+                new org.springframework.validation.BeanPropertyBindingResult(target, "accountRequestDTO");
+        nonEmailCodeBinding.addError(new org.springframework.validation.FieldError(
+                "accountRequestDTO", "email", "", false, new String[]{"NotBlank"}, null, "must not be blank"));
+        nonEmailCodeBinding.addError(new org.springframework.validation.FieldError(
+                "accountRequestDTO", "email", "", false, null, null, "null codes"));
+        org.springframework.web.bind.MethodArgumentNotValidException nonEmailEx =
+                mock(org.springframework.web.bind.MethodArgumentNotValidException.class);
+        when(nonEmailEx.getTarget()).thenReturn(target);
+        when(nonEmailEx.getBindingResult()).thenReturn(nonEmailCodeBinding);
+
+        ResponseEntity<Map<String, String>> nonEmailResponse = handler.handleValidation(nonEmailEx);
+        assertThat(nonEmailResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(nonEmailResponse.getBody())
+                .containsEntry("code", "VALIDATION_ERROR")
+                .containsEntry("message", "email: must not be blank");
     }
 }

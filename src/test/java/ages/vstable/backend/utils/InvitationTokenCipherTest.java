@@ -80,10 +80,15 @@ class InvitationTokenCipherTest {
     }
 
     @Test
-    void decrypt_ofAPayloadShorterThanTheIv_fails() {
+    void decrypt_ofAPayloadShorterThanOrEqualToTheIv_failsWithInvalidPayloadCause() {
         // Act / Assert
         assertThatThrownBy(() -> cipher.decrypt(Base64.getEncoder().encodeToString(new byte[8]), "v1"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> cipher.decrypt(Base64.getEncoder().encodeToString(new byte[12]), "v1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("Payload criptografado inválido");
     }
 
     @Test

@@ -21,7 +21,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +61,12 @@ class CompanyMemberServiceTest {
                 .thenReturn(memberships);
         lenient().when(invitationRepository.findByCompanyIdAndStatus(companyId, InvitationStatus.PENDING))
                 .thenReturn(invitations);
-        lenient().when(userRepository.findAllById(any())).thenReturn(users);
+        lenient().when(userRepository.findAllById(any())).thenAnswer(invocation -> {
+            Iterable<UUID> requestedIds = invocation.getArgument(0);
+            Set<UUID> idSet = new HashSet<>();
+            requestedIds.forEach(idSet::add);
+            return users.stream().filter(u -> idSet.contains(u.getId())).toList();
+        });
     }
 
     @Test
@@ -163,18 +170,36 @@ class CompanyMemberServiceTest {
     @Test
     void list_invitationShowsWhoCreatedItAndKeepsUtcDates() {
         // Arrange
+        UserEntity formerAdminCreator = newUser("Criador Anterior");
         addMember("Dono", CompanyRole.OWNER);
-        addInvitation("Ana", CompanyRole.VIEWER);
+        invitations.add(CompanyInvitationEntity.builder()
+                .id(UUID.randomUUID()).companyId(companyId).name("Ana").email("ana@example.com")
+                .role(CompanyRole.VIEWER).status(InvitationStatus.PENDING).tokenHash("a".repeat(64))
+                .tokenCiphertext("cipher").tokenKeyVersion("v1").createdBy(formerAdminCreator.getId())
+                .createdAt(now.withOffsetSameInstant(ZoneOffset.ofHours(-3))).updatedAt(now).build());
 
         // Act
         MemberListResponse response = service.list(companyId, 0, 20);
 
         // Assert
         var invitation = response.items().get(1).invitation();
-        assertThat(invitation.createdBy().name()).isEqualTo("Dono");
+        assertThat(invitation.createdBy().name()).isEqualTo("Criador Anterior");
         assertThat(invitation.createdAt().getOffset()).isEqualTo(ZoneOffset.UTC);
         assertThat(response.items().get(1).member()).isNull();
         assertThat(response.items().get(0).invitation()).isNull();
+    }
+
+    @Test
+    void list_acceptsMinimumAndMaximumPageSizeBoundaries() {
+        addMember("Dono", CompanyRole.OWNER);
+
+        MemberListResponse minSizeResponse = service.list(companyId, 0, 1);
+        MemberListResponse maxSizeResponse = service.list(companyId, 0, 100);
+
+        assertThat(minSizeResponse.size()).isEqualTo(1);
+        assertThat(minSizeResponse.items()).hasSize(1);
+        assertThat(maxSizeResponse.size()).isEqualTo(100);
+        assertThat(maxSizeResponse.items()).hasSize(1);
     }
 
     @Test

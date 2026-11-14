@@ -86,9 +86,14 @@ class AveniaQuoteProviderTest {
         // Assert
         ArgumentCaptor<TransferQuoteRequest> request = ArgumentCaptor.forClass(TransferQuoteRequest.class);
         verify(transferService).quote(request.capture(), eq(userId), eq(company.getId()));
+        assertThat(request.getValue().getAmount()).isEqualByComparingTo("1000.00");
+        assertThat(request.getValue().getSourceCurrency()).isEqualTo("BRL");
+        assertThat(request.getValue().getDestinationCurrency()).isEqualTo("USDC");
         assertThat(request.getValue().getPaymentMethod()).isEqualTo(TransferMethod.PIX);
         assertThat(request.getValue().getAmountType()).isEqualTo(TransferAmountType.SOURCE);
         assertThat(request.getValue().getBeneficiaryId()).isEqualTo(wallet.getId());
+        assertThat(AveniaQuoteProvider.toTransferAmountType(QuoteAmountSide.TARGET))
+                .isEqualTo(TransferAmountType.DESTINATION);
         assertThat(result.provider()).isEqualTo(IntegrationProvider.AVENIA);
         assertThat(result.sourceAmount()).isEqualByComparingTo("1000.00");
         assertThat(result.targetAmount()).isEqualByComparingTo("180.50");

@@ -136,4 +136,19 @@ class CompanyMemberControllerTest {
                 "COMPANY_ACCESS_DENIED");
         assertForbiddenWith(() -> controller.me(companyId, null), "COMPANY_ACCESS_DENIED");
     }
+
+    @Test
+    void remove_requiresOwnerAndRevokesMemberWhenAuthorized() {
+        UUID memberId = UUID.randomUUID();
+        UserEntity operator = TestCompanyUsers.member(companyId, CompanyRole.OPERATOR);
+
+        assertForbiddenWith(() -> controller.remove(companyId, memberId, "\"1\"", operator), "OWNER_REQUIRED");
+        verifyNoInteractions(memberService);
+
+        UserEntity owner = TestCompanyUsers.member(companyId, CompanyRole.OWNER);
+        ResponseEntity<Void> response = controller.remove(companyId, memberId, "\"1\"", owner);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(204);
+        org.mockito.Mockito.verify(memberService).revoke(companyId, memberId, 1L, owner.getId());
+    }
 }

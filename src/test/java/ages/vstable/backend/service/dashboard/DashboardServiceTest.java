@@ -177,4 +177,71 @@ class DashboardServiceTest {
         assertThatThrownBy(() -> service.requireCompany(unknown)).isInstanceOf(NotFoundException.class);
         service.requireCompany(null);
     }
+
+    @Test
+    void summary_withZeroIncompleteAndZeroSpreadCount_marksCompleteAndNullAverageSpread() {
+        DashboardPeriod period = new DashboardPeriod(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+        givenMonths(period,
+                new Totals("2026-01", new BigDecimal("100.00"), 0, new BigDecimal("5.00"), 0, BigDecimal.ZERO, 0));
+
+        DashboardSummaryResponse summary = service.summary(companyId, period);
+
+        assertThat(summary.amount()).isEqualTo("5.00");
+        assertThat(summary.averageEffectiveSpreadPercentage()).isNull();
+        assertThat(summary.incomplete()).isFalse();
+        assertThat(summary.incompleteOperations()).isZero();
+    }
+
+    @Test
+    void settlements_acceptsMinAndMaxPageSizeBoundariesAndMapsExportAndTradeName() {
+        DashboardPeriod period = new DashboardPeriod(null, null);
+        UUID secondCompanyId = UUID.randomUUID();
+
+        ages.vstable.backend.entity.ExportTransactionEntity exportTx = new ages.vstable.backend.entity.ExportTransactionEntity();
+        exportTx.setId(UUID.randomUUID());
+        exportTx.setCompanyId(companyId);
+        exportTx.setStatus(TransactionStatus.SETTLED);
+        exportTx.setExternalPayerName("Overseas Payer");
+
+        ages.vstable.backend.entity.BaseTransactionEntity baseTx = new ages.vstable.backend.entity.BaseTransactionEntity();
+        baseTx.setId(UUID.randomUUID());
+        baseTx.setCompanyId(secondCompanyId);
+        baseTx.setStatus(TransactionStatus.PROCESSING);
+
+        CompanyEntity withTradeName = new CompanyEntity();
+        withTradeName.setId(companyId);
+        withTradeName.setLegalName("Legal One");
+        withTradeName.setTradeName("Trade One");
+
+        CompanyEntity withNullTradeName = new CompanyEntity();
+        withNullTradeName.setId(secondCompanyId);
+        withNullTradeName.setLegalName("Legal Two");
+        withNullTradeName.setTradeName(null);
+
+        Page<ages.vstable.backend.entity.BaseTransactionEntity> pageSize1 =
+                new PageImpl<>(List.of(exportTx), PageRequest.of(0, 1), 1);
+        Page<ages.vstable.backend.entity.BaseTransactionEntity> pageSize50 =
+                new PageImpl<>(List.of(exportTx, baseTx), PageRequest.of(0, 50), 2);
+
+        when(transactionRepository.findLatestForDashboard(eq(companyId), any(), any(), eq(PageRequest.of(0, 1))))
+                .thenReturn(pageSize1);
+        when(transactionRepository.findLatestForDashboard(eq(companyId), any(), any(), eq(PageRequest.of(0, 50))))
+                .thenReturn(pageSize50);
+        when(companyRepository.findAllById(List.of(companyId))).thenReturn(List.of(withTradeName));
+        when(companyRepository.findAllById(List.of(companyId, secondCompanyId)))
+                .thenReturn(List.of(withTradeName, withNullTradeName));
+
+        Page<DashboardSettlementResponse> resultMin = service.settlements(companyId, period, 0, 1);
+        assertThat(resultMin.getContent()).hasSize(1);
+        assertThat(resultMin.getContent().getFirst().direction())
+                .isEqualTo(ages.vstable.backend.entity.enums.TransferDirection.RECEIPT);
+        assertThat(resultMin.getContent().getFirst().counterparty()).isEqualTo("Overseas Payer");
+        assertThat(resultMin.getContent().getFirst().companyName()).isEqualTo("Trade One");
+
+        Page<DashboardSettlementResponse> resultMax = service.settlements(companyId, period, 0, 50);
+        assertThat(resultMax.getContent()).hasSize(2);
+        assertThat(resultMax.getContent().get(1).direction()).isNull();
+        assertThat(resultMax.getContent().get(1).counterparty()).isNull();
+        assertThat(resultMax.getContent().get(1).companyName()).isEqualTo("Legal Two");
+    }
 }

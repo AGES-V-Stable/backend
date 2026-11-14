@@ -163,7 +163,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleUnprocessableEntity(UnprocessableEntityException ex) {
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_CONTENT)
-                .body(Map.of("code", "UNPROCESSABLE_CONTENT", "message", ex.getMessage()));
+                .body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

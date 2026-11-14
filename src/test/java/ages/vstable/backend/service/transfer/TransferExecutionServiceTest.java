@@ -1,6 +1,9 @@
 package ages.vstable.backend.service.transfer;
 
 import ages.vstable.backend.dto.transfer.ConfirmOfferRequest;
+import ages.vstable.backend.service.CompanyFinancialAccountService;
+import org.springframework.transaction.PlatformTransactionManager;
+import static org.mockito.Mockito.atLeastOnce;
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
 import ages.vstable.backend.dto.transfer.ExchangeRateInfo;
 import ages.vstable.backend.dto.transfer.FeeInfo;
@@ -94,6 +97,7 @@ class TransferExecutionServiceTest {
     @Mock private ImportTransactionRepository importTransactionRepository;
     @Mock private TransferService transferService;
     @Mock private BlindPayExecutionProcessor processor;
+    @Mock private CompanyFinancialAccountService companyFinancialAccountService;
     @Mock private TwoFactorAuthService twoFactorAuthService;
     @Mock private TwoFactorAuthService.TotpReservation reservation;
 
@@ -108,8 +112,8 @@ class TransferExecutionServiceTest {
     @BeforeEach
     void setUp() {
         service = new TransferExecutionService(providerQuoteRepository, executionRepository,
-                importTransactionRepository, transferService, processor, twoFactorAuthService,
-                transactionManager, Clock.fixed(NOW, ZoneOffset.UTC));
+                importTransactionRepository, transferService, processor,
+                companyFinancialAccountService, twoFactorAuthService, transactionManager, Clock.fixed(NOW, ZoneOffset.UTC));
 
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         user = UserEntity.builder().id(UUID.randomUUID()).companyId(company.getId()).build();
@@ -655,5 +659,244 @@ class TransferExecutionServiceTest {
         protected void doRollback(DefaultTransactionStatus status) {
             // Sem recurso transacional real.
         }
+    }
+
+
+    @Test
+    void confirm_blindPayBrlOfferWithNullFeeAndNullRate_savesNullFeeAndNullRateOnTransaction() {
+        offer.setTotalFee(null);
+        offer.setExchangeRate(null);
+
+        service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        ArgumentCaptor<ImportTransactionEntity> transaction = ArgumentCaptor.forClass(ImportTransactionEntity.class);
+        verify(importTransactionRepository).save(transaction.capture());
+        assertThat(transaction.getValue().getServiceFeeBrl()).isNull();
+        assertThat(transaction.getValue().getExchangeRate()).isNull();
+    }
+
+
+    @Test
+    void confirm_sameOfferTwice_returnsSameTransferWithoutExecutingAgainAndValidatesAmounts() {
+        TransferExecutionResponse first = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+        TransferExecutionResponse second = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        assertThat(second.executionId()).isEqualTo(first.executionId());
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("999.00", "990.00")))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(processor, times(1)).start(any());
+        verify(executionRepository, times(1)).saveAndFlush(any());
+    }
+
+
+    @Test
+    void confirm_concurrentConfirmationOfSameOffer_returnsExistingTransferOrRethrowsWhenMissing() {
+        // Arrange: outra requisição registrou a execução entre a leitura e a gravação.
+        TransferExecutionEntity existing = TransferExecutionEntity.builder()
+                .id(UUID.randomUUID()).providerQuoteId(offer.getId()).companyId(company.getId())
+                .provider(IntegrationProvider.BLINDPAY).status(TransferExecutionStatus.AWAITING_FUNDS)
+                .sourceCurrency("BRL").targetCurrency("USD")
+                .sourceAmount(new BigDecimal("1000.00")).targetAmount(new BigDecimal("990.00")).build();
+        doReturn(Optional.empty()).doReturn(Optional.of(existing))
+                .doReturn(Optional.empty()).doReturn(Optional.empty())
+                .when(executionRepository).findByProviderQuoteId(offer.getId());
+        doThrow(new DataIntegrityViolationException("duplicate")).when(executionRepository).saveAndFlush(any());
+
+        // Act
+        TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        // Assert
+        assertThat(response.executionId()).isEqualTo(existing.getId());
+        offer.setStatus(ProviderQuoteStatus.SELECTED);
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "990.00")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        verifyNoInteractions(processor);
+    }
+
+
+    @Test
+    void confirmRequote_delegatesToProcessorAndReturnsUpdatedTransfer() {
+        TransferExecutionResponse confirmed = service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        TransferExecutionResponse result = service.confirmRequote(
+                user, confirmed.executionId(), confirmation("1000.00", "980.00"));
+
+        verify(processor).acceptRequote(
+                confirmed.executionId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"));
+        assertThat(result).isNotNull();
+        assertThat(result.executionId()).isEqualTo(confirmed.executionId());
+    }
+
+
+    @Test
+    void confirm_unknownOfferOrMissingExecutionAfterExecution_throwsNotFound() {
+        assertThatThrownBy(() -> service.confirm(user, UUID.randomUUID(), confirmation("1000.00", "990.00")))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Offer not found");
+
+        when(executionRepository.findById(any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "990.00")))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Transfer not found");
+    }
+
+
+    @Test
+    void confirm_aveniaOfferSettledImmediatelyAndLongDescription_setsCompletedAtAndTruncatesDescription() {
+        // Arrange
+        aveniaOffer();
+        quoteRequest.setAmountSide(QuoteAmountSide.TARGET);
+        quoteRequest.setDescription("x".repeat(69));
+        UUID transactionId = UUID.randomUUID();
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            return new TransferService.ExecutedTransfer(transactionId, TransactionStatus.SETTLED, null);
+        });
+
+        // Act
+        TransferExecutionResponse response = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
+
+        // Assert
+        TransferExecutionEntity execution = executions.get(response.executionId());
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.COMPLETED);
+        assertThat(execution.getCompletedAt()).isEqualTo(NOW_UTC);
+        ArgumentCaptor<CreateTransferRequest> request = ArgumentCaptor.forClass(CreateTransferRequest.class);
+        verify(transferService).createConfirmedOffer(request.capture(), any(), any(), any());
+        assertThat(request.getValue().getAmountType()).isEqualTo(TransferAmountType.DESTINATION);
+        assertThat(request.getValue().getDescription()).hasSize(68).isEqualTo("x".repeat(68));
+    }
+
+
+    @Test
+    void confirm_aveniaOfferWithNullDescription_preservesNullDescription() {
+        aveniaOffer();
+        quoteRequest.setDescription(null);
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            return new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.AWAITING_PAYMENT, null);
+        });
+
+        service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
+
+        ArgumentCaptor<CreateTransferRequest> request = ArgumentCaptor.forClass(CreateTransferRequest.class);
+        verify(transferService).createConfirmedOffer(request.capture(), any(), any(), any());
+        assertThat(request.getValue().getDescription()).isNull();
+    }
+
+
+    @Test
+    void confirm_operatorConfirmsOfferQuotedByOwner_executesOnCompanyAccountWithOperatorAsActor() {
+        // Arrange: a cotação foi pedida pelo proprietário (user); quem confirma é o operador da mesma empresa.
+        aveniaOffer();
+        UserEntity operator = TestCompanyUsers.member(company.getId(), CompanyRole.OPERATOR);
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            return new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.AWAITING_PAYMENT,
+                    UUID.randomUUID());
+        });
+
+        // Act
+        TransferExecutionResponse response = service.confirm(operator, offer.getId(), confirmation("1000.00", "180.50"));
+
+        // Assert
+        verify(transferService).createConfirmedOffer(any(), eq(operator.getId()), eq(company.getId()), any());
+        assertThat(executions.get(response.executionId()).getRequestedBy()).isEqualTo(operator.getId());
+        assertThat(executions.get(response.executionId()).getCompanyId()).isEqualTo(company.getId());
+    }
+
+
+    @Test
+    void confirm_aveniaOfferOfCompanyWithoutAccount_isRejectedBeforeRegisteringOrConsumingTheOffer() {
+        // Arrange
+        aveniaOffer();
+        when(companyFinancialAccountService.requireAveniaSubAccountId(company.getId()))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida"));
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(UnprocessableEntityException.class);
+        assertThat(executions).isEmpty();
+        assertThat(offer.getStatus()).isEqualTo(ProviderQuoteStatus.SELECTED);
+        verify(providerQuoteRepository, never()).save(any());
+        verify(executionRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(transferService, processor, importTransactionRepository);
+    }
+
+
+    @Test
+    void confirm_blindPayOffer_doesNotDependOnTheAveniaAccount() {
+        // Act
+        service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        // Assert
+        verifyNoInteractions(companyFinancialAccountService);
+    }
+
+
+    @Test
+    void confirm_removedMember_cannotConfirmTheCompanyOffer() {
+        // Arrange
+        aveniaOffer();
+        UserEntity removed = TestCompanyUsers.removedMember(company.getId(), CompanyRole.OWNER);
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.confirm(removed, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(transferService, processor);
+        assertThat(executions).isEmpty();
+    }
+
+
+    @Test
+    void confirm_aveniaDestinationSidePriceGotWorse_failsWithConflict() {
+        aveniaOffer();
+        quoteRequest.setAmountSide(QuoteAmountSide.TARGET);
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.01", "180.50"));
+            throw new AssertionError("ticket must not be created");
+        });
+
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(QuotePriceChangedException.class);
+    }
+
+
+    @Test
+    void confirm_aveniaFailsAfterTicketRequest_requiresReconciliationOrFailsOnExplicitRejection() {
+        aveniaOffer();
+        String msg500 = "m".repeat(500);
+        String msg501 = "n".repeat(501);
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            throw new AveniaIntegrationException(msg501, 500, false, null);
+        });
+
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(AveniaIntegrationException.class);
+        TransferExecutionEntity execution = executions.values().iterator().next();
+        assertThat(execution.getStatus()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        assertThat(execution.getFailureMessage()).hasSize(500).isEqualTo(msg501.substring(0, 500));
+
+        // Repetir a confirmação devolve a execução existente; não chama a Avenia de novo.
+        TransferExecutionResponse replay = service.confirm(user, offer.getId(), confirmation("1000.00", "180.50"));
+        assertThat(replay.status()).isEqualTo(TransferExecutionStatus.RECONCILIATION_REQUIRED);
+        verify(transferService, times(1)).createConfirmedOffer(any(), any(), any(), any());
+
+        // Test isRejection boundaries (400, 499, 399, retryable 429, null status, 500-char message, null message)
+        assertAveniaPostTicketExceptionOutcome(new AveniaIntegrationException(msg500, 400, false, null),
+                TransferExecutionStatus.FAILED, msg500);
+        assertAveniaPostTicketExceptionOutcome(new AveniaIntegrationException(null, 499, false, null),
+                TransferExecutionStatus.FAILED, null);
+        assertAveniaPostTicketExceptionOutcome(new AveniaIntegrationException("err399", 399, false, null),
+                TransferExecutionStatus.RECONCILIATION_REQUIRED, "err399");
+        assertAveniaPostTicketExceptionOutcome(new AveniaIntegrationException("err429", 429, true, null),
+                TransferExecutionStatus.RECONCILIATION_REQUIRED, "err429");
+        assertAveniaPostTicketExceptionOutcome(new AveniaIntegrationException("errNullStatus", null, false, null),
+                TransferExecutionStatus.RECONCILIATION_REQUIRED, "errNullStatus");
     }
 }

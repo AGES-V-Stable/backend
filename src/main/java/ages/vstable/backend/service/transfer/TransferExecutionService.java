@@ -1,5 +1,6 @@
 package ages.vstable.backend.service.transfer;
 
+import ages.vstable.backend.service.CompanyFinancialAccountService;
 import ages.vstable.backend.service.CompanyMembershipService;
 import ages.vstable.backend.dto.transfer.ConfirmOfferRequest;
 import ages.vstable.backend.dto.transfer.CreateTransferRequest;
@@ -88,6 +89,7 @@ public class TransferExecutionService {
     private final ImportTransactionRepository importTransactionRepository;
     private final TransferService transferService;
     private final BlindPayExecutionProcessor blindPayProcessor;
+    private final CompanyFinancialAccountService companyFinancialAccountService;
     private final TwoFactorAuthService twoFactorAuthService;
     private final TransactionTemplate transactions;
     private final Clock clock;
@@ -99,10 +101,11 @@ public class TransferExecutionService {
             ImportTransactionRepository importTransactionRepository,
             TransferService transferService,
             BlindPayExecutionProcessor blindPayProcessor,
+            CompanyFinancialAccountService companyFinancialAccountService,
             TwoFactorAuthService twoFactorAuthService,
             PlatformTransactionManager transactionManager) {
         this(providerQuoteRepository, executionRepository, importTransactionRepository, transferService,
-                blindPayProcessor, twoFactorAuthService, transactionManager, Clock.systemUTC());
+                blindPayProcessor, companyFinancialAccountService, twoFactorAuthService, transactionManager, Clock.systemUTC());
     }
 
     TransferExecutionService(
@@ -111,6 +114,7 @@ public class TransferExecutionService {
             ImportTransactionRepository importTransactionRepository,
             TransferService transferService,
             BlindPayExecutionProcessor blindPayProcessor,
+            CompanyFinancialAccountService companyFinancialAccountService,
             TwoFactorAuthService twoFactorAuthService,
             PlatformTransactionManager transactionManager,
             Clock clock) {
@@ -119,6 +123,7 @@ public class TransferExecutionService {
         this.importTransactionRepository = importTransactionRepository;
         this.transferService = transferService;
         this.blindPayProcessor = blindPayProcessor;
+        this.companyFinancialAccountService = companyFinancialAccountService;
         this.twoFactorAuthService = twoFactorAuthService;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -191,6 +196,11 @@ public class TransferExecutionService {
         BeneficiaryEntity beneficiary = request.getBeneficiary();
         if (!request.getCompany().getId().equals(beneficiary.getCompany().getId())) {
             throw new NotFoundException("Beneficiary not found");
+        }
+        if (offer.getProvider() == IntegrationProvider.AVENIA) {
+            // Sem conta empresarial válida a confirmação é recusada antes de registrar a execução ou consumir a
+            // oferta: nada é gravado e a Avenia não é chamada (backend#76).
+            companyFinancialAccountService.requireAveniaSubAccountId(request.getCompany().getId());
         }
         authorizeWithTotp(user, confirmation.totpCode());
 

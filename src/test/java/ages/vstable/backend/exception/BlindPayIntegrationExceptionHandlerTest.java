@@ -54,6 +54,18 @@ class BlindPayIntegrationExceptionHandlerTest {
                         HttpStatus.BAD_GATEWAY),
                 Arguments.of("unreadable provider response",
                         BlindPayIntegrationException.invalidResponse("unreadable"),
+                        HttpStatus.BAD_GATEWAY),
+                Arguments.of("status 399 below 400 boundary is not rejected by provider",
+                        BlindPayIntegrationException.response("weird status", 399, "SOME_CODE", "trace", null),
+                        HttpStatus.BAD_GATEWAY),
+                Arguments.of("status 499 below 500 boundary is rejected by provider",
+                        BlindPayIntegrationException.response("client closed", 499, "CLIENT_ERROR", "trace", null),
+                        HttpStatus.UNPROCESSABLE_CONTENT),
+                Arguments.of("status 500 exact boundary is retryable",
+                        BlindPayIntegrationException.response("internal error", 500, null, null, null),
+                        HttpStatus.SERVICE_UNAVAILABLE),
+                Arguments.of("non-retryable status 500 boundary is not rejected by provider",
+                        new BlindPayIntegrationException("server error", 500, "SERVER_ERROR", "trace", false, null),
                         HttpStatus.BAD_GATEWAY));
     }
 

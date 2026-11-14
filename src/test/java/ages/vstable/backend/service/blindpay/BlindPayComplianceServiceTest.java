@@ -13,6 +13,7 @@ import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.exception.ConflictException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.blindpay.BlindPayApi;
 import ages.vstable.backend.external.blindpay.BlindPayGateway;
@@ -199,14 +200,27 @@ class BlindPayComplianceServiceTest {
     }
 
     @Test
-    void uploadDocument_largerThanThreeMegabytes_isRejected() {
+    void uploadDocument_largerThanThreeMegabytes_isRejectedAndExactThreeMegabytesIsAccepted() {
+        givenAccount(UnaryOperator.identity());
+        when(gateway.uploadFile(any(), anyString(), anyString(), any())).thenReturn(new BlindPayUploadResponse(FILE));
+
+        byte[] exactMax = new byte[BlindPayComplianceService.MAX_DOCUMENT_BYTES];
+        System.arraycopy(PDF, 0, exactMax, 0, PDF.length);
+        assertThat(service.uploadDocument(user, BlindPayDocumentType.INCORPORATION, exactMax).fileUrl()).isEqualTo(FILE);
+
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+        assertThat(service.uploadDocument(user, BlindPayDocumentType.ID_DOCUMENT_FRONT, jpeg).fileUrl()).isEqualTo(FILE);
+
+        assertThatThrownBy(() -> service.uploadDocument(user, BlindPayDocumentType.INCORPORATION, new byte[]{0x25}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("file must be a PDF, JPEG or PNG");
+
         byte[] large = new byte[BlindPayComplianceService.MAX_DOCUMENT_BYTES + 1];
         System.arraycopy(PDF, 0, large, 0, PDF.length);
 
         assertThatThrownBy(() -> service.uploadDocument(user, BlindPayDocumentType.INCORPORATION, large))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("file must have at most 3MB");
-        verifyNoInteractions(gateway);
     }
 
     @Test
@@ -253,6 +267,9 @@ class BlindPayComplianceServiceTest {
         assertThat(response.status()).isEqualTo(BlindPayOnboardingStatus.VERIFYING);
         assertThat(response.submitted()).isTrue();
         assertThat(response.enabled()).isFalse();
+        assertThat(response.kycWarningCodes()).containsExactly("ADDRESS_MISMATCH");
+        assertThat(response.owners()).hasSize(1);
+        assertThat(response.synchronizedAt()).isNotNull();
         // O compliance global da empresa (Avenia) não é alterado.
         assertThat(company.getKybStatus()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(company.getAmlStatus()).isEqualTo(ComplianceStatus.PENDING);
@@ -282,7 +299,8 @@ class BlindPayComplianceServiceTest {
     @Test
     void submitKyb_providerFailure_persistsFailedSubmissionAndRethrows() {
         // Arrange
-        ProviderAccountEntity account = givenLockedAccount(UnaryOperator.identity());
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
+        ProviderAccountEntity account = givenLockedAccount(a -> { a.setUpdatedAt(past); return a; });
         when(gateway.createCustomer(any(), anyString())).thenThrow(BlindPayIntegrationException.response(
                 "missing fields", 400, "VALIDATION_MISSING_REQUIRED_FIELDS", "trace", null));
 
@@ -291,15 +309,21 @@ class BlindPayComplianceServiceTest {
                 .isInstanceOf(BlindPayIntegrationException.class);
         assertThat(account.getStatus()).isEqualTo("SUBMISSION_FAILED");
         assertThat(account.getLastErrorCode()).isEqualTo("VALIDATION_MISSING_REQUIRED_FIELDS");
+        assertThat(account.getUpdatedAt()).isAfter(past);
         assertThat(account.getExternalCustomerId()).isNull();
     }
 
     @Test
-    void submitKyb_synchronizationFailureAfterCreation_keepsCreatedCustomer() {
+    void submitKyb_synchronizationFailureAfterCreation_keepsCreatedCustomerAndClearsError() {
         // Arrange
-        ProviderAccountEntity account = givenLockedAccount(UnaryOperator.identity());
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
+        ProviderAccountEntity account = givenLockedAccount(a -> {
+            a.setLastErrorCode("PREV_ERR");
+            a.setUpdatedAt(past);
+            return a;
+        });
         when(gateway.createCustomer(any(), anyString()))
-                .thenReturn(new BlindPayCustomerCreatedResponse(CUSTOMER_ID, null));
+                .thenReturn(new BlindPayCustomerCreatedResponse(CUSTOMER_ID, "   "));
         when(gateway.getCustomer(CUSTOMER_ID)).thenThrow(BlindPayIntegrationException.communication("down", null));
 
         // Act
@@ -307,6 +331,8 @@ class BlindPayComplianceServiceTest {
 
         // Assert
         assertThat(account.getExternalCustomerId()).isEqualTo(CUSTOMER_ID);
+        assertThat(account.getLastErrorCode()).isNull();
+        assertThat(account.getUpdatedAt()).isAfter(past);
         assertThat(response.status()).isEqualTo(BlindPayOnboardingStatus.VERIFYING);
     }
 
@@ -340,15 +366,23 @@ class BlindPayComplianceServiceTest {
     }
 
     @Test
-    void submitKyb_beneficialOwnerBelowTwentyFivePercent_isRejected() {
+    void submitKyb_beneficialOwnerBelowTwentyFivePercent_isRejectedAndTwentyFivePercentIsAccepted() {
         givenLockedAccount(UnaryOperator.identity());
         BlindPayKybRequest request = kybRequest(
                 owner(BlindPayApi.Customer.OwnerRole.controlling_person, null, null),
-                owner(BlindPayApi.Customer.OwnerRole.beneficial_owner, 10, null));
+                owner(BlindPayApi.Customer.OwnerRole.beneficial_owner, 24, null));
 
         assertThatThrownBy(() -> service.submitKyb(user, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("owners[1].ownershipPercentage: beneficial owners must hold at least 25%");
+
+        when(gateway.createCustomer(any(), anyString()))
+                .thenReturn(new BlindPayCustomerCreatedResponse(CUSTOMER_ID, CUSTOMER_ID));
+        when(gateway.getCustomer(CUSTOMER_ID)).thenReturn(customer("verifying", null));
+        BlindPayKybRequest valid25 = kybRequest(
+                owner(BlindPayApi.Customer.OwnerRole.controlling_person, null, null),
+                owner(BlindPayApi.Customer.OwnerRole.beneficial_owner, 25, null));
+        assertThat(service.submitKyb(user, valid25).submitted()).isTrue();
     }
 
     @Test
@@ -364,7 +398,7 @@ class BlindPayComplianceServiceTest {
     }
 
     @Test
-    void submitKyb_accountPurposeOtherWithoutDescription_isRejected() {
+    void submitKyb_accountPurposeAndPurposeOfTransactionsAndUsOwnerRules_areValidated() {
         givenLockedAccount(UnaryOperator.identity());
         BlindPayKybRequest base = kybRequest();
         BlindPayKybRequest request = new BlindPayKybRequest(base.email(), base.legalName(), null,
@@ -377,6 +411,41 @@ class BlindPayComplianceServiceTest {
         assertThatThrownBy(() -> service.submitKyb(user, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageStartingWith("accountPurposeOther");
+
+        BlindPayKybRequest missingPurposeExplanation = new BlindPayKybRequest(base.email(), base.legalName(), null,
+                base.addressLine1(), null, base.city(), base.stateProvinceRegion(), base.country(),
+                base.postalCode(), null, base.formationDate(), null, base.businessType(),
+                base.businessDescription(), base.businessIndustry(), base.estimatedAnnualRevenue(),
+                base.sourceOfWealth(), base.accountPurpose(), null, "other", "   ", null, base.incorporationDocFile(),
+                base.proofOfOwnershipDocFile(), null, null, null, null, base.owners());
+        assertThatThrownBy(() -> service.submitKyb(user, missingPurposeExplanation))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("purposeOfTransactionsExplanation");
+
+        BlindPayKybRequest.Owner usOwnerWithoutTaxType = new BlindPayKybRequest.Owner(
+                null, BlindPayApi.Customer.OwnerRole.beneficial_controlling, "Ana", "Souza",
+                LocalDate.of(1985, 3, 10), "123456789", null, "Rua A, 10", null, "Miami", "FL", "US",
+                "33101", "US", BlindPayApi.Customer.IdDocType.PASSPORT, FILE, null, null, null, 100, "CEO");
+        assertThatThrownBy(() -> service.submitKyb(user, kybRequest(usOwnerWithoutTaxType)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("owners[0].taxType: must be provided for US owners");
+
+        BlindPayKybRequest.Owner usOwnerWithTaxType = new BlindPayKybRequest.Owner(
+                null, BlindPayApi.Customer.OwnerRole.beneficial_controlling, "Ana", "Souza",
+                LocalDate.of(1985, 3, 10), "123456789", BlindPayApi.Customer.TaxType.SSN, "Rua A, 10", null,
+                "Miami", "FL", "US", "33101", "US", BlindPayApi.Customer.IdDocType.PASSPORT, FILE, null, null,
+                null, 100, "CEO");
+        BlindPayKybRequest validPurposeOtherAndUsOwner = new BlindPayKybRequest(base.email(), base.legalName(), null,
+                base.addressLine1(), null, base.city(), base.stateProvinceRegion(), base.country(),
+                base.postalCode(), null, base.formationDate(), null, base.businessType(),
+                base.businessDescription(), base.businessIndustry(), base.estimatedAnnualRevenue(),
+                base.sourceOfWealth(), "other", "Custom purpose", "other", "Custom explanation", null,
+                base.incorporationDocFile(), base.proofOfOwnershipDocFile(), null, null, null, null,
+                List.of(usOwnerWithTaxType));
+        when(gateway.createCustomer(any(), anyString()))
+                .thenReturn(new BlindPayCustomerCreatedResponse(CUSTOMER_ID, CUSTOMER_ID));
+        when(gateway.getCustomer(CUSTOMER_ID)).thenReturn(customer("verifying", null));
+        assertThat(service.submitKyb(user, validPurposeOtherAndUsOwner).submitted()).isTrue();
     }
 
     @Test
@@ -395,10 +464,18 @@ class BlindPayComplianceServiceTest {
     // ---------------------------------------------------------------------
 
     @Test
-    void updateKyb_submittedCustomer_sendsPutWithOwnerIds() {
+    void updateKyb_submittedCustomer_sendsPutWithOwnerIdsAndHandlesSuccessAndFailure() {
         // Arrange
-        givenLockedAccount(account -> submitted(account, BlindPayOnboardingStatus.RFI_REQUESTED));
-        when(gateway.getCustomer(CUSTOMER_ID)).thenReturn(customer("verifying", null));
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
+        ProviderAccountEntity account = givenLockedAccount(a -> {
+            submitted(a, BlindPayOnboardingStatus.RFI_REQUESTED);
+            a.setLastErrorCode("OLD_ERR");
+            a.setUpdatedAt(past);
+            return a;
+        });
+        when(gateway.getCustomer(CUSTOMER_ID))
+                .thenThrow(BlindPayIntegrationException.communication("sync down", null))
+                .thenReturn(customer("verifying", null));
         BlindPayKybRequest request = kybRequest(
                 owner(BlindPayApi.Customer.OwnerRole.beneficial_controlling, 100, "ub_000000000001"));
 
@@ -412,7 +489,18 @@ class BlindPayComplianceServiceTest {
         assertThat(update.getValue().taxId()).isEqualTo("11222333000181");
         assertThat(update.getValue().owners()).singleElement()
                 .satisfies(owner -> assertThat(owner.id()).isEqualTo("ub_000000000001"));
-        assertThat(response.status()).isEqualTo(BlindPayOnboardingStatus.VERIFYING);
+        assertThat(account.getLastErrorCode()).isNull();
+        assertThat(account.getUpdatedAt()).isAfter(past);
+        assertThat(response.status()).isEqualTo(BlindPayOnboardingStatus.RFI_REQUESTED);
+
+        // Update failure records lastErrorCode and updatedAt
+        account.setUpdatedAt(past);
+        org.mockito.Mockito.doThrow(BlindPayIntegrationException.response("bad update", 422, null, "t", null))
+                .when(gateway).updateCustomer(eq(CUSTOMER_ID), any(), anyString());
+        assertThatThrownBy(() -> service.updateKyb(user, request))
+                .isInstanceOf(BlindPayIntegrationException.class);
+        assertThat(account.getLastErrorCode()).isEqualTo("PROVIDER_ERROR");
+        assertThat(account.getUpdatedAt()).isAfter(past);
     }
 
     @Test
@@ -555,21 +643,111 @@ class BlindPayComplianceServiceTest {
         verifyNoInteractions(gateway);
     }
 
+    @Test
+    void getStatus_handlesUnmappedStatusBlankKycAndMissingCompany() {
+        // Unmapped status with no customerId -> TOS_PENDING
+        givenAccount(a -> { a.setStatus("UNMAPPED"); return a; });
+        assertThat(service.getStatus(user).status()).isEqualTo(BlindPayOnboardingStatus.TOS_PENDING);
+
+        // Unmapped status with customerId and blank kycStatus -> does not save, falls back to VERIFYING
+        givenAccount(a -> {
+            submitted(a, BlindPayOnboardingStatus.VERIFYING);
+            a.setStatus("UNMAPPED");
+            return a;
+        });
+        when(gateway.getCustomer(CUSTOMER_ID)).thenReturn(customer("   ", "clear"));
+        assertThat(service.getStatus(user).status()).isEqualTo(BlindPayOnboardingStatus.VERIFYING);
+        verify(providerAccountRepository, never()).save(any());
+
+        // Missing company throws NotFoundException
+        when(companyRepository.findById(company.getId())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.getStatus(user)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void initiateTerms_concurrentAccountCreation_recoversFromDuplicateOrRethrows() {
+        ProviderAccountEntity concurrent = baseAccount(a -> { a.setTosAcceptedAt(null); return a; });
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(concurrent))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty());
+        when(providerAccountRepository.save(any()))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup"));
+        when(gateway.initiateTermsOfService(any()))
+                .thenReturn(new BlindPayInitiateTosResponse("https://app.blindpay.com/e/terms"));
+
+        assertThat(service.initiateTermsOfService(user).url()).isEqualTo("https://app.blindpay.com/e/terms");
+        assertThatThrownBy(() -> service.initiateTermsOfService(user))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void accountState_belongsToAndApply_coverAllBranchesAndTimestamps() {
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime providerTime = now.minusMinutes(2);
+        ProviderAccountEntity account = ProviderAccountEntity.builder()
+                .company(company)
+                .externalCustomerId(CUSTOMER_ID)
+                .build();
+
+        assertThat(BlindPayAccountState.belongsTo(account, CUSTOMER_ID, null, null, INSTANCE_ID)).isTrue();
+        assertThat(BlindPayAccountState.belongsTo(account, null, null, null, INSTANCE_ID)).isFalse();
+        assertThat(BlindPayAccountState.belongsTo(account, "re_other", null, null, INSTANCE_ID)).isFalse();
+
+        assertThat(BlindPayAccountState.apply(account, null, "clear", true, TOS_ID, providerTime, now)).isFalse();
+        assertThat(BlindPayAccountState.apply(account, "   ", "clear", true, TOS_ID, providerTime, now)).isFalse();
+
+        assertThat(BlindPayAccountState.apply(account, "approved", "clear", false, "   ", null, now)).isTrue();
+        assertThat(account.getTosId()).isNull();
+        assertThat(account.getTosAcceptedAt()).isNull();
+        assertThat(account.getProviderUpdatedAt()).isNull();
+        assertThat(account.getSynchronizedAt()).isEqualTo(now);
+        assertThat(account.getUpdatedAt()).isEqualTo(now);
+
+        assertThat(BlindPayAccountState.apply(account, "approved", "clear", true, TOS_ID, providerTime, now)).isTrue();
+        assertThat(account.getTosId()).isEqualTo(TOS_ID);
+        assertThat(account.getTosAcceptedAt()).isEqualTo(now);
+        assertThat(account.getProviderUpdatedAt()).isEqualTo(providerTime);
+
+        OffsetDateTime later = now.plusMinutes(5);
+        assertThat(BlindPayAccountState.apply(account, "approved", "clear", true, "to_other", null, later)).isTrue();
+        assertThat(account.getTosId()).isEqualTo(TOS_ID);
+        assertThat(account.getTosAcceptedAt()).isEqualTo(now);
+        assertThat(account.getProviderUpdatedAt()).isEqualTo(providerTime);
+        assertThat(account.getSynchronizedAt()).isEqualTo(later);
+        assertThat(account.getUpdatedAt()).isEqualTo(later);
+    }
+
     // ---------------------------------------------------------------------
     // RFI
     // ---------------------------------------------------------------------
 
     @Test
-    void getRfi_pendingRequest_returnsRequestedFields() {
+    void getRfi_pendingRequest_returnsRequestedFieldsAndValidatesCustomerId() {
         givenAccount(a -> submitted(a, BlindPayOnboardingStatus.RFI_REQUESTED));
         when(gateway.getCustomerRfi(CUSTOMER_ID)).thenReturn(rfi());
 
         BlindPayRfiDetailsResponse response = service.getRfi(user);
 
         assertThat(response.open()).isTrue();
-        assertThat(response.sections()).singleElement().satisfies(section ->
-                assertThat(section.fields()).extracting(BlindPayRfiDetailsResponse.Field::key)
-                        .containsExactly("sof_doc", "sof_kind"));
+        assertThat(response.sections()).singleElement().satisfies(section -> {
+            assertThat(section.fields()).extracting(BlindPayRfiDetailsResponse.Field::key)
+                    .containsExactly("sof_doc", "sof_kind");
+            assertThat(section.fields().get(1).options())
+                    .containsExactly(new BlindPayRfiDetailsResponse.Option("Exports", "exports"));
+        });
+
+        // Null customerId on RFI is accepted; different customerId throws BlindPayIntegrationException
+        BlindPayRfiResponse nullCustomerRfi = new BlindPayRfiResponse(
+                "rf_1", null, INSTANCE_ID, "pending", List.of(), OffsetDateTime.now().plusDays(1), null, OffsetDateTime.now());
+        when(gateway.getCustomerRfi(CUSTOMER_ID)).thenReturn(nullCustomerRfi);
+        assertThat(service.getRfi(user).open()).isTrue();
+
+        BlindPayRfiResponse otherCustomerRfi = new BlindPayRfiResponse(
+                "rf_2", "re_other", INSTANCE_ID, "pending", List.of(), OffsetDateTime.now().plusDays(1), null, OffsetDateTime.now());
+        when(gateway.getCustomerRfi(CUSTOMER_ID)).thenReturn(otherCustomerRfi);
+        assertThatThrownBy(() -> service.getRfi(user)).isInstanceOf(BlindPayIntegrationException.class);
     }
 
     @Test
@@ -581,22 +759,54 @@ class BlindPayComplianceServiceTest {
     }
 
     @Test
-    void submitRfi_validResponses_areSentAndStatusIsSynchronized() {
+    void submitRfi_validResponsesAndBoundaries_areSentAndStatusIsSynchronized() {
         // Arrange
         givenAccount(a -> submitted(a, BlindPayOnboardingStatus.RFI_REQUESTED));
-        when(gateway.getCustomerRfi(CUSTOMER_ID)).thenReturn(rfi());
+        BlindPayRfiResponse rfiWithNullsAndFreeText = new BlindPayRfiResponse(
+                "rf_000000000001", CUSTOMER_ID, INSTANCE_ID, "pending",
+                List.of(
+                        new BlindPayRfiResponse.Section("Empty section", "No fields", null, null),
+                        new BlindPayRfiResponse.Section("Source of funds", "Explain", null, List.of(
+                                new BlindPayRfiResponse.Field(null, "Ignored", null, false, null, false, null),
+                                new BlindPayRfiResponse.Field("sof_doc", "Document", null, true, null, true,
+                                        "SOURCE_OF_FUNDS_DOCUMENT"),
+                                new BlindPayRfiResponse.Field("sof_kind", "Kind", null, false,
+                                        List.of(new BlindPayRfiResponse.Item("Exports", "exports")), false, null),
+                                new BlindPayRfiResponse.Field("notes", "Notes", null, false, null, false, null)))),
+                OffsetDateTime.now().plusDays(7), null, OffsetDateTime.now());
+        when(gateway.getCustomerRfi(CUSTOMER_ID)).thenReturn(rfiWithNullsAndFreeText);
         when(gateway.submitCustomerRfi(eq(CUSTOMER_ID), any(), anyString()))
                 .thenReturn(new BlindPayRfiSubmitResponse(true, null));
         when(gateway.getCustomer(CUSTOMER_ID)).thenReturn(customer("verifying", null));
 
+        String text4096 = "a".repeat(BlindPayComplianceService.MAX_RFI_TEXT_LENGTH);
+        String url2048 = "https://files.blindpay.test/" + "f".repeat(2048 - "https://files.blindpay.test/".length());
+        List<String> twentyFiles = java.util.Collections.nCopies(BlindPayComplianceService.MAX_RFI_FILES, url2048);
+
         // Act
         BlindPayComplianceStatusResponse response = service.submitRfi(user,
-                Map.of("sof_doc", List.of(FILE), "sof_kind", "exports"));
+                Map.of("sof_doc", twentyFiles, "sof_kind", "exports", "notes", text4096));
 
         // Assert
         verify(gateway).submitCustomerRfi(eq(CUSTOMER_ID),
-                eq(Map.of("sof_doc", List.of(FILE), "sof_kind", "exports")), startsWithRfiKey());
+                eq(Map.of("sof_doc", twentyFiles, "sof_kind", "exports", "notes", text4096)), startsWithRfiKey());
         assertThat(response.status()).isEqualTo(BlindPayOnboardingStatus.VERIFYING);
+
+        // Boundary rejections: 4097 chars, 21 files, 2049-char URL
+        String text4097 = "a".repeat(BlindPayComplianceService.MAX_RFI_TEXT_LENGTH + 1);
+        assertThatThrownBy(() -> service.submitRfi(user, Map.of("sof_doc", List.of(FILE), "notes", text4097)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("4096");
+
+        List<String> twentyOneFiles = java.util.Collections.nCopies(BlindPayComplianceService.MAX_RFI_FILES + 1, FILE);
+        assertThatThrownBy(() -> service.submitRfi(user, Map.of("sof_doc", twentyOneFiles)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("20 files");
+
+        String url2049 = url2048 + "x";
+        assertThatThrownBy(() -> service.submitRfi(user, Map.of("sof_doc", List.of(url2049))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("responses.sof_doc: files must be https URLs");
     }
 
     @Test

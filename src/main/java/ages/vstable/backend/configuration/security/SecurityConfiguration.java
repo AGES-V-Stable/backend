@@ -39,6 +39,7 @@ import java.util.List;
 public class SecurityConfiguration {
 
     private final JwtTokenFilter jwtTokenFilter;
+    private final InvitationRateLimitFilter invitationRateLimitFilter;
 
     private final SecurityContextRepository securityContextRepository;
     private final AuthenticationProvider authenticationProvider;
@@ -76,6 +77,10 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/login/verify-2fa").permitAll()
                         // POST /v1/onboarding/company não entra aqui: exige a conta autenticada.
                         .requestMatchers(HttpMethod.POST, "/v1/onboarding", "/v1/onboarding/account").permitAll()
+                        // Consulta e cadastro pelo convite são públicos; POST /v1/company-invitations/accept
+                        // não entra aqui: exige a sessão completa de quem já tem conta.
+                        .requestMatchers(HttpMethod.POST, "/v1/company-invitations/resolve",
+                                "/v1/company-invitations/accept-new-user").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
@@ -84,6 +89,8 @@ public class SecurityConfiguration {
                         .anyRequest().authenticated()
                 )
 
+                // Invitation attempts are limited before authentication, so attempts without a session count too
+                .addFilterBefore(invitationRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // Add JWT token filter
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .authenticationProvider(authenticationProvider)
@@ -105,6 +112,15 @@ public class SecurityConfiguration {
     @Bean
     public FilterRegistrationBean<JwtTokenFilter> jwtTokenFilterRegistration(JwtTokenFilter filter) {
         FilterRegistrationBean<JwtTokenFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /** Same as above: the invitation rate limit runs only inside the security chain. */
+    @Bean
+    public FilterRegistrationBean<InvitationRateLimitFilter> invitationRateLimitFilterRegistration(
+            InvitationRateLimitFilter filter) {
+        FilterRegistrationBean<InvitationRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

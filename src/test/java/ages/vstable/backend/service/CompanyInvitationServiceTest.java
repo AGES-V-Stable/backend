@@ -390,6 +390,7 @@ class CompanyInvitationServiceTest {
     void regenerate_pendingInvitation_replacesTheTokenAndKeepsTheHashOfTheOldOneAsHistory() {
         // Arrange
         CompanyInvitationEntity invitation = lockedInvitation(InvitationStatus.PENDING, 3, now.minusHours(2));
+        invitation.setTokenKeyVersion("v0");
         String oldHash = invitation.getTokenHash();
         UUID id = invitation.getId();
         OffsetDateTime createdAt = invitation.getCreatedAt();
@@ -402,6 +403,7 @@ class CompanyInvitationServiceTest {
         assertThat(generated.inviteUrl()).startsWith(LINK_PREFIX);
         assertThat(newToken).matches("[A-Za-z0-9_-]{43}").isNotEqualTo(TOKEN);
         assertThat(invitation.getTokenHash()).isEqualTo(tokens.hash(newToken)).isNotEqualTo(oldHash);
+        assertThat(invitation.getTokenKeyVersion()).isEqualTo("v1");
         assertThat(cipher.decrypt(invitation.getTokenCiphertext(), invitation.getTokenKeyVersion())).isEqualTo(newToken);
         assertThat(invitation.getVersion()).isEqualTo(4);
         assertThat(invitation.getUpdatedAt()).isEqualTo(now);
@@ -705,6 +707,7 @@ class CompanyInvitationServiceTest {
     private CompanyInvitationEntity lockedInvitation(InvitationStatus status, long version, OffsetDateTime createdAt) {
         CompanyInvitationEntity invitation = invitation(status, version);
         invitation.setCreatedAt(createdAt);
+        invitation.setUpdatedAt(createdAt);
         when(invitationRepository.findForUpdate(invitation.getId(), companyId)).thenReturn(Optional.of(invitation));
         lenient().when(userRepository.findById(owner.getId())).thenReturn(Optional.of(owner));
         return invitation;

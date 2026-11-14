@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -98,12 +100,18 @@ class BlindPayWebhookVerifierTest {
     }
 
     @Test
-    void rejectsMissingOrMalformedHeaders() {
+    void rejectsMissingOrMalformedHeaders() throws Exception {
         BlindPayWebhookVerifier verifier = verifierAt(SIGNED_AT);
+        String nonNumericTimestamp = "not-a-number";
+        byte[] key = Base64.getDecoder().decode(SVIX_DOCS_SAMPLE_SECRET.substring("whsec_".length()));
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        mac.update((MESSAGE_ID + "." + nonNumericTimestamp + ".").getBytes(StandardCharsets.UTF_8));
+        String signatureForNonNumericTimestamp = "v1," + Base64.getEncoder().encodeToString(mac.doFinal(BODY));
 
         assertThat(verifier.isValid(null, TIMESTAMP, SIGNATURE, BODY)).isFalse();
         assertThat(verifier.isValid(MESSAGE_ID, " ", SIGNATURE, BODY)).isFalse();
-        assertThat(verifier.isValid(MESSAGE_ID, "not-a-number", SIGNATURE, BODY)).isFalse();
+        assertThat(verifier.isValid(MESSAGE_ID, nonNumericTimestamp, signatureForNonNumericTimestamp, BODY)).isFalse();
         assertThat(verifier.isValid(MESSAGE_ID, TIMESTAMP, "", BODY)).isFalse();
         assertThat(verifier.isValid(MESSAGE_ID, TIMESTAMP, SIGNATURE, null)).isFalse();
     }

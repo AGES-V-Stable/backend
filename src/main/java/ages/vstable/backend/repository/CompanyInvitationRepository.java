@@ -26,4 +26,15 @@ public interface CompanyInvitationRepository extends JpaRepository<CompanyInvita
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from CompanyInvitationEntity i where i.id = :id and i.companyId = :companyId")
     Optional<CompanyInvitationEntity> findForUpdate(UUID id, UUID companyId);
+
+    /** Convite cujo link vigente tem este hash; links substituídos não são encontrados aqui. */
+    Optional<CompanyInvitationEntity> findByTokenHash(String tokenHash);
+
+    /**
+     * Mesmo que {@link #findByTokenHash}, travando a linha: o aceite se enfileira com regenerações e revogações
+     * do mesmo convite. Se uma regeneração vencer a corrida, o hash antigo deixa de corresponder à linha.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from CompanyInvitationEntity i where i.tokenHash = :tokenHash")
+    Optional<CompanyInvitationEntity> findByTokenHashForUpdate(String tokenHash);
 }

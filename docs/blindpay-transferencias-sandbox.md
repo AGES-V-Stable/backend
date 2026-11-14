@@ -16,7 +16,7 @@
    conta sem 2FA, 422; verificação bloqueada por tentativas, 423. O código é verificado antes de qualquer
    gravação ou chamada a provedor e só é consumido quando a confirmação é registrada. Repetir a confirmação
    pelo mesmo usuário devolve a mesma execução sem consumir outro código; outro membro recebe 409.
-   - **Avenia**: recota na subconta do usuário; se o preço piorou, responde 409 e não cria ticket. O
+   - **Avenia**: recota na subconta da empresa (ver `avenia-conta-empresarial.md`); se o preço piorou, responde 409 e não cria ticket. O
      `quoteToken` da Avenia vale 15 s, por isso a oferta exibida tem uma janela própria de confirmação
      (`QUOTE_AVENIA_CONFIRMATION_WINDOW`, padrão 60 s); a cotação nova da execução protege o preço.
    - **BlindPay, origem BRL**: cria o payin e devolve `fundingInstructions` (código PIX) com status

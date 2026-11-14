@@ -11,7 +11,6 @@ import ages.vstable.backend.dto.transfer.TransferFilter;
 import ages.vstable.backend.dto.transfer.TransferQuoteRequest;
 import ages.vstable.backend.dto.transfer.TransferQuoteResponse;
 import ages.vstable.backend.dto.transfer.TransferResponse;
-import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.BaseTransactionEntity;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
@@ -32,7 +31,6 @@ import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTransferResult;
-import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
@@ -88,8 +86,7 @@ public class TransferService {
 
     private final AveniaTransferService aveniaTransferService;
     private final BeneficiaryRepository beneficiaryRepository;
-    private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
-    private final AveniaSubAccountProvisioningService subAccountProvisioningService;
+    private final CompanyFinancialAccountService companyFinancialAccountService;
     private final BaseTransactionRepository baseTransactionRepository;
     private final ImportTransactionRepository importTransactionRepository;
     private final ExportTransactionRepository exportTransactionRepository;
@@ -100,7 +97,8 @@ public class TransferService {
      * Cotação de exibição. Usa a mesma composição de moedas e métodos da confirmação
      * ({@link #resolveRoute}); por isso exige o beneficiário e o método de pagamento que
      * serão confirmados — sem eles não há como saber a rota real, e uma cotação com
-     * métodos arbitrários não poderia ser usada na operação.
+     * métodos arbitrários não poderia ser usada na operação. A conta usada é sempre a da
+     * empresa; {@code currentUserId} identifica apenas quem pediu a cotação.
      */
     public TransferQuoteResponse quote(
             TransferQuoteRequest request, UUID currentUserId, UUID currentCompanyId) {
@@ -111,7 +109,7 @@ public class TransferService {
         BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
         TransferRoute route = resolveRoute(
                 request.getSourceCurrency(), request.getDestinationCurrency(),
-                request.getPaymentMethod(), beneficiary, currentUserId);
+                request.getPaymentMethod(), beneficiary, currentCompanyId);
 
         AveniaQuoteResponse aveniaResponse = aveniaTransferService.createQuote(
                 buildAveniaQuoteRequest(request.getAmount(), request.getAmountType(), route));
@@ -133,7 +131,7 @@ public class TransferService {
         BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
         TransferRoute route = resolveRoute(
                 request.getSourceCurrency(), request.getDestinationCurrency(),
-                request.getPaymentMethod(), beneficiary, currentUserId);
+                request.getPaymentMethod(), beneficiary, currentCompanyId);
 
         AveniaQuoteRequest quoteRequest = buildAveniaQuoteRequest(
                 request.getAmount(), request.getAmountType(), route);
@@ -168,7 +166,7 @@ public class TransferService {
         BeneficiaryEntity beneficiary = findCompanyBeneficiary(request.getBeneficiaryId(), currentCompanyId);
         TransferRoute route = resolveRoute(
                 request.getSourceCurrency(), request.getDestinationCurrency(),
-                request.getPaymentMethod(), beneficiary, currentUserId);
+                request.getPaymentMethod(), beneficiary, currentCompanyId);
 
         AveniaTransferResult result = aveniaTransferService.createTransfer(
                 buildAveniaQuoteRequest(request.getAmount(), request.getAmountType(), route),
@@ -217,20 +215,6 @@ public class TransferService {
         return transaction;
     }
 
-    /**
-     * Toda quote/ticket na Avenia precisa rodar na subconta INDIVIDUAL do usuário —
-     * a mesma usada pelo KYC ({@link AveniaKycVerificationEntity#getAveniaSubAccountId()}).
-     * Sem isso, a chamada cairia na conta principal da API key, misturando saldo/operações
-     * de usuários diferentes. Reaproveita {@link AveniaSubAccountProvisioningService} para
-     * criar a subconta sob demanda caso o KYC exista mas ainda não tenha uma provisionada.
-     */
-    private String resolveSubAccountId(UUID currentUserId) {
-        AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId)
-                .orElseThrow(() -> new UnprocessableEntityException(
-                        "Usuário não possui verificação KYC associada; conclua o KYC antes de realizar transferências"));
-        return subAccountProvisioningService.ensureSubAccountId(kyc);
-    }
-
     private BeneficiaryEntity findCompanyBeneficiary(UUID beneficiaryId, UUID currentCompanyId) {
         if (currentCompanyId == null) {
             throw new NotFoundException("Beneficiário não encontrado");
@@ -249,8 +233,11 @@ public class TransferService {
     /**
      * Regra única de composição da operação, compartilhada pela cotação de exibição e pela
      * cotação de confirmação. Toda combinação é validada antes de qualquer chamada à Avenia,
-     * inclusive o provisionamento sob demanda da subconta.
-
+     * inclusive a resolução da conta empresarial.
+     *
+     * <p>Toda quote/ticket roda na subconta Avenia da empresa ({@link CompanyFinancialAccountService}),
+     * nunca na subconta de KYC individual do usuário nem na conta principal da API key.
+     *
      * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
      * registrado ({@code CompanyEntity.availableBalanceBrl}), e é dela que depende
      * {@code settlement_amount_brl} ao persistir a transação. Ver
@@ -258,7 +245,7 @@ public class TransferService {
      */
     private TransferRoute resolveRoute(
             String requestedSourceCurrency, String requestedDestinationCurrency,
-            TransferMethod paymentMethod, BeneficiaryEntity beneficiary, UUID currentUserId) {
+            TransferMethod paymentMethod, BeneficiaryEntity beneficiary, UUID companyId) {
         String sourceCurrency = resolveSourceCurrency(requestedSourceCurrency);
         if (!DEFAULT_SOURCE_CURRENCY.equals(sourceCurrency)) {
             throw new UnprocessableEntityException(
@@ -270,7 +257,7 @@ public class TransferService {
         String outputPaymentMethod = outputPaymentMethod(beneficiary);
         validatePixInputDestination(beneficiary, destinationCurrency, outputPaymentMethod);
 
-        String subAccountId = resolveSubAccountId(currentUserId);
+        String subAccountId = companyFinancialAccountService.requireAveniaSubAccountId(companyId);
         validateBeneficiarySubAccount(beneficiary, subAccountId);
         return new TransferRoute(
                 sourceCurrency, inputPaymentMethod, destinationCurrency, outputPaymentMethod, subAccountId);
@@ -427,7 +414,7 @@ public class TransferService {
         }
         if (!beneficiary.getAveniaSubAccountId().equals(operationSubAccountId)) {
             throw new UnprocessableEntityException(
-                    "Beneficiário foi cadastrado em outra subconta Avenia; cadastre-o novamente para este usuário");
+                    "Beneficiário foi cadastrado em outra subconta Avenia; cadastre-o novamente na conta da empresa");
         }
     }
 

@@ -195,4 +195,36 @@ class ComplianceLivenessControllerTest {
                         .content(payload))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void endpoints_removedMember_returns403AccessRevokedWithoutCallingService() throws Exception {
+        UUID kycId = UUID.randomUUID();
+        ages.vstable.backend.entity.UserEntity removed = ages.vstable.backend.support.TestCompanyUsers.removedMember(
+                UUID.randomUUID(), ages.vstable.backend.entity.enums.CompanyRole.OPERATOR);
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        removed, null, removed.getAuthorities());
+
+        mockMvc.perform(post("/v1/onboarding/{id}/compliance/liveness", kycId).principal(auth))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        mockMvc.perform(get("/v1/onboarding/{id}/compliance/liveness/status", kycId)
+                        .param("livenessId", "liveness-123")
+                        .principal(auth))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        String payload = objectMapper.writeValueAsString(new HashMap<>() {{
+            put("livenessId", "liveness-123");
+        }});
+        mockMvc.perform(put("/v1/onboarding/{id}/compliance/liveness", kycId)
+                        .principal(auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REVOKED"));
+
+        org.mockito.Mockito.verifyNoInteractions(complianceLivenessService);
+    }
 }

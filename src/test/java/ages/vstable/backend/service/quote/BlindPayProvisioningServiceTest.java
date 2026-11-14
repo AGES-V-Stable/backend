@@ -51,11 +51,15 @@ class BlindPayProvisioningServiceTest {
                 .nickname("Fornecedor").accountHolderName("Fornecedor LLC")
                 .identificationDocument("123").receivingMethod(ReceivingMethod.BANK_ACCOUNT)
                 .paymentRail("international_swift").swiftBic("BOFAUS3N")
+                .accountClass("business").accountType(BankAccountType.checking)
                 .accountNumber("123456").country("Brasil").addressLine1("Rua A, 1").build();
+        BeneficiaryProviderAccountEntity unlinked = BeneficiaryProviderAccountEntity.builder()
+                .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY)
+                .status("FAILED").lastErrorCode("PREV_ERR").updatedAt(OffsetDateTime.now().minusDays(1)).build();
         when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account(company, "re_000000000001", BlindPayOnboardingStatus.APPROVED)));
         when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
-                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.empty());
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.of(unlinked));
         when(gateway.createBankAccount(eq("re_000000000001"), any(), anyString()))
                 .thenReturn(new BlindPayBankAccountResponse(
                         "ba_1", "international_swift", "Fornecedor", "approved",
@@ -66,6 +70,11 @@ class BlindPayProvisioningServiceTest {
 
         // Assert
         assertThat(bankAccountId).isEqualTo("ba_1");
+        assertThat(unlinked.getExternalBankAccountId()).isEqualTo("ba_1");
+        assertThat(unlinked.getStatus()).isEqualTo("APPROVED");
+        assertThat(unlinked.getLastErrorCode()).isNull();
+        assertThat(unlinked.getSynchronizedAt()).isNotNull();
+        assertThat(unlinked.getUpdatedAt()).isEqualTo(unlinked.getSynchronizedAt());
         verify(gateway, never()).createCustomer(any(), any());
         ArgumentCaptor<BlindPayCreateBankAccountRequest> bank =
                 ArgumentCaptor.forClass(BlindPayCreateBankAccountRequest.class);
@@ -73,6 +82,8 @@ class BlindPayProvisioningServiceTest {
                 eq("beneficiary:" + beneficiary.getId() + ":blindpay"));
         assertThat(bank.getValue().swiftCodeBic()).isEqualTo("BOFAUS3N");
         assertThat(bank.getValue().swiftBeneficiaryCountry()).isEqualTo("BR");
+        assertThat(bank.getValue().accountClass()).isEqualTo(BlindPayApi.BankAccount.AccountClass.business);
+        assertThat(bank.getValue().accountType()).isEqualTo(BlindPayApi.BankAccount.AccountType.checking);
     }
 
     @ParameterizedTest
@@ -97,23 +108,30 @@ class BlindPayProvisioningServiceTest {
 
     @Test
     void ensureBankAccount_existingAccount_checksProviderStatusBeforeQuote() {
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
         CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company).build();
         BeneficiaryProviderAccountEntity linked = BeneficiaryProviderAccountEntity.builder()
                 .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY)
-                .externalBankAccountId("ba_1").status("APPROVED").build();
+                .externalBankAccountId("ba_1").status("APPROVED").updatedAt(past).build();
         when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
         when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
                 beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.of(linked));
-        when(gateway.getBankAccount("customer-id", "ba_1")).thenReturn(
-                new BlindPayBankAccountResponse("ba_1", "pix", "Fornecedor", "verifying",
+        when(gateway.getBankAccount("customer-id", "ba_1"))
+                .thenReturn(new BlindPayBankAccountResponse("ba_1", "pix", "Fornecedor", "verifying",
+                        null, "BR", null, OffsetDateTime.now()))
+                .thenReturn(new BlindPayBankAccountResponse("ba_1", "pix", "Fornecedor", "approved",
                         null, "BR", null, OffsetDateTime.now()));
 
         assertThatThrownBy(() -> service.ensureBankAccount(company, beneficiary))
                 .isInstanceOf(BlindPayComplianceException.class);
         assertThat(linked.getStatus()).isEqualTo("VERIFYING");
+        assertThat(linked.getSynchronizedAt()).isNotNull();
+        assertThat(linked.getUpdatedAt()).isEqualTo(linked.getSynchronizedAt()).isAfter(past);
         verify(gateway, never()).createBankAccount(any(), any(), anyString());
+
+        assertThat(service.ensureBankAccount(company, beneficiary)).isEqualTo("ba_1");
     }
 
     @Test
@@ -122,10 +140,13 @@ class BlindPayProvisioningServiceTest {
         UUID companyId = UUID.randomUUID();
         CompanyEntity company = CompanyEntity.builder().id(companyId).build();
         ProviderAccountEntity account = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
+        ProviderWalletEntity existingUnlinked = ProviderWalletEntity.builder()
+                .providerAccount(account).network("polygon").status("FAILED").lastErrorCode("PREV_ERR")
+                .updatedAt(OffsetDateTime.now().minusDays(1)).build();
         when(providerAccountRepository.findByCompanyIdAndProvider(companyId, IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account));
         when(providerWalletRepository.findByProviderAccountIdAndNetwork(account.getId(), "polygon"))
-                .thenReturn(Optional.empty());
+                .thenReturn(Optional.of(existingUnlinked));
         when(gateway.createWallet(eq("customer-id"), any(), anyString()))
                 .thenReturn(new BlindPayWalletResponse(
                         "wallet-id", "V-Stable polygon", companyId + ":polygon",
@@ -145,7 +166,12 @@ class BlindPayProvisioningServiceTest {
         assertThat(request.getValue().externalId()).isEqualTo(companyId + ":polygon");
         ArgumentCaptor<ProviderWalletEntity> saved = ArgumentCaptor.forClass(ProviderWalletEntity.class);
         verify(providerWalletRepository).save(saved.capture());
+        assertThat(saved.getValue().getExternalWalletId()).isEqualTo("wallet-id");
         assertThat(saved.getValue().getAddress()).isEqualTo("0x123");
+        assertThat(saved.getValue().getStatus()).isEqualTo("CREATED");
+        assertThat(saved.getValue().getLastErrorCode()).isNull();
+        assertThat(saved.getValue().getSynchronizedAt()).isNotNull();
+        assertThat(saved.getValue().getUpdatedAt()).isEqualTo(saved.getValue().getSynchronizedAt());
     }
 
     @Test
@@ -169,9 +195,11 @@ class BlindPayProvisioningServiceTest {
     @Test
     void ensureManagedWallet_walletWithoutAddress_fetchesAndStoresAddress() {
         // Arrange
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
         CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         ProviderAccountEntity account = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
         ProviderWalletEntity stored = wallet(account, "bl_1", null);
+        stored.setUpdatedAt(past);
         when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account));
         when(providerWalletRepository.findByProviderAccountIdAndNetwork(account.getId(), "base_sepolia"))
@@ -186,6 +214,8 @@ class BlindPayProvisioningServiceTest {
         // Assert
         assertThat(wallet.address()).isEqualTo("0xfetched");
         assertThat(stored.getAddress()).isEqualTo("0xfetched");
+        assertThat(stored.getSynchronizedAt()).isNotNull();
+        assertThat(stored.getUpdatedAt()).isEqualTo(stored.getSynchronizedAt()).isAfter(past);
         verify(providerWalletRepository).save(stored);
     }
 
@@ -261,22 +291,144 @@ class BlindPayProvisioningServiceTest {
     @Test
     void ensureBankAccount_responseWithoutId_isRejected() {
         // Arrange
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
         UUID companyId = UUID.randomUUID();
         CompanyEntity company = CompanyEntity.builder().id(companyId).build();
         BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
                 .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com").build();
+        BeneficiaryProviderAccountEntity link = BeneficiaryProviderAccountEntity.builder()
+                .beneficiary(beneficiary).provider(IntegrationProvider.BLINDPAY).updatedAt(past).build();
         when(providerAccountRepository.findByCompanyIdAndProvider(companyId, IntegrationProvider.BLINDPAY))
                 .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
         when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
-                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.empty());
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.of(link));
         when(gateway.createBankAccount(eq("customer-id"), any(), anyString()))
-                .thenReturn(new BlindPayBankAccountResponse(
-                        null, "pix", "Fornecedor", "approved", null, "BR", null, OffsetDateTime.now()));
+                .thenThrow(ages.vstable.backend.exception.BlindPayIntegrationException.response(
+                        "bad bank", 400, "BANK_ERR", "t", null));
 
         // Act + Assert
         assertThatThrownBy(() -> service.ensureBankAccount(company, beneficiary))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class);
+        assertThat(link.getStatus()).isEqualTo("FAILED");
+        assertThat(link.getLastErrorCode()).isEqualTo("BANK_ERR");
+        assertThat(link.getUpdatedAt()).isAfter(past);
+    }
+
+    @Test
+    void ensureBankAccountAndWallet_handleConcurrencyCountryNormalizationNullStatusAndFailures() {
+        OffsetDateTime past = OffsetDateTime.now().minusDays(1);
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        ProviderAccountEntity acc = account(company, "customer-id", BlindPayOnboardingStatus.APPROVED);
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(acc));
+
+        // 1. Null bank account status sets CREATED before throwing compliance exception; countryCode("us") -> "US", "Brazil" -> "BR", null -> null
+        BeneficiaryEntity benUs = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com")
+                .countryCode("us").accountType(BankAccountType.savings).build();
+        BeneficiaryProviderAccountEntity linkNullStatus = BeneficiaryProviderAccountEntity.builder()
+                .beneficiary(benUs).provider(IntegrationProvider.BLINDPAY).build();
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(benUs.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(linkNullStatus));
+        when(gateway.createBankAccount(eq("customer-id"), any(), anyString()))
+                .thenReturn(new BlindPayBankAccountResponse("ba_null_st", "pix", "US", null, null, "US", null, OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.ensureBankAccount(company, benUs))
+                .isInstanceOf(BlindPayComplianceException.class);
+        assertThat(linkNullStatus.getStatus()).isEqualTo("CREATED");
+        ArgumentCaptor<BlindPayCreateBankAccountRequest> reqCaptor = ArgumentCaptor.forClass(BlindPayCreateBankAccountRequest.class);
+        verify(gateway).createBankAccount(eq("customer-id"), reqCaptor.capture(), anyString());
+        assertThat(reqCaptor.getValue().country()).isEqualTo("US");
+        assertThat(reqCaptor.getValue().accountType()).isEqualTo(BlindPayApi.BankAccount.AccountType.saving);
+
+        BeneficiaryEntity benBrazil = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com").country("Brazil").build();
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(benBrazil.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), eq("beneficiary:" + benBrazil.getId() + ":blindpay")))
+                .thenReturn(new BlindPayBankAccountResponse("ba_br", "pix", "BR", "approved", null, "BR", null, OffsetDateTime.now()));
+        assertThat(service.ensureBankAccount(company, benBrazil)).isEqualTo("ba_br");
+        verify(gateway, atLeastOnce()).createBankAccount(eq("customer-id"), reqCaptor.capture(), anyString());
+        assertThat(reqCaptor.getValue().country()).isEqualTo("BR");
+
+        BeneficiaryEntity benNullCountry = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com").country(null).countryCode(null).build();
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(benNullCountry.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), eq("beneficiary:" + benNullCountry.getId() + ":blindpay")))
+                .thenReturn(new BlindPayBankAccountResponse("ba_null_c", "pix", "NC", "approved", null, "BR", null, OffsetDateTime.now()));
+        assertThat(service.ensureBankAccount(company, benNullCountry)).isEqualTo("ba_null_c");
+        verify(gateway, atLeastOnce()).createBankAccount(eq("customer-id"), reqCaptor.capture(), anyString());
+        assertThat(reqCaptor.getValue().country()).isNull();
+
+        // 2. Concurrent bank account save recovery and failure
+        BeneficiaryEntity benConc = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("Fornecedor").paymentRail("pix").pixKey("pix@example.com").build();
+        BeneficiaryProviderAccountEntity concSaved = BeneficiaryProviderAccountEntity.builder()
+                .beneficiary(benConc).provider(IntegrationProvider.BLINDPAY).externalBankAccountId("ba_conc").build();
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(benConc.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(concSaved))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(concSaved))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), eq("beneficiary:" + benConc.getId() + ":blindpay")))
+                .thenReturn(new BlindPayBankAccountResponse("ba_conc", "pix", "C", "approved", null, "BR", null, OffsetDateTime.now()));
+        when(beneficiaryProviderAccountRepository.save(any()))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup bank"))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup bank"))
+                .thenReturn(concSaved)
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup bank"));
+        when(gateway.getBankAccount("customer-id", "ba_conc"))
+                .thenReturn(new BlindPayBankAccountResponse("ba_conc", "pix", "C", "approved", null, "BR", null, OffsetDateTime.now()))
+                .thenReturn(new BlindPayBankAccountResponse("ba_mismatch", "pix", "C", "approved", null, "BR", null, OffsetDateTime.now()));
+
+        assertThat(service.ensureBankAccount(company, benConc)).isEqualTo("ba_conc");
+        assertThatThrownBy(() -> service.ensureBankAccount(company, benConc))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class);
+        assertThatThrownBy(() -> service.ensureBankAccount(company, benConc))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        // 3. Concurrent wallet save recovery, wallet failure, and ensureManagedWallet id mismatch
+        ProviderWalletEntity concWallet = wallet(acc, "w_conc", "0x1");
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(acc.getId(), "polygon"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(concWallet))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty());
+        when(gateway.createWallet(eq("customer-id"), any(), anyString()))
+                .thenReturn(new BlindPayWalletResponse("w_conc", "V", "e", "0x1",
+                        BlindPayApi.BlockchainWallet.Network.polygon, OffsetDateTime.now()));
+        when(providerWalletRepository.save(any()))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("dup wallet"));
+
+        assertThat(service.ensureWallet(company, "polygon")).isEqualTo("w_conc");
+        assertThatThrownBy(() -> service.ensureWallet(company, "polygon"))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        // Wallet creation failure records FAILED, lastErrorCode, updatedAt
+        ProviderWalletEntity failingWallet = ProviderWalletEntity.builder()
+                .providerAccount(acc).network("polygon").updatedAt(past).build();
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(acc.getId(), "polygon"))
+                .thenReturn(Optional.of(failingWallet));
+        doReturn(failingWallet).when(providerWalletRepository).save(any());
+        when(gateway.createWallet(eq("customer-id"), any(), anyString()))
+                .thenThrow(ages.vstable.backend.exception.BlindPayIntegrationException.response(
+                        "wallet err", 500, "WALLET_ERR", "t", null));
+        assertThatThrownBy(() -> service.ensureWallet(company, "polygon"))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class);
+        assertThat(failingWallet.getStatus()).isEqualTo("FAILED");
+        assertThat(failingWallet.getLastErrorCode()).isEqualTo("WALLET_ERR");
+        assertThat(failingWallet.getUpdatedAt()).isAfter(past);
+
+        // ensureManagedWallet when second lookup finds wallet with different externalWalletId
+        when(providerWalletRepository.findByProviderAccountIdAndNetwork(acc.getId(), "base_sepolia"))
+                .thenReturn(Optional.of(wallet(acc, "bl_1", "0x1")))
+                .thenReturn(Optional.of(wallet(acc, "bl_other", "0x1")));
+        assertThatThrownBy(() -> service.ensureManagedWallet(company, "base_sepolia"))
                 .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class)
-                .hasMessage("BlindPay bank account response has no id");
+                .hasMessage("BlindPay managed wallet is not registered");
     }
 
     private ProviderAccountEntity account(
