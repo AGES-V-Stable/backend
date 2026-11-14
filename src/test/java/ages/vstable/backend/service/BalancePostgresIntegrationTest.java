@@ -128,6 +128,81 @@ class BalancePostgresIntegrationTest {
     }
 
     @Test
+    void replayOfTheSameKeyReturnsTheOriginalReceiptAndCreditsOnlyOnce() {
+        UUID company = company("1006", "3.00");
+        UserEntity owner = approvedOwner(company);
+
+        var first = service.addMockTopUp(owner, new BigDecimal("10.25"), "request-1234");
+        var second = service.addMockTopUp(owner, new BigDecimal("10.25"), "request-1234");
+
+        assertThat(first).isEqualTo(second);
+        assertThat(first.creditedAmountBrl()).isEqualTo("10.25");
+        assertThat(first.availableBalanceBrl()).isEqualTo("13.25");
+        assertThat(balanceInDatabase(company)).isEqualByComparingTo("13.25");
+        assertThat(receiptCount(company)).isEqualTo(1);
+    }
+
+    @Test
+    void reuseOfKeyWithAnotherAmountIsRejectedWithoutChangingBalance() {
+        UUID company = company("1007", "0.00");
+        UserEntity owner = approvedOwner(company);
+
+        service.addMockTopUp(owner, new BigDecimal("10.25"), "request-1234");
+
+        assertThatThrownBy(() -> service.addMockTopUp(owner, new BigDecimal("2.50"), "request-1234"))
+                .isInstanceOf(ConflictException.class)
+                .hasFieldOrPropertyWithValue("code", "MOCK_TOPUP_IDEMPOTENCY_CONFLICT");
+        assertThat(balanceInDatabase(company)).isEqualByComparingTo("10.25");
+        assertThat(receiptCount(company)).isEqualTo(1);
+    }
+
+    @Test
+    void sameKeyInTwoCompaniesIsScopedIndependently() {
+        UUID companyA = company("1008", "0.00");
+        UUID companyB = company("1009", "0.00");
+
+        service.addMockTopUp(approvedOwner(companyA), new BigDecimal("10.25"), "request-1234");
+        service.addMockTopUp(approvedOwner(companyB), new BigDecimal("2.50"), "request-1234");
+
+        assertThat(balanceInDatabase(companyA)).isEqualByComparingTo("10.25");
+        assertThat(balanceInDatabase(companyB)).isEqualByComparingTo("2.50");
+        assertThat(receiptCount(companyA)).isEqualTo(1);
+        assertThat(receiptCount(companyB)).isEqualTo(1);
+    }
+
+    @Test
+    void simultaneousRetriesWithTheSameKeyAreSerializedAndCreditedOnce() throws Exception {
+        UUID company = company("1010", "0.00");
+        UserEntity owner = approvedOwner(company);
+        int retries = 6;
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(retries);
+
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+            for (int index = 0; index < retries; index++) {
+                Callable<String> retry = () -> {
+                    if (!start.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Idempotency test did not start");
+                    }
+                    return service.addMockTopUp(owner, new BigDecimal("0.25"), "parallel-request-123")
+                            .availableBalanceBrl();
+                };
+                futures.add(pool.submit(retry));
+            }
+            start.countDown();
+            for (Future<String> future : futures) {
+                assertThat(future.get(30, TimeUnit.SECONDS)).isEqualTo("0.25");
+            }
+            assertThat(balanceInDatabase(company)).isEqualByComparingTo("0.25");
+            assertThat(receiptCount(company)).isEqualTo(1);
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void overflowRejectsCreditWithoutChangingPersistedBalance() {
         UUID company = company("1005", "9999999999999.99");
         UserEntity owner = approvedOwner(company);
@@ -153,6 +228,12 @@ class BalancePostgresIntegrationTest {
                 .thenReturn(java.util.Optional.of(AveniaKycVerificationEntity.builder()
                         .status(ComplianceStatus.APPROVED).build()));
         return user;
+    }
+
+    private int receiptCount(UUID companyId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM mock_topup_receipts WHERE company_id = ?",
+                Integer.class, companyId);
     }
 
     private BigDecimal balanceInDatabase(UUID companyId) {
