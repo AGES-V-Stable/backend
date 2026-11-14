@@ -72,4 +72,19 @@ public class CompanyInvitationEntity {
 
     @Column(name = "revoked_at")
     private OffsetDateTime revokedAt;
+
+    /** Usuário que aceitou o convite; nulo enquanto não aceito. */
+    @Column(name = "accepted_by")
+    private UUID acceptedBy;
+
+    /** Vínculo criado pelo aceite; nulo enquanto não aceito. */
+    @Column(name = "membership_id")
+    private UUID membershipId;
+
+    /** Versão dos termos aceita junto com o convite. */
+    @Column(name = "terms_version", length = 50)
+    private String termsVersion;
+
+    @Column(name = "terms_accepted_at")
+    private OffsetDateTime termsAcceptedAt;
 }

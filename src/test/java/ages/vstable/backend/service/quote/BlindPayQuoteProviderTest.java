@@ -62,9 +62,50 @@ class BlindPayQuoteProviderTest {
     }
 
     @Test
-    void supports_brlPayoutToBankAccount_returnsTrue() {
+    void supports_brlPayoutToBankAccount_returnsTrueAndValidatesAllBranches() {
         assertThat(provider.supports(context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00"))))
                 .isTrue();
+
+        // TED payin method is also supported for BRL
+        QuoteRequest tedReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "TED", "SWIFT",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, tedReq, UUID.randomUUID())))
+                .isTrue();
+
+        // Non-PIX/TED payin method (e.g. "ach" or "wire") for BRL is not supported
+        QuoteRequest achReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "ach", "SWIFT",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, achReq, UUID.randomUUID())))
+                .isFalse();
+
+        // Unsupported sourceCurrency (neither token nor BRL)
+        QuoteRequest eurReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "EUR", "USD", "PIX", "SWIFT",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, eurReq, UUID.randomUUID())))
+                .isFalse();
+
+        // Blank or null token / blockchainNetwork / targetPaymentMethod / paymentRail
+        QuoteRequest blankTokenReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "PIX", "SWIFT",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "   ", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, blankTokenReq, UUID.randomUUID())))
+                .isFalse();
+
+        QuoteRequest blankRailReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "PIX", "   ",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "USDC", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, blankRailReq, UUID.randomUUID())))
+                .isFalse();
+
+        // Invalid enum value for token or network catches IllegalArgumentException and returns false
+        QuoteRequest unknownTokenReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "BRL", "USD", "PIX", "SWIFT",
+                new BigDecimal("1000.00"), QuoteAmountSide.SOURCE, "DOGE", "polygon", false, "Invoice");
+        assertThat(provider.supports(new QuoteContext(UUID.randomUUID(), company, beneficiary, unknownTokenReq, UUID.randomUUID())))
+                .isFalse();
     }
 
     @Test
@@ -106,7 +147,35 @@ class BlindPayQuoteProviderTest {
         assertThat(payoutRequest.getValue().requestAmount()).isEqualTo(18012L);
         assertThat(result.sourceAmount()).isEqualByComparingTo("1000.00");
         assertThat(result.targetAmount()).isEqualByComparingTo("990.00");
+        assertThat(result.providerFee()).isEqualByComparingTo("3.00");
+        assertThat(result.totalFee()).isEqualByComparingTo("3.00");
         assertThat(result.metadata()).contains("fundingQuoteId", "blindpay-payin-quote", "blindpay-quote");
+
+        // Test earliestExpiration branches (first < second, second < first, first == null, second == null) and null fee component
+        Instant t1 = Instant.parse("2026-10-28T12:01:00Z");
+        Instant t2 = Instant.parse("2026-10-28T12:02:00Z");
+        when(blindPayGateway.createPayinQuote(any(), anyString()))
+                .thenReturn(new BlindPayPayinQuoteResponse("pq1", t1.toEpochMilli(), BigDecimal.ONE, BigDecimal.ONE,
+                        new BigDecimal("18012"), new BigDecimal("100000"), null, new BigDecimal("100"), new BigDecimal("50")))
+                .thenReturn(new BlindPayPayinQuoteResponse("pq2", t2.toEpochMilli(), BigDecimal.ONE, BigDecimal.ONE,
+                        new BigDecimal("18012"), new BigDecimal("100000"), null, new BigDecimal("100"), new BigDecimal("50")))
+                .thenReturn(new BlindPayPayinQuoteResponse("pq3", null, BigDecimal.ONE, BigDecimal.ONE,
+                        new BigDecimal("18012"), new BigDecimal("100000"), null, new BigDecimal("100"), new BigDecimal("50")))
+                .thenReturn(new BlindPayPayinQuoteResponse("pq4", t1.toEpochMilli(), BigDecimal.ONE, BigDecimal.ONE,
+                        new BigDecimal("18012"), new BigDecimal("100000"), null, new BigDecimal("100"), new BigDecimal("50")));
+        when(blindPayGateway.createQuote(any(), anyString()))
+                .thenReturn(blindPayQuote(new BigDecimal("18012"), new BigDecimal("99000"), t2.toEpochMilli()))
+                .thenReturn(blindPayQuote(new BigDecimal("18012"), new BigDecimal("99000"), t1.toEpochMilli()))
+                .thenReturn(blindPayQuote(new BigDecimal("18012"), new BigDecimal("99000"), t2.toEpochMilli()))
+                .thenReturn(new BlindPayQuoteResponse("q4", null, BigDecimal.ONE, BigDecimal.ONE,
+                        new BigDecimal("99000"), new BigDecimal("18012"), null, new BigDecimal("100"), new BigDecimal("50"),
+                        null, "Invoice", null));
+
+        QuoteContext ctx = context(QuoteAmountSide.SOURCE, new BigDecimal("1000.00"));
+        assertThat(provider.quote(ctx, "k1").expiresAt()).isEqualTo(OffsetDateTime.ofInstant(t1, ZoneOffset.UTC));
+        assertThat(provider.quote(ctx, "k2").expiresAt()).isEqualTo(OffsetDateTime.ofInstant(t1, ZoneOffset.UTC));
+        assertThat(provider.quote(ctx, "k3").expiresAt()).isEqualTo(OffsetDateTime.ofInstant(t2, ZoneOffset.UTC));
+        assertThat(provider.quote(ctx, "k4").expiresAt()).isEqualTo(OffsetDateTime.ofInstant(t1, ZoneOffset.UTC));
     }
 
     @Test
@@ -183,6 +252,8 @@ class BlindPayQuoteProviderTest {
         assertThat(result.sourceAmount()).isEqualByComparingTo("10.10");
         assertThat(result.targetAmount()).isEqualByComparingTo("52.40");
         assertThat(result.exchangeRate()).isEqualByComparingTo("5.1881188119");
+        assertThat(result.providerFee()).isEqualByComparingTo("1.50");
+        assertThat(result.totalFee()).isEqualByComparingTo("1.50");
         ArgumentCaptor<BlindPayQuoteRequest> payoutRequest = ArgumentCaptor.forClass(BlindPayQuoteRequest.class);
         verify(blindPayGateway).createQuote(payoutRequest.capture(), anyString());
         assertThat(payoutRequest.getValue().requestAmount()).isEqualTo(1010L);

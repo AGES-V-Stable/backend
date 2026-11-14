@@ -52,9 +52,35 @@ por mês do período, com `"0.00"` nos meses sem operação.
   arredondado por operação (HALF_UP, duas casas) e é nulo para status diferente de `SETTLED` ou
   sem valor em BRL ou tarifa; essas operações entram em `incompleteOperations`.
 
+## Câmbio atual (#55)
+
+`GET /v1/exchange-rates`: qualquer usuário autenticado (cliente PME, com ou sem empresa, e
+administrador); sem autenticação, 401. As cotações são globais, não dependem da empresa.
+
+```json
+{ "rates": [ { "baseCurrency": "BRL", "quoteCurrency": "USDC", "rate": "5.47000000",
+               "fetchedAt": "2026-11-12T22:45:00Z", "status": "CURRENT" } ],
+  "ttlSeconds": 7200 }
+```
+
+- `rate` é o `basePrice` da Avenia (preço de mercado, sem tarifas): quanto de `baseCurrency`
+  vale 1 `quoteCurrency`, string decimal com 8 casas (HALF_UP). É o mesmo valor gravado como
+  câmbio das transferências.
+- `status`: `CURRENT` (até `ttl` de idade, ou obtida agora); `STALE` (a atualização falhou, é a
+  última salva); `UNAVAILABLE` (falhou e nunca houve cotação; `rate` e `fetchedAt` nulos).
+- Cache na tabela `exchange_rate_snapshots` (uma linha por par, upsert), atualizado na leitura:
+  sem agendador nem cache em memória, porque o backend roda em Lambda. Uma cotação vencida é
+  pedida de novo à Avenia (`AveniaTransferService#createQuote`, conta principal, sem subconta,
+  sem ticket); em falha ou timeout a linha salva não é alterada. Os pares são consultados em
+  paralelo, cada um com `provider-timeout`.
+- Configuração em `exchange-rates`: `ttl` (`EXCHANGE_RATES_TTL`, padrão 2h), `provider-timeout`
+  (`EXCHANGE_RATES_PROVIDER_TIMEOUT`, 5s), `reference-amount` (`EXCHANGE_RATES_REFERENCE_AMOUNT`,
+  1000 na moeda de origem, exigido pela Avenia) e `pairs`. Pares atuais: BRL→USDC e BRL→USDT,
+  entrada PIX e saída POLYGON, as rotas que o `TransferService` executa. EUR depende de confirmar
+  as combinações da Avenia; GBP e CNY não são cotados pela Avenia.
+
 ## Decisões da entrega
 
-- Câmbio atual (#55) ficou fora desta entrega.
 - Filtros de moeda, tipo, status e beneficiário do Figma ficaram fora do escopo; existem período
   e empresa (administrador).
 - O volume é exibido em BRL (o Figma mostra USD), porque somar moedas estrangeiras diferentes não

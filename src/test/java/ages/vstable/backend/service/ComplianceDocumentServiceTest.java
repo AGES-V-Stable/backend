@@ -8,6 +8,8 @@ import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentUploadResponse;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,12 +67,18 @@ class ComplianceDocumentServiceTest {
         when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
         when(aveniaClient.iniciarDocumento("ID", true, SUB_ACCOUNT_ID)).thenReturn(aveniaResponse);
 
-        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
 
-        assertThat(resultado).isPresent();
-        assertThat(resultado.get().getId()).isEqualTo("doc-123");
-        assertThat(resultado.get().getUploadUrlFront()).isEqualTo("https://s3/front");
-        assertThat(resultado.get().getUploadUrlBack()).isEqualTo("https://s3/back");
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().getId()).isEqualTo("doc-123");
+            assertThat(resultado.get().getUploadUrlFront()).isEqualTo("https://s3/front");
+            assertThat(resultado.get().getUploadUrlBack()).isEqualTo("https://s3/back");
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "document.upload.started")
+                    .containsEntry("outcome", "success");
+        }
     }
 
     @Test
@@ -79,11 +87,17 @@ class ComplianceDocumentServiceTest {
         UUID kycId = UUID.randomUUID();
         when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.empty());
 
-        Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            Optional<DocumentUploadStartResponse> resultado = service.iniciar(kycId, USER_ID, requestPara("ID", true));
 
-        assertThat(resultado).isEmpty();
-        verifyNoInteractions(aveniaClient);
-        verifyNoInteractions(subAccountProvisioningService);
+            assertThat(resultado).isEmpty();
+            verifyNoInteractions(aveniaClient);
+            verifyNoInteractions(subAccountProvisioningService);
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "document.upload.started")
+                    .containsEntry("outcome", "unavailable");
+        }
     }
 
     @Test

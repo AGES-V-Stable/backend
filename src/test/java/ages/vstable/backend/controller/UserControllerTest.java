@@ -46,12 +46,14 @@ class UserControllerTest {
     @Test
     void me_returnsCurrentUser_whenAuthenticated() throws Exception {
         UserEntity user = companyUser();
+        user.setTwoFactorEnabled(true);
 
         mockMvc.perform(get("/v1/users/me").principal(authenticated(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(user.getId().toString()))
                 .andExpect(jsonPath("$.name").value("Usuario Teste"))
                 .andExpect(jsonPath("$.email").value("usuario@teste.com"))
+                .andExpect(jsonPath("$.twoFactorEnabled").value(true))
                 .andExpect(jsonPath("$.companyId").value(user.getCompanyId().toString()))
                 .andExpect(jsonPath("$.companyAccess").doesNotExist())
                 .andExpect(jsonPath("$.accountType").value("USER"))
@@ -120,6 +122,7 @@ class UserControllerTest {
                 .id(UUID.randomUUID())
                 .fullName("Admin V-Stable")
                 .email("admin@vstable.com")
+                .twoFactorEnabled(true)
                 .build();
 
         Authentication authentication =
@@ -127,11 +130,23 @@ class UserControllerTest {
 
         mockMvc.perform(get("/v1/users/me").principal(authentication))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(admin.getId().toString()))
                 .andExpect(jsonPath("$.name").value("Admin V-Stable"))
+                .andExpect(jsonPath("$.email").value("admin@vstable.com"))
+                .andExpect(jsonPath("$.twoFactorEnabled").value(true))
                 .andExpect(jsonPath("$.companyId").doesNotExist())
                 .andExpect(jsonPath("$.companyAccess").doesNotExist())
                 .andExpect(jsonPath("$.accountType").value("ADMIN"))
                 .andExpect(jsonPath("$.roles[0]").value("ROLE_ADMIN"));
+    }
+
+    @Test
+    void me_withUnsupportedPrincipalType_returns401() throws Exception {
+        Authentication unknownPrincipalAuth =
+                new UsernamePasswordAuthenticationToken("anonymousUser", null, java.util.List.of());
+
+        mockMvc.perform(get("/v1/users/me").principal(unknownPrincipalAuth))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -759,6 +759,7 @@ class BlindPayClientTest {
                 .andExpect(header("Authorization", "Bearer " + API_KEY))
                 .andExpect(request -> assertThat(request.getHeaders().getContentType())
                         .satisfies(type -> assertThat(type.isCompatibleWith(MediaType.MULTIPART_FORM_DATA)).isTrue()))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Content-Type: application/pdf")))
                 .andExpect(content().multipartDataContains(Map.of("bucket", "onboarding", "file", pdf)))
                 .andRespond(withSuccess("""
                         {"file_url":"https://files.blindpay.test/onboarding/document.pdf"}
@@ -918,19 +919,126 @@ class BlindPayClientTest {
 
     @Test
     void rejectsInvalidArgumentsWithoutCallingBlindPay() {
+        BlindPayUpdateCustomerRequest updateRequest = BlindPayUpdateCustomerRequest.builder()
+                .email("finance@acme.test")
+                .country("BR")
+                .build();
+        BlindPayCreateBankAccountRequest bankAccountRequest = BlindPayCreateBankAccountRequest.builder()
+                .type(BlindPayApi.BankAccount.Type.pix)
+                .name("Fornecedor")
+                .build();
+        BlindPayCreateWalletRequest walletRequest = new BlindPayCreateWalletRequest(
+                BlindPayApi.BlockchainWallet.Network.base, "ext-1", "Wallet");
+
         assertThatThrownBy(() -> client.createCustomer(null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("customer request must be provided");
+        assertThatThrownBy(() -> client.getCustomer(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.updateCustomer(" ", updateRequest, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.updateCustomer("re_000000000001", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customer update request must be provided");
+        assertThatThrownBy(() -> client.initiateTermsOfService(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("terms of service request must be provided");
+        assertThatThrownBy(() -> client.uploadFile(null, "document.pdf", "application/pdf", new byte[]{1}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bucket must be provided");
+        assertThatThrownBy(() -> client.uploadFile(
+                BlindPayApi.Upload.Bucket.onboarding, " ", "application/pdf", new byte[]{1}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("filename must be provided");
+        assertThatThrownBy(() -> client.uploadFile(
+                BlindPayApi.Upload.Bucket.onboarding, "document.pdf", " ", new byte[]{1}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("contentType must be provided");
+        assertThatThrownBy(() -> client.getCustomerRfi(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.submitCustomerRfi(" ", Map.of(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.submitCustomerRfi("re_000000000001", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RFI response must be provided");
+        assertThatThrownBy(() -> client.createBankAccount(" ", bankAccountRequest, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.createBankAccount("re_000000000001", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("bank account request must be provided");
+        assertThatThrownBy(() -> client.getBankAccount(" ", "ba_000000000001"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
         assertThatThrownBy(() -> client.getBankAccount("re_000000000001", " "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("bankAccountId must be provided");
+        assertThatThrownBy(() -> client.createWallet(" ", walletRequest, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.createWallet("re_000000000001", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("wallet request must be provided");
+        assertThatThrownBy(() -> client.getWallet(" ", "bl_000000000001"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("customerId must be provided");
+        assertThatThrownBy(() -> client.getWallet("re_000000000001", " "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("walletId must be provided");
+        assertThatThrownBy(() -> client.createQuote(null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("quote request must be provided");
+        assertThatThrownBy(() -> client.createEvmPayout(null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("payout request must be provided");
+        assertThatThrownBy(() -> client.getPayout(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("payoutId must be provided");
+        assertThatThrownBy(() -> client.createPayinQuote(null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("payin quote request must be provided");
         assertThatThrownBy(() -> client.createEvmPayin(null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("payinQuoteId must be provided");
+        assertThatThrownBy(() -> client.getPayin(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("payinId must be provided");
         assertThatThrownBy(() -> client.createQuote(quoteRequest(), "k".repeat(256)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("idempotencyKey must have at most 255 characters");
         server.verify();
+    }
+
+    @Test
+    void acceptsIdempotencyKeyAtMaximumLengthAndLogsPostProviderEvent() {
+        // Arrange
+        String maxKey = "k".repeat(255);
+        server.expect(once(), requestTo(INSTANCE_URL + "/customers"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", maxKey))
+                .andRespond(withSuccess("{\"id\":\"re_000000000001\"}", MediaType.APPLICATION_JSON));
+        MDC.put("requestId", "post-provider-request");
+
+        // Act + Assert
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            BlindPayCustomerCreatedResponse response = client.createCustomer(individualCustomer(), maxKey);
+
+            assertThat(response.id()).isEqualTo("re_000000000001");
+            assertThat(capture.events()).hasSize(1);
+            var event = capture.events().getFirst();
+            assertThat(LogCapture.fields(event))
+                    .containsEntry("provider", "blindpay")
+                    .containsEntry("operation", "post.BlindPayCustomerCreatedResponse")
+                    .containsEntry("outcome", "success")
+                    .containsEntry("status", 200);
+            server.verify();
+        } finally {
+            MDC.clear();
+        }
     }
 
     private BlindPayCreateCustomerRequest individualCustomer() {

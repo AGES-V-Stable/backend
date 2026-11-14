@@ -253,4 +253,26 @@ class JwtTokenUtilsTest {
                 String sessionToken = jwtTokenUtils.generateToken(companyUser);
                 assertThat(jwtTokenUtils.validateChallengeToken(sessionToken)).isFalse();
         }
+
+        @Test
+        void shouldReturnFalseWhenValidatingMalformedOrExpiredChallengeToken() {
+                assertThat(jwtTokenUtils.validateChallengeToken("malformed.jwt.token")).isFalse();
+
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+                String challengeToken = jwtTokenUtils.generateChallengeToken(companyUser);
+                JwtTokenUtils spyUtils = org.mockito.Mockito.spy(jwtTokenUtils);
+                org.mockito.Mockito.doReturn(new Date(0)).when(spyUtils).getExpirationDateFromToken(challengeToken);
+
+                assertThat(spyUtils.validateChallengeToken(challengeToken)).isFalse();
+        }
+
+        @Test
+        void shouldReturnFalseWhenValidatingExpiredSessionToken() {
+                UserEntity companyUser = UserEntity.builder().email(EMAIL).build();
+                String sessionToken = jwtTokenUtils.generateToken(companyUser);
+                JwtTokenUtils spyUtils = org.mockito.Mockito.spy(jwtTokenUtils);
+                org.mockito.Mockito.doReturn(new Date(0)).when(spyUtils).getExpirationDateFromToken(sessionToken);
+
+                assertThat(spyUtils.validateToken(sessionToken, companyUser)).isFalse();
+        }
 }

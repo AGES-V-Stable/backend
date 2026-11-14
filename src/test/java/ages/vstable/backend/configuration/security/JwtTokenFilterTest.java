@@ -130,6 +130,7 @@ class JwtTokenFilterTest {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         assertNotNull(authentication);
         assertInstanceOf(UsernamePasswordAuthenticationToken.class, authentication);
+        assertNotNull(authentication.getDetails());
         assertSame(user, authentication.getPrincipal());
         assertEquals(1, authentication.getAuthorities().size());
         assertTrue(authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_USER")));
@@ -260,7 +261,18 @@ class JwtTokenFilterTest {
         withBearerToken();
         when(jwtTokenUtils.getUsernameFromToken(TOKEN)).thenThrow(new MalformedJwtException("bad"));
 
-        filter.doFilter(request, response, filterChain);
+        ch.qos.logback.classic.Logger opLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ages.vstable.backend.logging.OperationalLog.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        opLogger.addAppender(appender);
+        try {
+            filter.doFilter(request, response, filterChain);
+            assertFalse(appender.list.isEmpty());
+        } finally {
+            opLogger.detachAppender(appender);
+        }
 
         verify(filterChain).doFilter(request, response);
         assertNull(SecurityContextHolder.getContext().getAuthentication());
@@ -308,5 +320,50 @@ class JwtTokenFilterTest {
         assertEquals(JwtTokenFilter.TOKEN_INVALID, request.getAttribute(JwtTokenFilter.AUTH_ERROR_ATTRIBUTE));
         verifyNoInteractions(securityContextRepository, userService);
         verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void shouldExposeExpectedUserDetailsContractForUserAndAdministratorEntities() {
+        UserEntity activeUser = UserEntity.builder()
+                .email(EMAIL)
+                .passwordHash("hashed-user-pwd")
+                .active(true)
+                .build();
+        assertEquals("hashed-user-pwd", activeUser.getPassword());
+        assertEquals(EMAIL, activeUser.getUsername());
+        assertTrue(activeUser.isAccountNonExpired());
+        assertTrue(activeUser.isAccountNonLocked());
+        assertTrue(activeUser.isCredentialsNonExpired());
+        assertTrue(activeUser.isEnabled());
+
+        UserEntity defaultActiveUser = UserEntity.builder().email(EMAIL).active(null).build();
+        assertTrue(defaultActiveUser.isEnabled());
+
+        UserEntity disabledUser = UserEntity.builder().email(EMAIL).active(false).build();
+        assertFalse(disabledUser.isEnabled());
+
+        AdministratorEntity activeAdmin = AdministratorEntity.builder()
+                .email("admin@vstable.com")
+                .passwordHash("hashed-admin-pwd")
+                .active(true)
+                .build();
+        assertEquals("hashed-admin-pwd", activeAdmin.getPassword());
+        assertEquals("admin@vstable.com", activeAdmin.getUsername());
+        assertTrue(activeAdmin.isAccountNonExpired());
+        assertTrue(activeAdmin.isAccountNonLocked());
+        assertTrue(activeAdmin.isCredentialsNonExpired());
+        assertTrue(activeAdmin.isEnabled());
+
+        AdministratorEntity nullActiveAdmin = AdministratorEntity.builder()
+                .email("admin@vstable.com")
+                .active(null)
+                .build();
+        assertTrue(nullActiveAdmin.isEnabled());
+
+        AdministratorEntity disabledAdmin = AdministratorEntity.builder()
+                .email("admin@vstable.com")
+                .active(false)
+                .build();
+        assertFalse(disabledAdmin.isEnabled());
     }
 }

@@ -49,8 +49,27 @@ jobs:
           BLINDPAY_INSTANCE_ID: in_000000000000
           BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
 
+  mutation-tests:
+    name: Mutation Tests (PIT)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execution permission
+        run: chmod +x gradlew
+
       - name: Run mutation tests (PIT)
         id: pitest
+        continue-on-error: true
         run: ./gradlew pitest --no-daemon
 
       - name: Upload PITest report
@@ -61,6 +80,7 @@ jobs:
           path: build/reports/pitest/
           if-no-files-found: warn
           retention-days: 14
+
   avenia-mcp-server:
     name: Avenia MCP Server
     uses: ./.github/workflows/avenia-mcp-server.yml

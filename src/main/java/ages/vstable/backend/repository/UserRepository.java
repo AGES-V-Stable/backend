@@ -11,5 +11,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByEmail(String email);
 
+    /** O e-mail do convite é normalizado em minúsculas; a conta pode ter sido cadastrada com outra caixa. */
+    Optional<UserEntity> findFirstByEmailIgnoreCase(String email);
+
     Optional<UserEntity> findFirstByCompanyIdOrderByCreatedAtAsc(UUID companyId);
 }

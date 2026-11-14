@@ -47,12 +47,13 @@ class CompanyMembershipServiceTest {
         when(membershipRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Act
-        service.assignOwner(userId, companyId, now);
+        CompanyMembershipEntity returned = service.assignOwner(userId, companyId, now);
 
         // Assert
         ArgumentCaptor<CompanyMembershipEntity> captor = ArgumentCaptor.forClass(CompanyMembershipEntity.class);
         verify(membershipRepository).saveAndFlush(captor.capture());
         CompanyMembershipEntity saved = captor.getValue();
+        assertThat(returned).isNotNull().isSameAs(saved);
         assertThat(saved.getUserId()).isEqualTo(userId);
         assertThat(saved.getCompanyId()).isEqualTo(companyId);
         assertThat(saved.getRole()).isEqualTo(CompanyRole.OWNER);

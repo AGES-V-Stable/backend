@@ -141,7 +141,8 @@ class DashboardControllerSecurityTest {
         mockMvc.perform(get("/v1/dashboard/remittance-volume")
                         .param("companyId", otherCompany.toString())
                         .with(companyUser(companyId)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currency").value("BRL"));
 
         verify(dashboardService).remittanceVolume(companyId, ALL_TIME);
     }
@@ -285,7 +286,9 @@ class DashboardControllerSecurityTest {
     void administrator_withoutCompany_getsTheConsolidatedView() throws Exception {
         when(dashboardService.savingsHistory(null, ALL_TIME)).thenReturn(EMPTY_SERIES);
 
-        mockMvc.perform(get("/v1/admin/dashboard/savings-history")).andExpect(status().isOk());
+        mockMvc.perform(get("/v1/admin/dashboard/savings-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currency").value("BRL"));
 
         verify(dashboardService).requireCompany(null);
         verify(dashboardService).savingsHistory(null, ALL_TIME);
@@ -297,7 +300,8 @@ class DashboardControllerSecurityTest {
         when(dashboardService.settlements(companyId, ALL_TIME, 0, 5)).thenReturn(new PageImpl<>(List.of()));
 
         mockMvc.perform(get("/v1/admin/dashboard/settlements").param("companyId", companyId.toString()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray());
 
         verify(dashboardService).requireCompany(companyId);
         verify(dashboardService).settlements(companyId, ALL_TIME, 0, 5);
@@ -342,5 +346,7 @@ class DashboardControllerSecurityTest {
         mockMvc.perform(get("/v1/admin/dashboard/transaction-volume").param("startDate", "2026-01-01"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.transactedVolumeBrl").value("2840000.00"));
+
+        verify(dashboardService).requireCompany(null);
     }
 }

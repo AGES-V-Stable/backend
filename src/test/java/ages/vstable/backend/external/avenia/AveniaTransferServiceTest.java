@@ -204,6 +204,27 @@ class AveniaTransferServiceTest {
     }
 
     @Test
+    void acceptsCustomDurationAtTenMinutesBoundaryForCurrencyConversion() {
+        // Arrange
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+        gateway.quoteResponse = quoteResponse("token");
+        gateway.ticketResponse = new AveniaTicketResponse(
+                UUID.randomUUID(), null, null, "UNPAID", null, null);
+        AveniaTicketRequest request = AveniaTicketRequest.builder()
+                .customDuration(600)
+                .build();
+
+        // Act
+        AveniaTransferResult result = service.createTransfer(quoteRequest(), request);
+
+        // Assert
+        assertEquals("token", result.quote().quoteToken());
+        assertEquals(600, gateway.receivedTicketRequest.getCustomDuration());
+        assertEquals(1, gateway.ticketCalls);
+    }
+
+    @Test
     void rejectsMissingTransferRequests() {
         AveniaTransferService service = new AveniaTransferService(new FakeAveniaGateway());
 
@@ -319,6 +340,7 @@ class AveniaTransferServiceTest {
                 quote("BRLA", "INTERNAL", ten, "USD", " ", one, null, null, List.of(), ten),
                 quote("BRLA", "INTERNAL", null, "USD", "SWIFT", one, null, null, List.of(), ten),
                 quote("BRLA", "INTERNAL", BigDecimal.ZERO, "USD", "SWIFT", one, null, null, List.of(), ten),
+                quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", BigDecimal.ZERO, null, null, List.of(), ten),
                 quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one.negate(), null, null, List.of(), ten),
                 quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), null),
                 quote("BRLA", "INTERNAL", ten, "USD", "SWIFT", one, null, null, List.of(), BigDecimal.ZERO));
@@ -381,13 +403,14 @@ class AveniaTransferServiceTest {
         AveniaTransferService service = new AveniaTransferService(gateway);
         gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
                 null, null,
-                List.of(new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("1.50"), "BRLA"),
+                List.of(new AveniaAppliedFee("Zero Fee", "desc", BigDecimal.ZERO, "BRLA"),
+                        new AveniaAppliedFee("Markup Fee", "desc", new BigDecimal("9.50"), "BRLA"),
                         new AveniaAppliedFee("Out Fee", "desc", new BigDecimal("0.50"), "brla")),
                 BigDecimal.TEN);
 
         AveniaQuoteResponse response = service.createQuote(quoteRequest());
 
-        assertEquals(2, response.appliedFees().size());
+        assertEquals(3, response.appliedFees().size());
     }
 
     @ParameterizedTest
@@ -439,6 +462,23 @@ class AveniaTransferServiceTest {
         AveniaQuoteResponse response = service.createQuote(quoteRequest());
 
         assertEquals(new BigDecimal("0.75"), response.markupAmount());
+    }
+
+    @Test
+    void acceptsZeroMarkupRegardlessOfMarkupCurrencyPresenceOrValue() {
+        // Arrange
+        FakeAveniaGateway gateway = new FakeAveniaGateway();
+        AveniaTransferService service = new AveniaTransferService(gateway);
+
+        // Act + Assert: zero markup with null currency
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                BigDecimal.ZERO, null, List.of(), BigDecimal.TEN);
+        assertEquals(BigDecimal.ZERO, service.createQuote(quoteRequest()).markupAmount());
+
+        // Act + Assert: zero markup with different currency
+        gateway.quoteResponse = quote("BRLA", "INTERNAL", BigDecimal.TEN, "USD", "SWIFT", BigDecimal.ONE,
+                BigDecimal.ZERO, "USD", List.of(), BigDecimal.TEN);
+        assertEquals(BigDecimal.ZERO, service.createQuote(quoteRequest()).markupAmount());
     }
 
     @ParameterizedTest

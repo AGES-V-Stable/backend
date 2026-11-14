@@ -215,6 +215,25 @@ class TransactionControllerSecurityTest {
         verify(transactionQueryService).getHistory(isNull(), any(), any());
     }
 
+    @Test
+    @WithMockUser(username = "admin@teste.com", roles = {"ADMIN"})
+    void testAdminAcessandoDetalhes_Success() throws Exception {
+        UUID transactionId = UUID.randomUUID();
+        ages.vstable.backend.dto.transaction.TransactionDetailsResponseDTO details =
+                ages.vstable.backend.dto.transaction.TransactionDetailsResponseDTO.builder()
+                        .id(transactionId)
+                        .status("SETTLED")
+                        .build();
+        when(transactionQueryService.getDetails(transactionId, null)).thenReturn(details);
+
+        mockMvc.perform(get("/api/admin/transferencias/{id}", transactionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(transactionId.toString()))
+                .andExpect(jsonPath("$.status").value("SETTLED"));
+
+        verify(transactionQueryService).getDetails(transactionId, null);
+    }
+
     @ParameterizedTest
     @WithAnonymousUser
     @ValueSource(strings = {"/api/transferencias", "/api/admin/transferencias"})

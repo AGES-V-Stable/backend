@@ -1,0 +1,10 @@
+[package]
+name = "vstable-media-sanitizer"
+version = "0.1.0"
+edition = "2021"
+description = "Security sanitizer for PDF injection detection and image/ZIP decompression bomb prevention"
+license = "MIT"
+
+[dependencies]
+crc32fast = "1.4"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }

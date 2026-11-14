@@ -576,6 +576,26 @@ class AveniaClientTest {
     }
 
     @Test
+    void acceptsTicketAtMaximumCustomDurationAndExternalIdLength() {
+        // Arrange
+        server.expect(once(), requestTo("https://avenia.test/v2/account/tickets/"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"UNPAID\"}", MediaType.APPLICATION_JSON));
+        AveniaTicketRequest request = AveniaTicketRequest.builder()
+                .quoteToken("quote-token")
+                .customDuration(259200)
+                .externalId("x".repeat(68))
+                .build();
+
+        // Act
+        AveniaTicketResponse response = client.createTicket(request);
+
+        // Assert
+        assertThat(response.status()).isEqualTo("UNPAID");
+        server.verify();
+    }
+
+    @Test
     void rejectsQuoteWithBothAmountsBeforeCallingAvenia() {
         assertThatThrownBy(() -> new AveniaQuoteRequest(
                 "BRLA", "INTERNAL", "USD", "SWIFT",
@@ -599,17 +619,44 @@ class AveniaClientTest {
                 "BRLA", "INTERNAL", "USD", "SWIFT",
                 BigDecimal.ZERO, null, false, false, null,
                 null, null, null, null, null, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("inputAmount must be greater than zero");
+        assertThatThrownBy(() -> new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", "USD", "SWIFT",
+                null, BigDecimal.ZERO, false, false, null,
+                null, null, null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("outputAmount must be greater than zero");
         assertThatThrownBy(() -> new AveniaQuoteRequest(
                 "BRLA", "INTERNAL", "USD", "SWIFT",
                 null, BigDecimal.valueOf(-1), false, false, null,
                 null, null, null, null, null, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("outputAmount must be greater than zero");
         assertThatThrownBy(() -> new AveniaQuoteRequest(
                 " ", "INTERNAL", "USD", "SWIFT",
                 BigDecimal.ONE, null, false, false, null,
                 null, null, null, null, null, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("inputCurrency must be provided");
+        assertThatThrownBy(() -> new AveniaQuoteRequest(
+                "BRLA", " ", "USD", "SWIFT",
+                BigDecimal.ONE, null, false, false, null,
+                null, null, null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("inputPaymentMethod must be provided");
+        assertThatThrownBy(() -> new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", " ", "SWIFT",
+                BigDecimal.ONE, null, false, false, null,
+                null, null, null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("outputCurrency must be provided");
+        assertThatThrownBy(() -> new AveniaQuoteRequest(
+                "BRLA", "INTERNAL", "USD", " ",
+                BigDecimal.ONE, null, false, false, null,
+                null, null, null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("outputPaymentMethod must be provided");
     }
 
     private AveniaQuoteRequest quoteRequest() {
@@ -754,13 +801,20 @@ class AveniaClientTest {
     void finalizarKyc_respostaComSucesso_retornaIdEEnviaBodyComDadosPessoaisEIds() {
         server.expect(once(), requestTo("https://avenia.test/v2/kyc/new-level-1/api"))
                 .andExpect(content().string(containsString("\"fullName\":\"Maria da Silva\"")))
+                .andExpect(content().string(containsString("\"dateOfBirth\":\"1990-05-20\"")))
                 .andExpect(content().string(containsString("\"countryOfTaxId\":\"BR\"")))
                 .andExpect(content().string(containsString("\"taxIdNumber\":\"52998224725\"")))
-                .andExpect(content().string(containsString("\"uploadedDocumentId\":\"doc-123\"")))
-                .andExpect(content().string(containsString("\"uploadedSelfieId\":\"liveness-123\"")))
+                .andExpect(content().string(containsString("\"email\":\"maria@empresa.com\"")))
+                .andExpect(content().string(containsString("\"phone\":\"11987654321\"")))
                 // Confirmado contra o sandbox real: a Avenia exige código ISO no "country" e
                 // rejeita "Brasil" por extenso com "InvalidFieldError: country is invalid".
                 .andExpect(content().string(containsString("\"country\":\"BR\"")))
+                .andExpect(content().string(containsString("\"state\":\"SP\"")))
+                .andExpect(content().string(containsString("\"city\":\"São Paulo\"")))
+                .andExpect(content().string(containsString("\"zipCode\":\"90000000\"")))
+                .andExpect(content().string(containsString("\"streetAddress\":\"Rua Teste, 100\"")))
+                .andExpect(content().string(containsString("\"uploadedDocumentId\":\"doc-123\"")))
+                .andExpect(content().string(containsString("\"uploadedSelfieId\":\"liveness-123\"")))
                 .andRespond(withSuccess("{\"id\":\"kyc-process-123\"}", MediaType.APPLICATION_JSON));
 
         AveniaKycResponse response = client.finalizarKyc(kycRequest(), "doc-123", "liveness-123", null);
@@ -939,6 +993,31 @@ class AveniaClientTest {
                 assertThat(LogCapture.fields(event))
                         .containsEntry("status", outcome.equals("success") ? 200 : 400);
             }
+            server.verify();
+        } finally {
+            MDC.clear();
+        }
+    }
+
+    @Test
+    void postProviderLogsAreRecordedWithOperationAndStatus() {
+        // Arrange
+        server.expect(once(), requestTo("https://avenia.test/v2/documents/"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"id\":\"liveness-123\"}", MediaType.APPLICATION_JSON));
+        MDC.put("requestId", "post-provider-request");
+
+        // Act + Assert
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            client.iniciarLiveness(null);
+
+            assertThat(capture.events()).hasSize(1);
+            var event = capture.events().getFirst();
+            assertThat(LogCapture.fields(event))
+                    .containsEntry("provider", "avenia")
+                    .containsEntry("operation", "post.AveniaDocumentResponse")
+                    .containsEntry("outcome", "success")
+                    .containsEntry("status", 200);
             server.verify();
         } finally {
             MDC.clear();

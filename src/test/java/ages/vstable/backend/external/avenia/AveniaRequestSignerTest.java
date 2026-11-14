@@ -15,12 +15,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AveniaRequestSignerTest {
 
+    private static final KeyPair RSA_KEY_PAIR = generateRsaKeyPair();
+
     private final AveniaRequestSigner signer = new AveniaRequestSigner();
 
-    private KeyPair gerarKeyPair() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        return generator.generateKeyPair();
+    private KeyPair gerarKeyPair() {
+        return RSA_KEY_PAIR;
+    }
+
+    private static KeyPair generateRsaKeyPair() {
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(2048);
+            return generator.generateKeyPair();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     // Dado timestamp, metodo, uri e chave fixos, a assinatura deve ser validavel com a chave publica correspondente
@@ -120,9 +130,7 @@ class AveniaRequestSignerTest {
                 () -> new AveniaRequestSigner().sign("1", "GET", "/resource", "", invalidKey));
     }
 
-    static KeyPair rsaKeyPair() throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        return generator.generateKeyPair();
+    static KeyPair rsaKeyPair() {
+        return RSA_KEY_PAIR;
     }
 }

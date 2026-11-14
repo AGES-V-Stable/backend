@@ -3,6 +3,9 @@ package ages.vstable.backend.service;
 import ages.vstable.backend.logging.OperationalLog;
 
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
+import ages.vstable.backend.dto.onboarding.AccountRequestDTO;
+import ages.vstable.backend.dto.onboarding.CompanyRegistrationData;
+import ages.vstable.backend.dto.onboarding.CompanyRegistrationRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
@@ -15,7 +18,6 @@ import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
-import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.utils.JwtTokenUtils;
 import lombok.RequiredArgsConstructor;
@@ -27,14 +29,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
+import java.util.UUID;
 
+/**
+ * Cadastro de representantes e empresas, em uma etapa ({@link #performOnboarding}) ou em duas: primeiro a
+ * conta ({@link #createAccount}) e depois, autenticado, a empresa ({@link #registerCompany}). Os três fluxos
+ * compartilham os mesmos passos de validação e persistência.
+ */
 @Service
 @RequiredArgsConstructor
 public class OnboardingService {
 
+    static final String EMAIL_UNIQUE_CONSTRAINT = "users_email_key";
+    /** Mesma regra sem diferenciar maiúsculas (V14); qualquer uma das duas pode ser a violada primeiro. */
+    static final String EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT = "users_email_lower_key";
+    static final String ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT = "company_memberships_active_user_key";
+
     private final UserRepository userRepository;
     private final AdministratorRepository administratorRepository;
-    private final CompanyRepository companyRepository;
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final CompanyDataValidator companyDataValidator;
     private final PasswordEncoder passwordEncoder;
@@ -43,101 +56,72 @@ public class OnboardingService {
     private final TotpService totpService;
     private final CompanyMembershipService companyMembershipService;
 
+    /** Cadastro em uma etapa: conta, empresa, vínculo de dono e KYC pendente na mesma transação. */
     @Transactional
     public OnboardingResponseDTO performOnboarding(OnboardingRequestDTO request) {
-        validatePayload(request);
-
-        CompanyNormalizedData companyData = companyDataValidator.normalize(
-                request.getLegalName(), request.getCnpj(), request.getCountry(),
-                request.getZipCode(), request.getCity(), request.getState());
-
+        validatePassword(request);
+        CompanyNormalizedData companyData = normalize(request);
         assertEmailAvailable(request.getEmail());
         companyService.assertCnpjAvailable(companyData.cnpj());
 
-        try {
-            OnboardingResponseDTO response = createCompanyUserAndKyc(request, companyData);
-            OperationalLog.milestone("onboarding.completed", "success");
-            return response;
-        } catch (DataIntegrityViolationException e) {
-            assertEmailAvailable(request.getEmail());
-            companyService.assertCnpjAvailable(companyData.cnpj());
-            throw e;
-        }
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        CompanyEntity company = companyService.saveNewCompany(companyData, request.getTradeName(), now);
+        NewAccount account = saveAccount(request, company.getId(), now);
+        AveniaKycVerificationEntity kyc = assignOwnerWithPendingKyc(account.user().getId(), company.getId(), now);
+
+        OperationalLog.milestone("onboarding.completed", "success");
+        return authenticatedResponse(account)
+                .companyId(company.getId())
+                .kycVerificationId(kyc.getId())
+                .build();
     }
 
-    private OnboardingResponseDTO createCompanyUserAndKyc(OnboardingRequestDTO request, CompanyNormalizedData companyData) {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    /**
+     * Cria só a conta de acesso, sem empresa. Ela autentica, mas qualquer dado empresarial continua negado
+     * até existir um vínculo ativo (CompanyAccess); o próximo passo é cadastrar a empresa.
+     */
+    @Transactional
+    public OnboardingResponseDTO createAccount(AccountRequestDTO request) {
+        validatePassword(request);
+        assertEmailAvailable(request.getEmail());
 
-        CompanyEntity company = companyService.buildNewCompany(companyData, request.getTradeName(), now);
-        company = companyRepository.saveAndFlush(company);
+        NewAccount account = saveAccount(request, null, OffsetDateTime.now(ZoneOffset.UTC));
 
-        UserEntity user = new UserEntity();
-        user.setCompanyId(company.getId());
-        user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
-        user.setPasswordSalt(BCrypt.gensalt());
-        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setTwoFactorEnabled(false);
+        OperationalLog.milestone("onboarding.account_created", "success");
+        return authenticatedResponse(account).build();
+    }
 
-        boolean wantsTwoFactor = Boolean.TRUE.equals(request.getEnableTwoFactor());
-        String otpauthUri = null;
-        if (wantsTwoFactor) {
-            String rawSecret = totpService.generateSecret();
-            user.setTwoFactorSecret(rawSecret);
-            otpauthUri = totpService.buildOtpAuthUri(user.getEmail(), rawSecret);
+    /**
+     * Cadastra a empresa de um usuário sem vínculo ativo e o torna proprietário dela. Um CNPJ já cadastrado
+     * é sempre conflito: conhecer o CNPJ nunca associa o usuário à empresa existente. Requisições
+     * simultâneas são decididas pelas restrições únicas do banco (CNPJ e vínculo ativo por usuário).
+     */
+    @Transactional
+    public OnboardingResponseDTO registerCompany(UserEntity currentUser, CompanyRegistrationRequestDTO request) {
+        // Vínculo ativo, ou conta legada com empresa e sem vínculo: o usuário já tem empresa.
+        if (CompanyMembershipService.currentCompanyId(currentUser) != null) {
+            throw alreadyInCompany();
         }
-        user.setCreatedAt(now);
+        CompanyNormalizedData companyData = normalize(request);
+        companyService.assertCnpjAvailable(companyData.cnpj());
+
+        UserEntity user = userRepository.findById(currentUser.getId())
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        CompanyEntity company = companyService.saveNewCompany(companyData, request.getTradeName(), now);
+        // users.company_id espelha a empresa do vínculo, como no cadastro em uma etapa; a autorização
+        // continua vindo só do vínculo.
+        user.setCompanyId(company.getId());
         user.setUpdatedAt(now);
-        user = userRepository.saveAndFlush(user);
+        userRepository.saveAndFlush(user);
+        AveniaKycVerificationEntity kyc = assignOwnerWithPendingKyc(user.getId(), company.getId(), now);
 
-        companyMembershipService.assignOwner(user.getId(), company.getId(), now);
-
-        AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
-        kyc.setUserId(user.getId());
-        kyc.setStatus(ComplianceStatus.PENDING);
-        kyc.setResponsePayload("{}");
-        kyc.setCreatedAt(now);
-        kyc.setUpdatedAt(now);
-        kyc = aveniaKycVerificationRepository.save(kyc);
-
+        OperationalLog.milestone("onboarding.company_registered", "success");
         return OnboardingResponseDTO.builder()
                 .userId(user.getId())
                 .companyId(company.getId())
                 .kycVerificationId(kyc.getId())
-                .accessToken(jwtTokenUtils.generateToken(user))
-                .twoFactorSetupRequired(wantsTwoFactor)
-                .otpauthUri(otpauthUri)
                 .build();
-    }
-
-    private void validatePayload(OnboardingRequestDTO request) {
-        if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
-            throw new UnprocessableEntityException("Password and confirmation do not match");
-        }
-        if (!isStrongPassword(request.getPassword())) {
-            throw new UnprocessableEntityException("Password must be at least 8 characters long and include a number and a special character");
-        }
-    }
-
-    private static boolean isStrongPassword(String password) {
-        if (password.length() < 8) {
-            return false;
-        }
-
-        boolean hasNumber = false;
-        boolean hasSpecialCharacter = false;
-        for (int i = 0; i < password.length(); i++) {
-            char character = password.charAt(i);
-            if (character == '\n' || character == '\r' || character == '\u0085'
-                    || character == '\u2028' || character == '\u2029') {
-                return false;
-            }
-            hasNumber |= character >= '0' && character <= '9';
-            hasSpecialCharacter |= !((character >= 'a' && character <= 'z')
-                    || (character >= 'A' && character <= 'Z')
-                    || (character >= '0' && character <= '9'));
-        }
-        return hasNumber && hasSpecialCharacter;
     }
 
     @Transactional(readOnly = true)
@@ -155,14 +139,101 @@ public class OnboardingService {
                 .build();
     }
 
+    private record NewAccount(UserEntity user, String otpauthUri) {
+    }
+
+    private NewAccount saveAccount(AccountRequestDTO request, UUID companyId, OffsetDateTime now) {
+        UserEntity user = new UserEntity();
+        user.setCompanyId(companyId);
+        user.setFullName(request.getFullName());
+        user.setEmail(request.getEmail());
+        user.setPasswordSalt(BCrypt.gensalt());
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setTwoFactorEnabled(false);
+
+        String otpauthUri = null;
+        if (Boolean.TRUE.equals(request.getEnableTwoFactor())) {
+            String rawSecret = totpService.generateSecret();
+            user.setTwoFactorSecret(rawSecret);
+            otpauthUri = totpService.buildOtpAuthUri(user.getEmail(), rawSecret);
+        }
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+        try {
+            return new NewAccount(userRepository.saveAndFlush(user), otpauthUri);
+        } catch (DataIntegrityViolationException e) {
+            // Cadastro simultâneo com o mesmo e-mail: a restrição única do banco decide.
+            throw conflictOn(e, new ConflictException("Email already registered"),
+                    EMAIL_UNIQUE_CONSTRAINT, EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT);
+        }
+    }
+
+    /** Torna o usuário proprietário da empresa e abre o KYC do responsável, ponto de partida do documento e liveness. */
+    private AveniaKycVerificationEntity assignOwnerWithPendingKyc(UUID userId, UUID companyId, OffsetDateTime now) {
+        try {
+            companyMembershipService.assignOwner(userId, companyId, now);
+        } catch (DataIntegrityViolationException e) {
+            // Outra requisição do mesmo usuário criou o vínculo ativo primeiro.
+            throw conflictOn(e, alreadyInCompany(), ACTIVE_MEMBERSHIP_UNIQUE_CONSTRAINT);
+        }
+
+        AveniaKycVerificationEntity kyc = new AveniaKycVerificationEntity();
+        kyc.setUserId(userId);
+        kyc.setStatus(ComplianceStatus.PENDING);
+        kyc.setResponsePayload("{}");
+        kyc.setCreatedAt(now);
+        kyc.setUpdatedAt(now);
+        return aveniaKycVerificationRepository.save(kyc);
+    }
+
+    /** Resposta de quem acabou de criar a conta: o token já autentica e, se pedido, o 2FA aguarda ativação. */
+    private OnboardingResponseDTO.OnboardingResponseDTOBuilder authenticatedResponse(NewAccount account) {
+        return OnboardingResponseDTO.builder()
+                .userId(account.user().getId())
+                .accessToken(jwtTokenUtils.generateToken(account.user()))
+                .twoFactorSetupRequired(account.otpauthUri() != null)
+                .otpauthUri(account.otpauthUri());
+    }
+
+    private CompanyNormalizedData normalize(CompanyRegistrationData company) {
+        return companyDataValidator.normalize(company.getLegalName(), company.getCnpj(), company.getCountry(),
+                company.getZipCode(), company.getCity(), company.getState());
+    }
+
+    private void validatePassword(AccountRequestDTO request) {
+        String password = request.getPassword();
+        if (password == null || !password.equals(request.getConfirmPassword())) {
+            throw new UnprocessableEntityException("Password and confirmation do not match");
+        }
+        if (!PasswordPolicy.isStrong(password)) {
+            throw new UnprocessableEntityException("Password must be at least 8 characters long, include a number "
+                    + "and a special character, have no line breaks and be at most 72 bytes long");
+        }
+    }
+
     private static boolean isPresent(String value) {
         return value != null && !value.isBlank();
     }
 
     private void assertEmailAvailable(String email) {
         // Admin e-mails are also reserved so that a login e-mail always maps to a single account.
-        if (userRepository.existsByEmail(email) || administratorRepository.existsByEmail(email)) {
+        if (userRepository.findFirstByEmailIgnoreCase(email).isPresent()
+                || administratorRepository.existsByEmailIgnoreCase(email)) {
             throw new ConflictException("Email already registered");
         }
+    }
+
+    private static ConflictException alreadyInCompany() {
+        return new ConflictException("USER_ALREADY_IN_COMPANY", "User already belongs to a company");
+    }
+
+    /**
+     * Só a restrição única esperada vira conflito; qualquer outra falha de integridade é um erro real e
+     * segue adiante. Nada é consultado depois da falha, porque o PostgreSQL já abortou a transação.
+     */
+    private static RuntimeException conflictOn(DataIntegrityViolationException e, ConflictException conflict,
+                                               String... constraints) {
+        String cause = e.getMostSpecificCause().getMessage();
+        return cause != null && Arrays.stream(constraints).anyMatch(cause::contains) ? conflict : e;
     }
 }

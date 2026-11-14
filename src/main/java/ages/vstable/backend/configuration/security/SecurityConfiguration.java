@@ -39,6 +39,7 @@ import java.util.List;
 public class SecurityConfiguration {
 
     private final JwtTokenFilter jwtTokenFilter;
+    private final InvitationRateLimitFilter invitationRateLimitFilter;
 
     private final SecurityContextRepository securityContextRepository;
     private final AuthenticationProvider authenticationProvider;
@@ -74,7 +75,12 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/auth/login", "/v1/auth/login/verify-2fa").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/v1/onboarding").permitAll()
+                        // POST /v1/onboarding/company não entra aqui: exige a conta autenticada.
+                        .requestMatchers(HttpMethod.POST, "/v1/onboarding", "/v1/onboarding/account").permitAll()
+                        // Consulta e cadastro pelo convite são públicos; POST /v1/company-invitations/accept
+                        // não entra aqui: exige a sessão completa de quem já tem conta.
+                        .requestMatchers(HttpMethod.POST, "/v1/company-invitations/resolve",
+                                "/v1/company-invitations/accept-new-user").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
@@ -83,6 +89,8 @@ public class SecurityConfiguration {
                         .anyRequest().authenticated()
                 )
 
+                // Invitation attempts are limited before authentication, so attempts without a session count too
+                .addFilterBefore(invitationRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // Add JWT token filter
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .authenticationProvider(authenticationProvider)
@@ -108,6 +116,15 @@ public class SecurityConfiguration {
         return registration;
     }
 
+    /** Same as above: the invitation rate limit runs only inside the security chain. */
+    @Bean
+    public FilterRegistrationBean<InvitationRateLimitFilter> invitationRateLimitFilterRegistration(
+            InvitationRateLimitFilter filter) {
+        FilterRegistrationBean<InvitationRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
     /** Single CORS policy for the whole API, configured through CORS_ALLOWED_ORIGINS. */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -118,10 +135,13 @@ public class SecurityConfiguration {
                 .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-                HttpHeaders.ACCEPT, "X-Requested-With", "X-Request-ID", "X-Current-Totp"));
+                HttpHeaders.ACCEPT, "X-Requested-With", "X-Request-ID", "X-Current-Totp", HttpHeaders.IF_MATCH));
         // The login token is returned in the Authorization response header; the receipt download
         // name comes from Content-Disposition, which a cross-origin frontend can only read if exposed
-        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION, "X-Request-ID"));
+        // ETag carries the version of a member or invitation, which the frontend sends back as If-Match;
+        // Retry-After tells it when an invitation link may be regenerated again.
+        config.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_DISPOSITION,
+                HttpHeaders.ETAG, HttpHeaders.RETRY_AFTER, "X-Request-ID"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

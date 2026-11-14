@@ -6,6 +6,7 @@ import ages.vstable.backend.entity.*;
 import ages.vstable.backend.entity.enums.*;
 import ages.vstable.backend.exception.BlindPayComplianceException;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.logging.LogCapture;
 import ages.vstable.backend.logging.LogContext;
@@ -282,6 +283,114 @@ class QuoteOrchestratorServiceTest {
         ArgumentCaptor<QuoteContext> context = ArgumentCaptor.forClass(QuoteContext.class);
         verify(avenia).quote(context.capture(), any());
         assertThat(context.getValue().requestedBy()).isEqualTo(user.getId());
+    }
+
+    @Test
+    void quote_normalizesTokenAndNetworkAndTracksStatusMetadataLatencyAndTruncation() {
+        // Arrange: 1 provider succeeds with null metadata and >1ms latency, 1 fails with 501-char message
+        when(avenia.provider()).thenReturn(IntegrationProvider.AVENIA);
+        when(blindPay.provider()).thenReturn(IntegrationProvider.BLINDPAY);
+        when(avenia.supports(any())).thenReturn(true);
+        when(blindPay.supports(any())).thenReturn(true);
+        when(avenia.quote(any(), any())).thenAnswer(inv -> {
+            Thread.sleep(2);
+            return new ProviderQuoteResult(IntegrationProvider.AVENIA, "ext-a",
+                    new BigDecimal("100.00"), new BigDecimal("19.00"), BigDecimal.ONE,
+                    BigDecimal.ONE, BigDecimal.ONE, OffsetDateTime.now().plusSeconds(15), null);
+        });
+        String msg501 = "e".repeat(501);
+        when(blindPay.quote(any(), any())).thenThrow(new RuntimeException(msg501));
+
+        QuoteRequest trimmedReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "usdc", "usd", "BLOCKCHAIN", "SWIFT",
+                new BigDecimal("100.00"), QuoteAmountSide.SOURCE, "  usdc  ", "  BASE  ", false, "Invoice");
+
+        // Act
+        service.quote(user, trimmedReq);
+
+        // Assert PARTIAL status, normalized fields, metadata fallback, latency > 0 and < 5000, truncated failureMessage
+        ArgumentCaptor<QuoteRequestEntity> reqCaptor = ArgumentCaptor.forClass(QuoteRequestEntity.class);
+        verify(quoteRequestRepository, atLeastOnce()).save(reqCaptor.capture());
+        QuoteRequestEntity savedReq = reqCaptor.getValue();
+        assertThat(savedReq.getStatus()).isEqualTo("PARTIAL");
+        assertThat(savedReq.getToken()).isEqualTo("USDC");
+        assertThat(savedReq.getBlockchainNetwork()).isEqualTo("base");
+
+        ArgumentCaptor<ProviderQuoteEntity> quoteCaptor = ArgumentCaptor.forClass(ProviderQuoteEntity.class);
+        verify(providerQuoteRepository, times(2)).save(quoteCaptor.capture());
+        ProviderQuoteEntity aveniaEntity = quoteCaptor.getAllValues().stream()
+                .filter(q -> q.getProvider() == IntegrationProvider.AVENIA).findFirst().orElseThrow();
+        ProviderQuoteEntity blindPayEntity = quoteCaptor.getAllValues().stream()
+                .filter(q -> q.getProvider() == IntegrationProvider.BLINDPAY).findFirst().orElseThrow();
+
+        assertThat(aveniaEntity.getProviderMetadata()).isEqualTo("{}");
+        assertThat(aveniaEntity.getLatencyMs()).isGreaterThan(0L).isLessThan(5000L);
+        assertThat(blindPayEntity.getFailureMessage()).hasSize(500).isEqualTo(msg501.substring(0, 500));
+    }
+
+    @Test
+    void quote_coversCompletedAndFailedStatusesBlankNormalizationZeroAmountsAndTruncationBoundaries() {
+        // 1. Both providers succeed, one with 0 targetAmount (unusable), one valid with custom metadata -> COMPLETED
+        ProviderQuoteResult zeroTarget = new ProviderQuoteResult(
+                IntegrationProvider.AVENIA, "ext-zero", new BigDecimal("100.00"), BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO, OffsetDateTime.now().plusSeconds(15), "{\"a\":1}");
+        ProviderQuoteResult validWithMeta = new ProviderQuoteResult(
+                IntegrationProvider.BLINDPAY, "ext-ok", new BigDecimal("100.00"), new BigDecimal("19.00"),
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO, OffsetDateTime.now().plusSeconds(15), "{\"b\":2}");
+        configureSuccessfulProviders(zeroTarget, validWithMeta);
+
+        QuoteRequest blankTokenReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "USDC", "USD", "BLOCKCHAIN", "SWIFT",
+                new BigDecimal("100.00"), QuoteAmountSide.SOURCE, "   ", "   ", false, "Invoice");
+        service.quote(user, blankTokenReq);
+
+        ArgumentCaptor<QuoteRequestEntity> reqCaptor = ArgumentCaptor.forClass(QuoteRequestEntity.class);
+        verify(quoteRequestRepository, atLeastOnce()).save(reqCaptor.capture());
+        assertThat(reqCaptor.getValue().getStatus()).isEqualTo("COMPLETED");
+        assertThat(reqCaptor.getValue().getToken()).isNull();
+        assertThat(reqCaptor.getValue().getBlockchainNetwork()).isNull();
+
+        ArgumentCaptor<ProviderQuoteEntity> quoteCaptor = ArgumentCaptor.forClass(ProviderQuoteEntity.class);
+        verify(providerQuoteRepository, atLeastOnce()).save(quoteCaptor.capture());
+        assertThat(quoteCaptor.getValue().getProviderMetadata()).isEqualTo("{\"b\":2}");
+
+        // 2. TARGET side with 0 sourceAmount (unusable) and null token/network, plus 500-char & null error messages -> FAILED
+        ProviderQuoteResult zeroSource = new ProviderQuoteResult(
+                IntegrationProvider.AVENIA, "ext-zero-src", BigDecimal.ZERO, new BigDecimal("100.00"),
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO, OffsetDateTime.now().plusSeconds(15), "{}");
+        String msg500 = "m".repeat(500);
+        when(avenia.quote(any(), any())).thenReturn(zeroSource);
+        when(blindPay.quote(any(), any()))
+                .thenThrow(new RuntimeException(msg500))
+                .thenThrow(new RuntimeException((String) null));
+
+        QuoteRequest nullTokenTargetReq = new QuoteRequest(
+                beneficiary.getId(), QuoteDirection.PAYOUT, "USDC", "USD", "BLOCKCHAIN", "SWIFT",
+                new BigDecimal("100.00"), QuoteAmountSide.TARGET, null, null, false, "Invoice");
+
+        assertThatThrownBy(() -> service.quote(user, nullTokenTargetReq))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(quoteRequestRepository, atLeastOnce()).save(reqCaptor.capture());
+        assertThat(reqCaptor.getValue().getStatus()).isEqualTo("FAILED");
+        assertThat(reqCaptor.getValue().getToken()).isNull();
+        assertThat(reqCaptor.getValue().getBlockchainNetwork()).isNull();
+
+        assertThatThrownBy(() -> service.quote(user, nullTokenTargetReq))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(providerQuoteRepository, atLeastOnce()).save(quoteCaptor.capture());
+        assertThat(quoteCaptor.getAllValues()).extracting(ProviderQuoteEntity::getFailureMessage)
+                .contains(msg500, (String) null);
+
+        // 3. Missing beneficiary or missing company throws NotFoundException
+        when(beneficiaryRepository.findByIdAndCompanyId(any(), any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.quote(user, request()))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Beneficiary not found");
+
+        when(companyRepository.findById(any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.quote(user, request()))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Company not found");
     }
 
     private void configureSuccessfulProviders(ProviderQuoteResult aveniaResult, ProviderQuoteResult blindPayResult) {

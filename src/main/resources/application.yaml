@@ -28,6 +28,11 @@ spring:
     driver-class-name: org.postgresql.Driver
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
+    hikari:
+      data-source-properties:
+        # O PostgreSQL anexa à mensagem de erro os valores da linha ("Key (...)=(e-mail) already exists"),
+        # e o Hibernate registra essa mensagem; sem isso, dados pessoais iriam para os logs.
+        logServerErrorDetail: false
   jpa:
     open-in-view: false
     show-sql: false
@@ -57,6 +62,20 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  invitation:
+    # Chave AES de 32 bytes em Base64 (fora do banco) e origem pública do frontend de cada ambiente.
+    encryption-key: ${INVITATION_ENCRYPTION_KEY}
+    key-version: ${INVITATION_KEY_VERSION:v1}
+    frontend-origin: ${INVITATION_FRONTEND_ORIGIN}
+    rate-limit:
+      # Proxies confiáveis que acrescentam ao X-Forwarded-For (veja ClientIpResolver). 0 ignora o cabeçalho.
+      trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
+  # Termos aceitos no aceite do convite. Trocar a versão exige novo aceite de quem ainda não aceitou.
+  # Os padrões abaixo são só para desenvolvimento; o perfil lambda exige valores explícitos.
+  terms:
+    version: ${TERMS_VERSION:v1}
+    terms-url: ${TERMS_URL:${INVITATION_FRONTEND_ORIGIN}/termos-de-uso}
+    privacy-url: ${PRIVACY_URL:${INVITATION_FRONTEND_ORIGIN}/politica-de-privacidade}
 
 api:
   auth:
@@ -86,6 +105,29 @@ quotes:
     # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
     confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
 
+# Crédito simulado de saldo (cicd#24): sem dinheiro real, então desligado por padrão. O perfil dev liga;
+# homologação liga com BALANCE_SIMULATED_DEPOSITS_ENABLED=true. Nunca ligar em produção.
+balance:
+  simulated-deposits:
+    enabled: ${BALANCE_SIMULATED_DEPOSITS_ENABLED:false}
+
+# Cotações de referência do dashboard (cicd#55): cache no banco, atualizado na leitura
+# quando passa do TTL. Só rotas que a Avenia cota neste sistema (BRL entra via PIX e sai
+# em token numa rede de carteira); a taxa exibida é o basePrice, sem tarifas.
+exchange-rates:
+  ttl: ${EXCHANGE_RATES_TTL:2h}
+  provider-timeout: ${EXCHANGE_RATES_PROVIDER_TIMEOUT:5s}
+  reference-amount: ${EXCHANGE_RATES_REFERENCE_AMOUNT:1000}
+  pairs:
+    - base-currency: BRL
+      quote-currency: USDC
+      input-payment-method: PIX
+      output-payment-method: POLYGON
+    - base-currency: BRL
+      quote-currency: USDT
+      input-payment-method: PIX
+      output-payment-method: POLYGON
+
 # Economia estimada do dashboard: custo de câmbio bancário de referência, em pontos percentuais.
 dashboard:
   savings:
@@ -100,6 +142,15 @@ transfers:
     stale-after: ${TRANSFERS_RECONCILIATION_STALE_AFTER:30s}
     batch-size: ${TRANSFERS_RECONCILIATION_BATCH_SIZE:50}
 
+ai:
+  support:
+    provider: ${AI_SUPPORT_PROVIDER:gemini}
+    api-key: ${AI_SUPPORT_API_KEY:}
+    gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-flash-lite-latest}
+    gemini-base-url: ${AI_SUPPORT_GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    deepseek-model: ${AI_SUPPORT_DEEPSEEK_MODEL:deepseek-chat}
+    deepseek-base-url: ${AI_SUPPORT_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+
 ---
 spring:
   config:
@@ -109,6 +160,10 @@ spring:
 app:
   seed:
     password: ${DEV_SEED_PASSWORD:}
+
+balance:
+  simulated-deposits:
+    enabled: ${BALANCE_SIMULATED_DEPOSITS_ENABLED:true}
 
 ---
 spring:
@@ -121,6 +176,17 @@ spring:
       maximum-pool-size: 2
   flyway:
     enabled: false
+
+# Sem padrão na Lambda: a aplicação não sobe sem a versão publicada dos termos e sem a topologia de proxies
+# definida para o ambiente, para que valores provisórios nunca sejam usados em staging ou produção.
+app:
+  invitation:
+    rate-limit:
+      trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}
+  terms:
+    version: ${TERMS_VERSION}
+    terms-url: ${TERMS_URL}
+    privacy-url: ${PRIVACY_URL}
 
 ---
 spring:

@@ -9,5 +9,7 @@ import java.util.UUID;
 public interface AdministratorRepository extends JpaRepository<AdministratorEntity, UUID> {
     boolean existsByEmail(String email);
 
+    boolean existsByEmailIgnoreCase(String email);
+
     Optional<AdministratorEntity> findByEmail(String email);
 }
