@@ -110,7 +110,7 @@ class TotpReplayStoreIntegrationTest {
         AtomicInteger blocked = new AtomicInteger();
 
         try (var executor = Executors.newFixedThreadPool(requests)) {
-            List<java.util.concurrent.Future<?>> futures = java.util.stream.IntStream.range(0, requests)
+            List<java.util.concurrent.Future<Object>> futures = java.util.stream.IntStream.range(0, requests)
                     .mapToObj(i -> executor.submit(() -> {
                         start.await();
                         try {
