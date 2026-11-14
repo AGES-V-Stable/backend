@@ -123,6 +123,18 @@ class BalanceControllerSecurityTest {
     }
 
     @Test
+    void addMockTopUp_withoutAuthenticationReturns401() throws Exception {
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"amountBrl": "10.25"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(balanceService);
+    }
+
+    @Test
     void addSimulatedBalance_withoutAuthenticationReturns401() throws Exception {
         mockMvc.perform(post("/v1/balance/simulated-deposits")
                         .contentType(MediaType.APPLICATION_JSON)
