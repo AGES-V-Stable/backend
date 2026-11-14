@@ -24,6 +24,7 @@ public class AveniaTransferService {
         if (request == null) {
             throw new IllegalArgumentException("quote request must be provided");
         }
+        requireSubAccount(request);
         return requireValidQuote(aveniaGateway.createQuote(request), request);
     }
 
@@ -51,6 +52,7 @@ public class AveniaTransferService {
         if (ticketRequest == null) {
             throw new IllegalArgumentException("ticket request must be provided");
         }
+        requireSubAccount(quoteRequest);
         validateExternalId(ticketRequest);
         validateCustomDuration(quoteRequest, ticketRequest);
         AveniaQuoteResponse quote = requireValidQuote(aveniaGateway.createQuote(quoteRequest), quoteRequest);
@@ -95,6 +97,16 @@ public class AveniaTransferService {
         }
         validateFinancialData(quote);
         return quote;
+    }
+
+    /**
+     * Sem subAccountId a Avenia executaria a quote/ticket na conta principal da API key, que não
+     * pertence a nenhuma empresa cliente. A chamada é recusada antes de chegar ao provedor.
+     */
+    private void requireSubAccount(AveniaQuoteRequest request) {
+        if (request.subAccountId() == null || request.subAccountId().isBlank()) {
+            throw new IllegalArgumentException("subAccountId must be provided for quotes and tickets");
+        }
     }
 
     private void validateExternalId(AveniaTicketRequest ticketRequest) {

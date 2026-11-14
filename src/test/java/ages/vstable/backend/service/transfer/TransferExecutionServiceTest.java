@@ -14,6 +14,7 @@ import ages.vstable.backend.entity.ProviderQuoteEntity;
 import ages.vstable.backend.entity.QuoteRequestEntity;
 import ages.vstable.backend.entity.TransferExecutionEntity;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.QuoteAmountSide;
 import ages.vstable.backend.entity.enums.TransactionStatus;
@@ -27,8 +28,10 @@ import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.ImportTransactionRepository;
 import ages.vstable.backend.repository.ProviderQuoteRepository;
 import ages.vstable.backend.repository.TransferExecutionRepository;
+import ages.vstable.backend.service.CompanyFinancialAccountService;
 import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.service.quote.ProviderQuoteStatus;
+import ages.vstable.backend.support.TestCompanyUsers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,6 +81,7 @@ class TransferExecutionServiceTest {
     @Mock private TransferService transferService;
     @Mock private BlindPayExecutionProcessor processor;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private CompanyFinancialAccountService companyFinancialAccountService;
 
     private final Map<UUID, TransferExecutionEntity> executions = new HashMap<>();
     private TransferExecutionService service;
@@ -90,6 +94,7 @@ class TransferExecutionServiceTest {
     void setUp() {
         service = new TransferExecutionService(providerQuoteRepository, executionRepository,
                 importTransactionRepository, transferService, processor,
+                companyFinancialAccountService,
                 transactionManager, Clock.fixed(NOW, ZoneOffset.UTC));
 
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
@@ -374,6 +379,66 @@ class TransferExecutionServiceTest {
         ArgumentCaptor<CreateTransferRequest> request = ArgumentCaptor.forClass(CreateTransferRequest.class);
         verify(transferService).createConfirmedOffer(request.capture(), any(), any(), any());
         assertThat(request.getValue().getDescription()).isNull();
+    }
+
+    @Test
+    void confirm_operatorConfirmsOfferQuotedByOwner_executesOnCompanyAccountWithOperatorAsActor() {
+        // Arrange: a cotação foi pedida pelo proprietário (user); quem confirma é o operador da mesma empresa.
+        aveniaOffer();
+        UserEntity operator = TestCompanyUsers.member(company.getId(), CompanyRole.OPERATOR);
+        when(transferService.createConfirmedOffer(any(), any(), any(), any())).thenAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            return new TransferService.ExecutedTransfer(UUID.randomUUID(), TransactionStatus.AWAITING_PAYMENT,
+                    UUID.randomUUID());
+        });
+
+        // Act
+        TransferExecutionResponse response = service.confirm(operator, offer.getId(), confirmation("1000.00", "180.50"));
+
+        // Assert
+        verify(transferService).createConfirmedOffer(any(), eq(operator.getId()), eq(company.getId()), any());
+        assertThat(executions.get(response.executionId()).getRequestedBy()).isEqualTo(operator.getId());
+        assertThat(executions.get(response.executionId()).getCompanyId()).isEqualTo(company.getId());
+    }
+
+    @Test
+    void confirm_aveniaOfferOfCompanyWithoutAccount_isRejectedBeforeRegisteringOrConsumingTheOffer() {
+        // Arrange
+        aveniaOffer();
+        when(companyFinancialAccountService.requireAveniaSubAccountId(company.getId()))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida"));
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(UnprocessableEntityException.class);
+        assertThat(executions).isEmpty();
+        assertThat(offer.getStatus()).isEqualTo(ProviderQuoteStatus.SELECTED);
+        verify(providerQuoteRepository, never()).save(any());
+        verify(executionRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(transferService, processor, importTransactionRepository);
+    }
+
+    @Test
+    void confirm_blindPayOffer_doesNotDependOnTheAveniaAccount() {
+        // Act
+        service.confirm(user, offer.getId(), confirmation("1000.00", "990.00"));
+
+        // Assert
+        verifyNoInteractions(companyFinancialAccountService);
+    }
+
+    @Test
+    void confirm_removedMember_cannotConfirmTheCompanyOffer() {
+        // Arrange
+        aveniaOffer();
+        UserEntity removed = TestCompanyUsers.removedMember(company.getId(), CompanyRole.OWNER);
+
+        // Act / Assert
+        assertThatThrownBy(() -> service.confirm(removed, offer.getId(), confirmation("1000.00", "180.50")))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(transferService, processor);
+        assertThat(executions).isEmpty();
     }
 
     @Test

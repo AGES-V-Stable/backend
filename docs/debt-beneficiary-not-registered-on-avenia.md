@@ -1,7 +1,8 @@
 # [Resolvido] Registro de beneficiário na Avenia
 
 > Resolvido na correção da task #29. O cadastro local agora só é persistido depois
-> que a Avenia retorna um identificador válido para a mesma subconta do usuário.
+> que a Avenia retorna um identificador válido para a mesma subconta da empresa
+> (desde a backend#76; ver `avenia-conta-empresarial.md`).
 
 ## Contexto
 
@@ -22,7 +23,7 @@ Na prática, isso bloqueia o teste ponta a ponta de `POST /v1/transfers` contra 
 ## Solução implementada
 
 Ao criar um beneficiário (`BeneficiaryService.create`), o backend resolve a
-subconta Avenia do usuário autenticado e registra o destino antes de persistir
+subconta Avenia da empresa (`CompanyFinancialAccountService`) e registra o destino antes de persistir
 localmente. O identificador retornado é gravado em `aveniaId` (contas
 bancárias/PIX) ou `aveniaWalletId` (carteira cripto). A subconta usada no
 registro também é persistida internamente em `aveniaSubAccountId`; antes de

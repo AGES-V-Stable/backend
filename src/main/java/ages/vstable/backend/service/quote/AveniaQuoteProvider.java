@@ -19,7 +19,7 @@ import java.time.ZoneOffset;
 
 /**
  * Cota pela mesma rota que {@link TransferService} executa: origem BRL via PIX para
- * carteira cripto cadastrada na Avenia, na subconta do usuário. Outras combinações não
+ * carteira cripto cadastrada na Avenia, na subconta da empresa. Outras combinações não
  * têm execução suportada na Avenia e por isso não geram oferta.
  */
 @Component

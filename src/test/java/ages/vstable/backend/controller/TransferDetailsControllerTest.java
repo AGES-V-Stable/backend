@@ -193,12 +193,12 @@ class TransferDetailsControllerTest {
     @Test
     void getDetails_businessErrors_mapToTheirStatusAndCode() throws Exception {
         when(service.getDetails(eq(transferId), any()))
-                .thenThrow(TransferDetailsException.userNotVerified())
+                .thenThrow(TransferDetailsException.companyAccessRequired())
                 .thenThrow(TransferDetailsException.transferNotFound());
 
         mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(authenticated(user())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("USER_NOT_VERIFIED"));
+                .andExpect(jsonPath("$.code").value("COMPANY_ACCESS_REQUIRED"));
         mockMvc.perform(get("/api/transferencias/{id}", transferId).principal(authenticated(user())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("TRANSFER_NOT_FOUND"));

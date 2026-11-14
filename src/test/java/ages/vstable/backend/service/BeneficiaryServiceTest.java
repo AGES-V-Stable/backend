@@ -47,6 +47,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,10 +63,10 @@ class BeneficiaryServiceTest {
     private AveniaBeneficiaryService aveniaBeneficiaryService;
 
     @Mock
-    private AveniaKycVerificationRepository aveniaKycVerificationRepository;
+    private CompanyFinancialAccountService companyFinancialAccountService;
 
     @Mock
-    private AveniaSubAccountProvisioningService subAccountProvisioningService;
+    private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
     private BeneficiaryService beneficiaryService;
 
@@ -76,18 +77,57 @@ class BeneficiaryServiceTest {
     @BeforeEach
     void setUp() {
         beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository,
-                new BeneficiaryValidator(), aveniaBeneficiaryService,
-                aveniaKycVerificationRepository, subAccountProvisioningService);
+                new BeneficiaryValidator(), aveniaBeneficiaryService, companyFinancialAccountService);
     }
 
     private void stubSubAccount() {
-        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
-                .userId(currentUserId)
-                .aveniaSubAccountId(subAccountId)
-                .build();
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId))
-                .thenReturn(Optional.of(kyc));
-        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(subAccountId);
+        when(companyFinancialAccountService.requireAveniaSubAccountId(companyId)).thenReturn(subAccountId);
+    }
+
+    private void stubSavedBeneficiary() {
+        when(beneficiaryRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            BeneficiaryEntity entity = invocation.getArgument(0);
+            entity.setId(UUID.randomUUID());
+            return entity;
+        });
+    }
+
+    @Test
+    void create_doisMembrosDaMesmaEmpresa_cadastramNaMesmaContaEmpresarial() {
+        // Arrange
+        UUID ownerId = UUID.randomUUID();
+        UUID operatorId = UUID.randomUUID();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenReturn(AveniaBeneficiaryRegistration.wallet(UUID.randomUUID()));
+        stubSavedBeneficiary();
+
+        // Act
+        beneficiaryService.create(companyId, ownerId, walletRequest());
+        beneficiaryService.create(companyId, operatorId, walletRequest());
+
+        // Assert
+        ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
+        verify(beneficiaryRepository, times(2)).saveAndFlush(captor.capture());
+        assertThat(captor.getAllValues()).extracting(BeneficiaryEntity::getAveniaSubAccountId)
+                .containsExactly(subAccountId, subAccountId);
+        verify(companyFinancialAccountService, times(2)).requireAveniaSubAccountId(companyId);
+        verify(aveniaBeneficiaryService, times(2)).register(any(), eq(subAccountId));
+    }
+
+    @Test
+    void create_empresaSemContaFinanceiraEmpresarial_bloqueiaSemCadastrarNaAveniaNemPersistir() {
+        // Arrange
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
+        when(companyFinancialAccountService.requireAveniaSubAccountId(companyId))
+                .thenThrow(new UnprocessableEntityException("A empresa não possui conta financeira empresarial válida"));
+
+        // Act / Assert
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, walletRequest()))
+                .isInstanceOf(UnprocessableEntityException.class);
+        verify(aveniaBeneficiaryService, never()).register(any(), any());
+        verify(beneficiaryRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -247,6 +287,7 @@ class BeneficiaryServiceTest {
 
         verify(aveniaBeneficiaryService, never()).register(any(), any());
         verify(beneficiaryRepository, never()).saveAndFlush(any());
+        verify(companyFinancialAccountService, never()).requireAveniaSubAccountId(any());
     }
 
     @Test
@@ -466,17 +507,6 @@ class BeneficiaryServiceTest {
         capturedSpec.toPredicate(root, query, cb);
 
         assertThat(capturedSpec).isNotNull();
-    }
-
-    @Test
-    void create_userWithoutKycVerification_throwsUnprocessableEntity() {
-        when(companyRepository.findById(companyId)).thenReturn(Optional.of(approvedCompany()));
-        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(currentUserId))
-                .thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessageContaining("KYC");
     }
 
     @Test

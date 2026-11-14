@@ -48,7 +48,7 @@ public class TransferController {
             @ApiResponse(responseCode = "400", description = "Campo obrigatório ausente ou inválido"),
             @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão para transferir (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
-            @ApiResponse(responseCode = "422", description = "Beneficiário ou método de pagamento não informado, combinação de moeda e métodos não suportada, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
+            @ApiResponse(responseCode = "422", description = "Beneficiário ou método de pagamento não informado, combinação de moeda e métodos não suportada, empresa sem conta financeira empresarial válida na Avenia, ou rejeição de negócio da Avenia"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
             @ApiResponse(responseCode = "503", description = "Falha temporária ao comunicar com a Avenia; pode tentar novamente"),
     })
@@ -67,7 +67,7 @@ public class TransferController {
             @ApiResponse(responseCode = "401", description = "Não autenticado ou código TOTP inválido/já utilizado"),
             @ApiResponse(responseCode = "403", description = "Sem vínculo ativo com permissão para transferir (COMPANY_ACCESS_DENIED, COMPANY_ACCESS_REVOKED ou PERMISSION_DENIED)"),
             @ApiResponse(responseCode = "404", description = "Beneficiário não encontrado"),
-            @ApiResponse(responseCode = "422", description = "Código TOTP ausente, usuário sem 2FA ativo, moeda não determinável, usuário sem KYC associado, ou rejeição de negócio da Avenia"),
+            @ApiResponse(responseCode = "422", description = "Código TOTP ausente, usuário sem 2FA ativo, moeda não determinável, empresa sem conta financeira empresarial válida na Avenia, ou rejeição de negócio da Avenia"),
             @ApiResponse(responseCode = "423", description = "Conta temporariamente bloqueada por excesso de tentativas incorretas de TOTP"),
             @ApiResponse(responseCode = "502", description = "Falha ao comunicar com a Avenia"),
             @ApiResponse(responseCode = "503", description = "Falha temporária ao comunicar com a Avenia; pode tentar novamente"),

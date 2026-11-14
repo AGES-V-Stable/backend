@@ -8,4 +8,6 @@ import java.util.UUID;
 
 public interface AveniaKycVerificationRepository extends JpaRepository<AveniaKycVerificationEntity, UUID> {
     Optional<AveniaKycVerificationEntity> findFirstByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    boolean existsByAveniaSubAccountId(String aveniaSubAccountId);
 }
