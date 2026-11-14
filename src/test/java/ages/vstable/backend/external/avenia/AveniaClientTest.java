@@ -621,13 +621,14 @@ class AveniaClientTest {
     @Test
     void acceptsTicketAtMaximumCustomDurationAndExternalIdLength() {
         // Arrange
-        server.expect(once(), requestTo("https://avenia.test/v2/account/tickets/"))
+        server.expect(once(), requestTo("https://avenia.test/v2/account/tickets/?subAccountId=sub-1"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("{\"status\":\"UNPAID\"}", MediaType.APPLICATION_JSON));
         AveniaTicketRequest request = AveniaTicketRequest.builder()
                 .quoteToken("quote-token")
                 .customDuration(259200)
                 .externalId("x".repeat(68))
+                .subAccountId("sub-1")
                 .build();
 
         // Act
