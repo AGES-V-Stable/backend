@@ -8,14 +8,18 @@ import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.entity.enums.DocumentType;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,11 +63,14 @@ class CompanyServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private CompanyMembershipRepository companyMembershipRepository;
+
     private CompanyService companyService;
 
     @BeforeEach
     void setUp() {
-        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
+        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository, companyMembershipRepository);
     }
 
     @Test
@@ -133,10 +140,10 @@ class CompanyServiceTest {
     }
 
     @Test
-    void findSummaries_usesEarliestUserAsRepresentativeAndComputesOverallStatus() {
+    void findSummaries_usesActiveOwnerInsteadOfOldestLegacyUser() {
         UUID companyId = UUID.randomUUID();
         OffsetDateTime createdAt = OffsetDateTime.of(2026, 1, 1, 10, 0, 0, 0, ZoneOffset.UTC);
-        OffsetDateTime updatedAt = OffsetDateTime.of(2026, 1, 2, 12, 0, 0, 0, ZoneOffset.UTC);
+        OffsetDateTime updatedAt = createdAt.plusDays(1);
         CompanyEntity company = buildCompany(companyId, ComplianceStatus.APPROVED, ComplianceStatus.UNDER_REVIEW);
         company.setTradeName("Empresa Fantasia");
         company.setCity("Porto Alegre");
@@ -144,23 +151,19 @@ class CompanyServiceTest {
         company.setCreatedAt(createdAt);
         company.setUpdatedAt(updatedAt);
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        UserEntity later = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Segunda Pessoa").email("b@x.com").createdAt(now).build();
-        UserEntity first = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Primeira Pessoa").email("a@x.com").createdAt(now.minusDays(1)).build();
-        UserEntity latest = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Terceira Pessoa").email("c@x.com").createdAt(now.plusDays(1)).build();
-        UserEntity withoutCreatedAt = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Sem Data").email("d@x.com").createdAt(null).build();
+        UserEntity owner = UserEntity.builder().id(UUID.randomUUID()).companyId(null)
+                .fullName("Gestora Ativa").email("gestora@x.com").createdAt(createdAt.plusDays(3)).build();
+        CompanyMembershipEntity activeOwner = CompanyMembershipEntity.builder()
+                .id(UUID.randomUUID()).companyId(companyId).userId(owner.getId())
+                .role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE).joinedAt(createdAt.plusDays(3)).build();
 
         when(companyRepository.findAll()).thenReturn(List.of(company));
-        when(userRepository.findAll()).thenReturn(List.of(later, first, latest, withoutCreatedAt));
+        when(companyMembershipRepository.findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE))
+                .thenReturn(List.of(activeOwner));
+        when(userRepository.findAllById(any())).thenReturn(List.of(owner));
 
-        List<CompanySummaryResponse> result = companyService.findSummaries();
+        CompanySummaryResponse summary = companyService.findSummaries().get(0);
 
-        assertThat(result).hasSize(1);
-        CompanySummaryResponse summary = result.get(0);
         assertThat(summary.getId()).isEqualTo(companyId);
         assertThat(summary.getLegalName()).isEqualTo("Empresa Legada Ltda");
         assertThat(summary.getTradeName()).isEqualTo("Empresa Fantasia");
@@ -172,53 +175,56 @@ class CompanyServiceTest {
         assertThat(summary.getOverallStatus()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
         assertThat(summary.getCreatedAt()).isEqualTo(createdAt);
         assertThat(summary.getUpdatedAt()).isEqualTo(updatedAt);
-        assertThat(summary.getRepresentativeId()).isEqualTo(first.getId());
-        assertThat(summary.getRepresentativeName()).isEqualTo("Primeira Pessoa");
-        assertThat(summary.getRepresentativeEmail()).isEqualTo("a@x.com");
+        assertThat(summary.getRepresentativeId()).isEqualTo(owner.getId());
+        assertThat(summary.getRepresentativeName()).isEqualTo("Gestora Ativa");
+        assertThat(summary.getRepresentativeEmail()).isEqualTo("gestora@x.com");
+        verify(companyMembershipRepository).findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE);
+        verify(userRepository, never()).findAll();
     }
 
     @Test
-    void findSummaries_replacesRepresentativeWithoutCreatedAtWhenCandidateHasTimestampAndIgnoresUnlinkedUsers() {
-        UUID companyId = UUID.randomUUID();
-        CompanyEntity company = buildCompany(companyId, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
-        CompanyEntity unpersistedCompany = buildCompany(null, ComplianceStatus.PENDING, ComplianceStatus.PENDING);
+    void findSummaries_ignoresMissingOwnerIdentityAndLegacyCompanyId() {
+        UUID firstCompanyId = UUID.randomUUID();
+        UUID secondCompanyId = UUID.randomUUID();
+        CompanyEntity first = buildCompany(firstCompanyId, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity second = buildCompany(secondCompanyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING);
 
-        OffsetDateTime timestamp = OffsetDateTime.now(ZoneOffset.UTC);
-        UserEntity withoutCreatedAt = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Sem Data").email("null@x.com").createdAt(null).build();
-        UserEntity withCreatedAt = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Com Data").email("dated@x.com").createdAt(timestamp).build();
-        UserEntity sameTimestamp = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId)
-                .fullName("Mesma Data").email("same@x.com").createdAt(timestamp).build();
-        UserEntity unlinkedUser = UserEntity.builder().id(UUID.randomUUID()).companyId(null)
-                .fullName("Sem Empresa").email("orphan@x.com").createdAt(timestamp.minusDays(5)).build();
+        // A associação correta é o vínculo ativo, não o companyId legado do usuário.
+        UserEntity owner = UserEntity.builder().id(UUID.randomUUID()).companyId(secondCompanyId)
+                .fullName("Responsável Atual").email("owner@x.com").build();
+        CompanyMembershipEntity firstOwner = CompanyMembershipEntity.builder()
+                .id(UUID.randomUUID()).companyId(firstCompanyId).userId(owner.getId())
+                .role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE)
+                .joinedAt(OffsetDateTime.now(ZoneOffset.UTC)).build();
+        CompanyMembershipEntity orphanOwner = CompanyMembershipEntity.builder()
+                .id(UUID.randomUUID()).companyId(secondCompanyId).userId(UUID.randomUUID())
+                .role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE)
+                .joinedAt(OffsetDateTime.now(ZoneOffset.UTC)).build();
 
-        when(companyRepository.findAll()).thenReturn(List.of(company, unpersistedCompany));
-        when(userRepository.findAll()).thenReturn(List.of(withoutCreatedAt, withCreatedAt, sameTimestamp, unlinkedUser));
+        when(companyRepository.findAll()).thenReturn(List.of(first, second));
+        when(companyMembershipRepository.findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE))
+                .thenReturn(List.of(firstOwner, orphanOwner));
+        when(userRepository.findAllById(any())).thenReturn(List.of(owner));
 
         List<CompanySummaryResponse> summaries = companyService.findSummaries();
+        CompanySummaryResponse firstSummary = summaries.stream()
+                .filter(summary -> firstCompanyId.equals(summary.getId())).findFirst().orElseThrow();
+        CompanySummaryResponse secondSummary = summaries.stream()
+                .filter(summary -> secondCompanyId.equals(summary.getId())).findFirst().orElseThrow();
 
-        assertThat(summaries).hasSize(2);
-        CompanySummaryResponse linkedSummary = summaries.stream()
-                .filter(s -> companyId.equals(s.getId()))
-                .findFirst()
-                .orElseThrow();
-        assertThat(linkedSummary.getRepresentativeId()).isEqualTo(withCreatedAt.getId());
-        assertThat(linkedSummary.getRepresentativeName()).isEqualTo("Com Data");
-
-        CompanySummaryResponse unpersistedSummary = summaries.stream()
-                .filter(s -> s.getId() == null)
-                .findFirst()
-                .orElseThrow();
-        assertThat(unpersistedSummary.getRepresentativeId()).isNull();
-        assertThat(unpersistedSummary.getRepresentativeName()).isNull();
+        assertThat(firstSummary.getRepresentativeId()).isEqualTo(owner.getId());
+        assertThat(secondSummary.getRepresentativeId()).isNull();
+        assertThat(secondSummary.getRepresentativeName()).isNull();
+        assertThat(secondSummary.getOverallStatus()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test
-    void findSummaries_companyWithoutUsers_hasNoRepresentative() {
+    void findSummaries_companyWithoutActiveOwner_hasNoRepresentative() {
         CompanyEntity company = buildCompany(UUID.randomUUID(), ComplianceStatus.PENDING, ComplianceStatus.PENDING);
         when(companyRepository.findAll()).thenReturn(List.of(company));
-        when(userRepository.findAll()).thenReturn(List.of());
+        when(companyMembershipRepository.findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(userRepository.findAllById(any())).thenReturn(List.of());
 
         CompanySummaryResponse summary = companyService.findSummaries().get(0);
 

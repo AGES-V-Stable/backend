@@ -18,6 +18,7 @@ import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.AdministratorRepository;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
 import ages.vstable.backend.support.TestCompanyUsers;
@@ -83,6 +84,9 @@ class OnboardingServiceTest {
     @Mock
     private CompanyMembershipService companyMembershipService;
 
+    @Mock
+    private CompanyMembershipRepository companyMembershipRepository;
+
     private OnboardingService onboardingService;
     private Logger operationalLogger;
     private ListAppender<ILoggingEvent> logAppender;
@@ -90,7 +94,8 @@ class OnboardingServiceTest {
     @BeforeEach
     void setUp() {
         CompanyService companyService = new CompanyService(
-                companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository);
+                companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository,
+                companyMembershipRepository);
         onboardingService = new OnboardingService(
                 userRepository, administratorRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
