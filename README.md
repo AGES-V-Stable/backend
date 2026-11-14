@@ -34,7 +34,13 @@ Windows:
 .\gradlew.bat bootRun
 ```
 
-Defina `JWT_SECRET` com uma chave própria antes de iniciar a aplicação. O projeto não
+Ao executar `./gradlew bootRun` ou iniciar pelo IDE com o diretório de trabalho em
+`backend`, a aplicação carrega automaticamente o arquivo `.env` desse diretório.
+São aceitos valores `CHAVE=valor`, com ou sem aspas simples/duplas, e comentários
+iniciados por `#`. Variáveis já definidas no ambiente têm prioridade. O arquivo é
+opcional e continua ignorado pelo Git; não é necessário executar `source .env`.
+
+Defina `JWT_SECRET` com uma chave própria no `.env` ou no ambiente antes de iniciar a aplicação. O projeto não
 inclui mais uma chave JWT padrão. O PostgreSQL local usa `DB_SSL_MODE=disable` por
 padrão; fora do perfil `lambda`, configure TLS ao conectar a um banco remoto.
 
@@ -145,6 +151,18 @@ sem duplicar registros. A senha só é obrigatória na primeira carga; sua ausê
 nesse momento interrompe a inicialização com uma mensagem de configuração.
 
 ### Contrato de erros para o frontend
+
+O onboarding depende somente do KYC individual do representante. `GET /v1/onboarding/me`
+consulta a tentativa na Avenia e atualiza o status local apenas quando há mudança;
+KYB e AML locais da empresa não participam da aprovação nem do cadastro de beneficiários.
+O painel administrativo e `GET /v1/companies/{id}/compliance-status` usam o KYC mais
+recente do proprietário ativo. Na primeira operação financeira, a subconta do
+proprietário aprovado é vinculada à empresa e compartilhada pelos membros autorizados.
+O vínculo permanece o mesmo após uma troca de proprietário. Consulte
+[conta financeira Avenia](docs/avenia-conta-empresarial.md). Os campos `statusKyb`/`statusAml` e o PATCH de
+`compliance-status` foram removidos. A migration V17 remove as colunas correspondentes
+de `companies`, preservando contas, usuários, verificações KYC e os estados próprios
+dos provedores. Reinicie o backend para aplicar a migration; não é necessário limpar o banco.
 
 Respostas do `GlobalExceptionHandler` incluem `message` e um `code` estável, preservando os status HTTP existentes. Códigos: `INVALID_ARGUMENT`, `VALIDATION_ERROR`, `MALFORMED_PAYLOAD`, `MISSING_HEADER`, `INVALID_PARAMETER`, `CONFLICT`, `FORBIDDEN`, `NOT_FOUND`, `UNPROCESSABLE_ENTITY`, `PROVIDER_ERROR`, `ACCESS_DENIED` e `INTERNAL_ERROR`. Login inválido retorna 401 com `INVALID_CREDENTIALS`; conta bloqueada retorna 423 com `ACCOUNT_LOCKED`. Contratos especializados de detalhes/comprovantes e códigos da camada de segurança são preservados. Clientes antigos podem continuar consumindo somente `message`.
 

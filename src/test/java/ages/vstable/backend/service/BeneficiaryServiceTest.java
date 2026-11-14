@@ -9,7 +9,6 @@ import ages.vstable.backend.entity.enums.BankAccountType;
 import ages.vstable.backend.entity.enums.BlockchainNetwork;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.ReceivingMethod;
-import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
@@ -293,13 +292,19 @@ class BeneficiaryServiceTest {
     }
 
     @Test
-    void create_companyNotApproved_throwsForbidden() {
-        CompanyEntity company = approvedCompany();
-        company.setKybStatus(ComplianceStatus.PENDING);
+    void create_companyWithoutKybOrAml_canRegisterBeneficiary() {
+        CompanyEntity company = new CompanyEntity();
+        company.setId(companyId);
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenReturn(AveniaBeneficiaryRegistration.wallet(UUID.randomUUID()));
+        stubSavedBeneficiary();
 
-        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
-                .isInstanceOf(ForbiddenException.class);
+        BeneficiaryResponse result = beneficiaryService.create(companyId, currentUserId, walletRequest());
+
+        assertThat(result.getId()).isNotNull();
+        verify(beneficiaryRepository).saveAndFlush(any());
     }
 
     @Test
@@ -383,7 +388,6 @@ class BeneficiaryServiceTest {
     private CompanyEntity approvedCompany() {
         CompanyEntity company = new CompanyEntity();
         company.setId(companyId);
-        company.setKybStatus(ComplianceStatus.APPROVED);
         return company;
     }
 

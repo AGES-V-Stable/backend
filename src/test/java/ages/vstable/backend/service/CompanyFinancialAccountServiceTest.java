@@ -1,6 +1,16 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.dao.DataIntegrityViolationException;
+import java.util.List;
 import ages.vstable.backend.entity.ProviderAccountEntity;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.exception.ForbiddenException;
@@ -40,13 +50,19 @@ class CompanyFinancialAccountServiceTest {
     @Mock
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
+    @Mock
+    private CompanyRepository companyRepository;
+
+    @Mock
+    private CompanyMembershipRepository membershipRepository;
+
     private CompanyFinancialAccountService service;
 
     private final UUID companyId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        service = new CompanyFinancialAccountService(providerAccountRepository, aveniaKycVerificationRepository);
+        service = new CompanyFinancialAccountService(providerAccountRepository, aveniaKycVerificationRepository, companyRepository, membershipRepository);
     }
 
     private ProviderAccountEntity aveniaAccount(UUID company, String status, String externalId) {
@@ -105,17 +121,13 @@ class CompanyFinancialAccountServiceTest {
     }
 
     @Test
-    void requireAveniaSubAccountId_empresaSemAssociacao_bloqueiaSemFallbackParaOutraConta() {
-        // Arrange
+    void requireAveniaSubAccountId_semProprietarioAtivo_bloqueiaSemCriarConta() {
         stubAccount(companyId, null);
+        when(companyRepository.findByIdForUpdate(companyId)).thenReturn(Optional.of(CompanyEntity.builder().id(companyId).build()));
 
-        // Act / Assert: só a conta da própria empresa é consultada; nenhuma outra conta (de outra empresa,
-        // da API key ou do KYC individual de um membro) é procurada como alternativa.
         assertThatThrownBy(() -> service.requireAveniaSubAccountId(companyId))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessageContaining("conta financeira empresarial");
-        verify(providerAccountRepository).findByCompanyIdAndProvider(companyId, IntegrationProvider.AVENIA);
-        verifyNoMoreInteractions(providerAccountRepository);
+                .isInstanceOf(UnprocessableEntityException.class).hasMessageContaining("proprietário");
+        verify(providerAccountRepository, never()).saveAndFlush(any());
         verifyNoInteractions(aveniaKycVerificationRepository);
     }
 
@@ -144,16 +156,91 @@ class CompanyFinancialAccountServiceTest {
     }
 
     @Test
-    void requireAveniaSubAccountId_associacaoApontaParaSubcontaIndividualDeKyc_bloqueiaSemPresumirConversao() {
-        // Arrange: associação legada/inconsistente com a subconta INDIVIDUAL do KYC de um membro.
-        stubAccount(companyId, aveniaAccount(companyId, "ACTIVE", "individual-kyc-sub-account"));
-        when(aveniaKycVerificationRepository.existsByAveniaSubAccountId("individual-kyc-sub-account"))
-                .thenReturn(true);
+    void requireAveniaSubAccountId_vinculoIndividualExistentePermaneceSemConsultarNovoProprietario() {
+        stubAccount(companyId, aveniaAccount(companyId, "ACTIVE", "original-owner-sub"));
 
-        // Act / Assert
+        assertThat(service.requireAveniaSubAccountId(companyId)).isEqualTo("original-owner-sub");
+
+        verifyNoInteractions(aveniaKycVerificationRepository, membershipRepository, companyRepository);
+        verify(providerAccountRepository, never()).saveAndFlush(any());
+    }
+
+    private AveniaKycVerificationEntity stubOwner(ComplianceStatus status, String subAccountId) {
+        UUID userId = UUID.randomUUID();
+        var company = CompanyEntity.builder().id(companyId).build();
+        when(companyRepository.findByIdForUpdate(companyId)).thenReturn(Optional.of(company));
+        when(membershipRepository.findByCompanyIdAndStatus(companyId, MembershipStatus.ACTIVE))
+                .thenReturn(List.of(CompanyMembershipEntity.builder().id(UUID.randomUUID())
+                        .companyId(companyId).userId(userId).role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE).build()));
+        var kyc = AveniaKycVerificationEntity.builder().userId(userId).status(status)
+                .aveniaSubAccountId(subAccountId).build();
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(userId)).thenReturn(Optional.of(kyc));
+        return kyc;
+    }
+
+    @Test
+    void requireAveniaSubAccountId_ownerApproved_createsAndReusesCanonicalAssociation() {
+        stubOwner(ComplianceStatus.APPROVED, "owner-sub");
+        java.util.concurrent.atomic.AtomicReference<ProviderAccountEntity> stored = new java.util.concurrent.atomic.AtomicReference<>();
+        when(providerAccountRepository.findByCompanyIdAndProvider(companyId, IntegrationProvider.AVENIA))
+                .thenAnswer(invocation -> Optional.ofNullable(stored.get()));
+        when(providerAccountRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(0));
+            return stored.get();
+        });
+
+        assertThat(service.requireAveniaSubAccountId(companyId)).isEqualTo("owner-sub");
+        assertThat(service.requireAveniaSubAccountId(companyId)).isEqualTo("owner-sub");
+
+        assertThat(stored.get().getCompany().getId()).isEqualTo(companyId);
+        assertThat(stored.get().getStatus()).isEqualTo("ACTIVE");
+        assertThat(stored.get().getCreatedAt()).isNotNull();
+        verify(providerAccountRepository).saveAndFlush(any());
+        verify(membershipRepository).findByCompanyIdAndStatus(companyId, MembershipStatus.ACTIVE);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ComplianceStatus.class, names = {"PENDING", "UNDER_REVIEW", "REJECTED"})
+    void requireAveniaSubAccountId_ownerWithoutApprovedKyc_cannotBind(ComplianceStatus status) {
+        stubOwner(status, "owner-sub");
+
+        assertThatThrownBy(() -> service.requireAveniaSubAccountId(companyId)).isInstanceOf(UnprocessableEntityException.class);
+
+        verify(providerAccountRepository, never()).saveAndFlush(any());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void requireAveniaSubAccountId_approvedOwnerWithoutSubaccount_cannotUseMainAccount(String subAccountId) {
+        stubOwner(ComplianceStatus.APPROVED, subAccountId);
+
+        assertThatThrownBy(() -> service.requireAveniaSubAccountId(companyId)).isInstanceOf(UnprocessableEntityException.class);
+
+        verify(providerAccountRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void requireAveniaSubAccountId_accountAlreadyBelongsToAnotherCompany_cannotBind() {
+        stubOwner(ComplianceStatus.APPROVED, "owner-sub");
+        when(providerAccountRepository.findByProviderAndExternalCustomerId(IntegrationProvider.AVENIA, "owner-sub"))
+                .thenReturn(Optional.of(aveniaAccount(UUID.randomUUID(), "ACTIVE", "owner-sub")));
+
         assertThatThrownBy(() -> service.requireAveniaSubAccountId(companyId))
-                .isInstanceOf(UnprocessableEntityException.class)
-                .hasMessageNotContaining("individual-kyc-sub-account");
+                .isInstanceOf(UnprocessableEntityException.class).hasMessageContaining("outra empresa");
+
+        verify(providerAccountRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void requireAveniaSubAccountId_uniqueAccountRace_returnsBusinessErrorWithoutDatabaseDetails() {
+        stubOwner(ComplianceStatus.APPROVED, "owner-sub");
+        when(providerAccountRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException(
+                "provider_accounts_provider_external_customer_key synthetic-private-details"));
+
+        assertThatThrownBy(() -> service.requireAveniaSubAccountId(companyId))
+                .isInstanceOf(UnprocessableEntityException.class).hasMessageContaining("outra empresa")
+                .hasMessageNotContaining("synthetic-private-details");
     }
 
     @Test

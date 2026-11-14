@@ -238,7 +238,7 @@ public class TransferService {
      * inclusive a resolução da conta empresarial.
      *
      * <p>Toda quote/ticket roda na subconta Avenia da empresa ({@link CompanyFinancialAccountService}),
-     * nunca na subconta de KYC individual do usuário nem na conta principal da API key.
+     * fixada a partir do KYC aprovado do proprietário, sem trocar conforme o membro que opera.
      *
      * {@code sourceCurrency} é restrito a BRL: é a única moeda em que a empresa tem saldo
      * registrado ({@code CompanyEntity.availableBalanceBrl}), e é dela que depende

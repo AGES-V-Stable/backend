@@ -173,9 +173,10 @@ class AccountAndCompanyRegistrationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kycVerificationId").value(kycId))
                 .andExpect(jsonPath("$.status").value("PENDING"));
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT kyb_status || ':' || aml_status FROM companies WHERE id = ?::uuid", String.class, companyId))
-                .isEqualTo("PENDING:PENDING");
+        jdbcTemplate.update("UPDATE avenia_kyc_verifications SET status = 'APPROVED' WHERE id = ?::uuid", kycId);
+        mockMvc.perform(authorized(get("/v1/onboarding/me"), token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT company_id::text FROM users WHERE email = ?", String.class, "joao@example.com"))
                 .isEqualTo(companyId);

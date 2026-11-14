@@ -1,7 +1,6 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
-import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
 import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
@@ -232,8 +231,6 @@ class CompanyControllerTest {
         response.setId(id);
         response.setLegalName("Empresa Teste LTDA");
         response.setCnpj("00.000.000/0001-00");
-        response.setStatusKyb(ComplianceStatus.APPROVED);
-        response.setStatusAml(ComplianceStatus.UNDER_REVIEW);
         response.setOverallStatus(ComplianceStatus.UNDER_REVIEW);
         response.setDocuments(List.of());
 
@@ -242,8 +239,8 @@ class CompanyControllerTest {
         mockMvc.perform(get("/v1/companies/{id}/compliance-status", id).principal(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()))
-                .andExpect(jsonPath("$.statusKyb").value("APPROVED"))
-                .andExpect(jsonPath("$.statusAml").value("UNDER_REVIEW"))
+
+
                 .andExpect(jsonPath("$.overallStatus").value("UNDER_REVIEW"))
                 .andExpect(jsonPath("$.documents").isArray());
     }
@@ -374,29 +371,6 @@ class CompanyControllerTest {
                 .andExpect(jsonPath("$[0].representativeName").value("Maria"));
     }
 
-    @Test
-    void updateComplianceStatus_returnsUpdatedCompany() throws Exception {
-        UUID id = UUID.randomUUID();
-        CompanyResponse response = sampleResponse(id);
-        response.setStatusKyb(ComplianceStatus.APPROVED);
-        when(companyService.updateComplianceStatus(eq(id), any(CompanyComplianceUpdateRequest.class)))
-                .thenReturn(response);
-
-        mockMvc.perform(patch("/v1/companies/{id}/compliance-status", id)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"statusKyb\":\"APPROVED\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.statusKyb").value("APPROVED"));
-    }
-
-    @Test
-    void updateComplianceStatus_unknownStatus_returns400() throws Exception {
-        mockMvc.perform(patch("/v1/companies/{id}/compliance-status", UUID.randomUUID())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"statusKyb\":\"WHATEVER\"}"))
-                .andExpect(status().isBadRequest());
-    }
-
     private CompanyCreateRequest validCreateRequest() {
         CompanyCreateRequest request = new CompanyCreateRequest();
         request.setLegalName("Empresa Legada Ltda");
@@ -428,8 +402,6 @@ class CompanyControllerTest {
         response.setZipCode("90000000");
         response.setCity("Porto Alegre");
         response.setState("RS");
-        response.setStatusKyb(ComplianceStatus.PENDING);
-        response.setStatusAml(ComplianceStatus.PENDING);
         return response;
     }
 }

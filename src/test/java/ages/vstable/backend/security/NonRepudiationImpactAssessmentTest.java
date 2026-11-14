@@ -135,8 +135,8 @@ class NonRepudiationImpactAssessmentTest extends ImpactEvidence {
         String adminToken = adminToken();
         http(auth(patch("/v1/companies/" + companyB + "/compliance-status"), adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"statusKyb\":\"APPROVED\",\"statusAml\":\"APPROVED\"}"),
-                200, "PATCH /v1/companies/EMPRESA_B/compliance-status");
+                .content("{}"),
+                405, "PATCH /v1/companies/EMPRESA_B/compliance-status");
 
         String cnpjB = jdbc.queryForObject("SELECT cnpj FROM companies WHERE id=?", String.class, companyB);
         http(auth(put("/v1/companies/" + companyB), adminToken)

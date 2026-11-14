@@ -94,8 +94,8 @@ public class SyntheticDataSeeder {
                 .zipCode("90000000")
                 .city("Porto Alegre")
                 .state("RS")
-                .kybStatus(ComplianceStatus.APPROVED)
-                .amlStatus(ComplianceStatus.APPROVED)
+
+
                 .availableBalanceBrl(new BigDecimal("25000.00"))
                 .createdAt(now)
                 .updatedAt(now)

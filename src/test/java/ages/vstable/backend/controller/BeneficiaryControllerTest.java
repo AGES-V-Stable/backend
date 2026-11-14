@@ -158,13 +158,13 @@ class BeneficiaryControllerTest {
     @Test
     void create_companyNotApproved_returns403() throws Exception {
         when(beneficiaryService.create(eq(companyId), any(), any()))
-                .thenThrow(new ForbiddenException("Empresa não verificada"));
+                .thenThrow(new ForbiddenException("Acesso à empresa negado"));
 
         mockMvc.perform(post("/v1/companies/{companyId}/beneficiaries", companyId).principal(member())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(validBankAccountRequest())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("Empresa não verificada"));
+                .andExpect(jsonPath("$.message").value("Acesso à empresa negado"));
     }
 
     @Test

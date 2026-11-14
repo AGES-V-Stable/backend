@@ -1,6 +1,5 @@
 package ages.vstable.backend.dto.company;
 
-import ages.vstable.backend.entity.enums.ComplianceStatus;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -20,8 +19,6 @@ public class CompanyResponse {
     private String city;
     private String state;
 
-    private ComplianceStatus statusKyb;
-    private ComplianceStatus statusAml;
 
     private BigDecimal availableBalanceBrl;
 

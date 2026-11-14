@@ -8,8 +8,8 @@ import java.util.UUID;
 
 /**
  * Linha da listagem administrativa de clientes PME: dados da empresa, status
- * geral de compliance (KYB + AML) e o responsável pela conta (membro OWNER
- * com vínculo ativo). O responsável pelo acesso não é necessariamente o representante legal do KYB.
+ * do KYC individual do responsável e o responsável pela conta (membro OWNER
+ * com vínculo ativo).
  */
 @Data
 public class CompanySummaryResponse {
@@ -21,8 +21,6 @@ public class CompanySummaryResponse {
     private String city;
     private String state;
 
-    private ComplianceStatus statusKyb;
-    private ComplianceStatus statusAml;
     private ComplianceStatus overallStatus;
 
     private UUID representativeId;

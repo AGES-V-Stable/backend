@@ -6,9 +6,7 @@ import ages.vstable.backend.dto.beneficiary.BeneficiaryCreateRequest;
 import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
-import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.BankAccountType;
-import ages.vstable.backend.exception.ForbiddenException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
@@ -39,10 +37,6 @@ public class BeneficiaryService {
     public BeneficiaryResponse create(UUID companyId, UUID currentUserId, BeneficiaryCreateRequest request) {
         CompanyEntity company = companyRepository.findById(companyId)
                 .orElseThrow(() -> new NotFoundException("Company not found"));
-
-        if (company.getKybStatus() != ComplianceStatus.APPROVED) {
-            throw new ForbiddenException("Empresa não verificada");
-        }
 
         beneficiaryValidator.validate(request);
 

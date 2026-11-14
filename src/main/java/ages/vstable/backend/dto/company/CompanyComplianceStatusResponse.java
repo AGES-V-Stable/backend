@@ -13,8 +13,6 @@ public class CompanyComplianceStatusResponse {
     private String legalName;
     private String tradeName;
     private String cnpj;
-    private ComplianceStatus statusKyb;
-    private ComplianceStatus statusAml;
     private ComplianceStatus overallStatus;
     private List<ComplianceDocumentResponse> documents;
 }

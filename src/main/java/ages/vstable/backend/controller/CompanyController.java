@@ -2,7 +2,6 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
-import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanySummaryResponse;
@@ -90,7 +89,7 @@ public class CompanyController {
     }
 
     @GetMapping("/{id}/compliance-status")
-    @Operation(summary = "Retrieves the current compliance (KYB/AML) status of a company (company members or Admin)")
+    @Operation(summary = "Retrieves the individual KYC status of the company account owner (company members or Admin)")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Compliance status returned successfully"),
             @ApiResponse(responseCode = "403", description = "Company belongs to another account"),
@@ -104,22 +103,6 @@ public class CompanyController {
         CompanyAccess.requirePermissionOrAdmin(authentication, id, CompanyPermission.COMPANY_READ);
 
         return ResponseEntity.ok(companyService.getComplianceStatus(id));
-    }
-
-    @PatchMapping("/{id}/compliance-status")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Records the compliance review of a company (KYB and/or AML status) (Admin only)")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Compliance status updated"),
-            @ApiResponse(responseCode = "400", description = "No status informed or invalid status value"),
-            @ApiResponse(responseCode = "403", description = "Requires ADMIN"),
-            @ApiResponse(responseCode = "404", description = "Company not found"),
-    })
-    public ResponseEntity<CompanyResponse> updateComplianceStatus(
-            @PathVariable UUID id,
-            @RequestBody CompanyComplianceUpdateRequest request) {
-
-        return ResponseEntity.ok(companyService.updateComplianceStatus(id, request));
     }
 
     @PutMapping("/{id}")

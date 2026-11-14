@@ -171,20 +171,13 @@ class ApplicationImpactAssessmentTest extends ImpactEvidence {
     }
 
     @Test
-    @DisplayName("P86-04 CHAIN-02 Admin altera compliance humano e cadastrais")
-    void adminCanManuallyDecideCompliance() throws Exception {
+    @DisplayName("P86-04 CHAIN-02 Rota de KYB/AML removida; Admin ainda altera dados cadastrais")
+    void retiredComplianceRouteCannotRecordManualApproval() throws Exception {
         String admin = adminToken();
-        assertThat(jdbc.queryForObject("SELECT kyb_status::text FROM companies WHERE id=?", String.class, companyB)).isEqualTo("PENDING");
-        for (String decision : List.of("APPROVED", "REJECTED")) {
-            http(auth(patch("/v1/companies/" + companyB + "/compliance-status"), admin)
-                    .contentType(MediaType.APPLICATION_JSON).content("{\"statusKyb\":\"" + decision + "\",\"statusAml\":\"" + decision + "\"}"),
-                    200, "PATCH /v1/companies/EMPRESA_B/compliance-status " + decision);
-            assertThat(jdbc.queryForObject("SELECT kyb_status::text FROM companies WHERE id=?", String.class, companyB)).isEqualTo(decision);
-            assertThat(jdbc.queryForObject("SELECT aml_status::text FROM companies WHERE id=?", String.class, companyB)).isEqualTo(decision);
-        }
+        http(auth(patch("/v1/companies/" + companyB + "/compliance-status"), admin)
+                .contentType(MediaType.APPLICATION_JSON).content("{}"),
+                405, "PATCH compliance-status removido");
         verifyNoInteractions(avenia, blindpay);
-        observe("decisoesPersistidasSemProvedor", List.of("APPROVED", "REJECTED"));
-        observe("regra", "Admin unico; nao se alega escalada SUPPORT para SUPER_ADMIN");
         String cnpj = jdbc.queryForObject("SELECT cnpj FROM companies WHERE id=?", String.class, companyB);
         http(auth(put("/v1/companies/" + companyB), admin).contentType(MediaType.APPLICATION_JSON)
                 .content(JSON.writeValueAsString(Map.of("legalName", "Empresa Sintetica Editada", "cnpj", cnpj,
@@ -248,7 +241,7 @@ class ApplicationImpactAssessmentTest extends ImpactEvidence {
         http(auth(get("/v1/transfer-executions/" + execution), token), 404, "GET /v1/transfer-executions/EXEC_B USER A");
         http(auth(get("/api/transferencias/" + transaction), token), 404, "GET /api/transferencias/TX_B USER A");
         http(auth(patch("/v1/companies/" + companyB + "/compliance-status"), token)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"statusKyb\":\"APPROVED\"}"), 403,
+                .contentType(MediaType.APPLICATION_JSON).content("{}"), 405,
                 "PATCH /v1/companies/EMPRESA_B/compliance-status USER A");
         http(auth(delete("/v1/companies/" + companyB), token), 403, "DELETE /v1/companies/EMPRESA_B USER A");
         confirm(offerB, token, "100", "99", 404);

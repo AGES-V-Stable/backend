@@ -56,7 +56,7 @@ import java.util.UUID;
  * Onboarding KYB/AML da empresa na BlindPay: aceite hospedado dos termos, upload de
  * documentos, cadastro e atualização do cliente, sincronização de status e RFI.
  * Independente do compliance da Avenia: os status ficam na conta do provedor e não
- * alteram {@code companies.kyb_status}/{@code aml_status}.
+ * alteram a situação do KYC individual do representante.
  *
  * <p>Os dados cadastrais e documentos são repassados à BlindPay e não são persistidos;
  * o backend guarda só identificadores e status.

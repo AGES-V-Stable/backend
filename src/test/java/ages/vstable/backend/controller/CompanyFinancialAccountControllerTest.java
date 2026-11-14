@@ -23,6 +23,9 @@ import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BaseTransactionRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.repository.ExportTransactionRepository;
 import ages.vstable.backend.repository.ImportTransactionRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
@@ -77,7 +80,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * backend#76 pela cadeia HTTP: segurança, controllers, {@link TransferService}, {@link BeneficiaryService} e
  * {@link CompanyFinancialAccountService} reais; só a persistência e o {@link AveniaGateway} são simulados,
  * então nenhuma chamada sai para a Avenia. Verifica que a conta Avenia vem da empresa do vínculo ativo,
- * nunca do usuário, do KYC individual, de outra empresa ou da conta principal da API key.
+ * com vínculo financeiro fixo, inclusive quando originado do KYC individual do proprietário.
  */
 @WebMvcTest({TransferController.class, BeneficiaryController.class})
 @Import({SecurityConfiguration.class, AuthenticationConfigurer.class,
@@ -128,6 +131,9 @@ class CompanyFinancialAccountControllerTest {
 
     @MockitoBean
     private CompanyRepository companyRepository;
+
+    @MockitoBean
+    private CompanyMembershipRepository membershipRepository;
 
     @MockitoBean
     private BaseTransactionRepository baseTransactionRepository;
@@ -277,8 +283,12 @@ class CompanyFinancialAccountControllerTest {
 
     @Test
     void companyWithoutAveniaAccount_isBlockedWithoutFallbackToTheMainApiKeyAccount() throws Exception {
-        // Arrange: nenhuma associação AVENIA; o usuário até teria KYC individual, que não deve ser usado.
+        // Arrange: não existe associação nem KYC aprovado do proprietário.
         UserEntity owner = TestCompanyUsers.member(companyA, CompanyRole.OWNER);
+        when(companyRepository.findByIdForUpdate(companyA)).thenReturn(Optional.of(approvedCompany(companyA)));
+        when(membershipRepository.findByCompanyIdAndStatus(companyA, MembershipStatus.ACTIVE)).thenReturn(List.of(
+                CompanyMembershipEntity.builder().id(UUID.randomUUID()).userId(owner.getId()).companyId(companyA)
+                        .role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE).build()));
 
         // Act / Assert
         mockMvc.perform(quote(owner))
@@ -287,7 +297,7 @@ class CompanyFinancialAccountControllerTest {
                 .andExpect(status().is(422)).andExpect(jsonPath("$.code").value("UNPROCESSABLE_CONTENT"));
         verifyNoInteractions(aveniaGateway);
         verify(beneficiaryRepository, never()).saveAndFlush(any());
-        verify(aveniaKycVerificationRepository, never()).findFirstByUserIdOrderByCreatedAtDesc(any());
+        verify(aveniaKycVerificationRepository, times(2)).findFirstByUserIdOrderByCreatedAtDesc(owner.getId());
     }
 
     @Test
@@ -302,16 +312,18 @@ class CompanyFinancialAccountControllerTest {
     }
 
     @Test
-    void legacyIndividualAssociation_isBlockedWithoutExposingTheProviderIdentifier() throws Exception {
-        // Arrange: a associação da empresa aponta para a subconta INDIVIDUAL do KYC de um membro.
+    void individualAssociation_quotesOnTheCanonicalSubaccount() throws Exception {
         stubAveniaAccount(companyA, "ACTIVE", "individual-kyc-sub-account");
-        when(aveniaKycVerificationRepository.existsByAveniaSubAccountId("individual-kyc-sub-account")).thenReturn(true);
+        beneficiaryOfA.setAveniaSubAccountId("individual-kyc-sub-account");
+        when(aveniaGateway.createQuote(any())).thenReturn(validQuote());
 
-        // Act / Assert
-        mockMvc.perform(quote(TestCompanyUsers.member(companyA, CompanyRole.OWNER)))
-                .andExpect(status().is(422))
-                .andExpect(content().string(not(containsString("individual-kyc-sub-account"))));
-        verifyNoInteractions(aveniaGateway);
+        mockMvc.perform(quote(TestCompanyUsers.member(companyA, CompanyRole.OPERATOR)))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<AveniaQuoteRequest> quote = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
+        verify(aveniaGateway).createQuote(quote.capture());
+        assertThat(quote.getValue().subAccountId()).isEqualTo("individual-kyc-sub-account");
+        verifyNoInteractions(aveniaKycVerificationRepository);
     }
 
     @Test
@@ -357,7 +369,6 @@ class CompanyFinancialAccountControllerTest {
 
     private static CompanyEntity approvedCompany(UUID id) {
         CompanyEntity company = CompanyEntity.builder().id(id).legalName("Empresa").build();
-        company.setKybStatus(ComplianceStatus.APPROVED);
         return company;
     }
 
