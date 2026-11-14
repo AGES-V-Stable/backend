@@ -348,7 +348,7 @@ class ApplicationImpactAssessmentTest extends ImpactEvidence {
             String before = jdbc.queryForObject("SELECT row_to_json(t)::text FROM transfer_executions t WHERE id=?", String.class, id);
             processor.start(id);
             processor.reconcile(id);
-            assertThatThrownBy(() -> processor.acceptRequote(id, companyA, new BigDecimal("100"), new BigDecimal("99")))
+            assertThatThrownBy(() -> processor.acceptRequote(id, companyA, new BigDecimal("100"), new BigDecimal("99"), () -> {}))
                     .isInstanceOf(ages.vstable.backend.exception.ConflictException.class);
             confirm(offer, token, "100", "99", 200);
             assertThat(jdbc.queryForObject("SELECT row_to_json(t)::text FROM transfer_executions t WHERE id=?", String.class, id)).isEqualTo(before);
