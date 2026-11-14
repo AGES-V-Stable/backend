@@ -105,6 +105,12 @@ quotes:
     # Prazo para confirmar uma oferta da Avenia; a execução recota e recusa preço pior.
     confirmation-window: ${QUOTE_AVENIA_CONFIRMATION_WINDOW:60s}
 
+# Crédito simulado de saldo (cicd#24): sem dinheiro real, então desligado por padrão. O perfil dev liga;
+# homologação liga com BALANCE_SIMULATED_DEPOSITS_ENABLED=true. Nunca ligar em produção.
+balance:
+  simulated-deposits:
+    enabled: ${BALANCE_SIMULATED_DEPOSITS_ENABLED:false}
+
 # Cotações de referência do dashboard (cicd#55): cache no banco, atualizado na leitura
 # quando passa do TTL. Só rotas que a Avenia cota neste sistema (BRL entra via PIX e sai
 # em token numa rede de carteira); a taxa exibida é o basePrice, sem tarifas.
@@ -154,6 +160,10 @@ spring:
 app:
   seed:
     password: ${DEV_SEED_PASSWORD:}
+
+balance:
+  simulated-deposits:
+    enabled: ${BALANCE_SIMULATED_DEPOSITS_ENABLED:true}
 
 ---
 spring:

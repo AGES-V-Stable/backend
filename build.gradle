@@ -98,6 +98,8 @@ tasks.named('test') {
 	// Testes contra a instância de desenvolvimento da BlindPay só rodam em blindpaySandboxTest.
 	useJUnitPlatform {
 		excludeTags 'blindpay-sandbox'
+		excludeTags 'pentest-impact'
+		excludeTags 'avenia-security-sandbox'
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
@@ -107,6 +109,55 @@ tasks.named('test') {
 		agentJar.from(configurations.mockitoAgent)
 	})
 	finalizedBy tasks.named('jacocoTestReport')
+}
+
+// cicd#86: provas locais de explorabilidade, separadas da regressão e dos sandboxes.
+tasks.register('pentestImpactTest', Test) {
+	description = 'Avalia cadeias de impacto locais com PostgreSQL efêmero e provedores simulados (cicd#86).'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform { includeTags 'pentest-impact' }
+	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
+	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
+	systemProperty 'INVITATION_ENCRYPTION_KEY', 'dGVzdC1vbmx5LWludml0ZS1rZXktMzItYnl0ZXMhISE='
+	systemProperty 'INVITATION_FRONTEND_ORIGIN', 'https://frontend.example.test'
+	systemProperty 'AVENIA_BASE_URL', 'http://127.0.0.1:0'
+	systemProperty 'BLINDPAY_BASE_URL', 'http://127.0.0.1:0'
+	['AVENIA_API_KEY', 'AVENIA_PRIVATE_KEY', 'BLINDPAY_API_KEY', 'APP_CONFIG_SECRET_ARN'].each {
+		systemProperty it, ''
+	}
+	systemProperty 'spring.profiles.active', 'test'
+	systemProperty 'TRANSFERS_RECONCILIATION_ENABLED', 'false'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	outputs.upToDateWhen { false }
+	testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'short' }
+}
+
+// Manual only: never a dependency of test/check/build or mutation testing.
+tasks.register('aveniaSecuritySandboxTest', Test) {
+	description = 'cicd#85: avaliacao Avenia sandbox, sequencial e com evidencias sanitizadas.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform { includeTags 'avenia-security-sandbox' }
+	maxParallelForks = 1
+	maxHeapSize = '384m'
+	jvmArgs '-XX:ActiveProcessorCount=2'
+	systemProperty 'avenia.assessment.phase', providers.gradleProperty('aveniaPhase').getOrElse('preflight')
+	systemProperty 'logging.level.root', 'OFF'
+	systemProperty 'spring.profiles.active', 'test'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'passed', 'failed', 'skipped'
+		showExceptions = false
+		showStandardStreams = false
+	}
 }
 
 tasks.register('blindpaySandboxTest', Test) {
@@ -158,7 +209,7 @@ pitest {
 		'ages.vstable.backend.*Test',
 		'ages.vstable.backend.*Tests'
 	]
-	excludedGroups = ['blindpay-sandbox']
+	excludedGroups = ['blindpay-sandbox', 'pentest-impact', 'avenia-security-sandbox']
 	excludedTestClasses = [
 		'ages.vstable.backend.BackendApplicationTests',
 		'ages.vstable.backend.DevelopmentDataSeederTest',
