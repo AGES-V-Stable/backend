@@ -46,6 +46,7 @@ class TwoFactorStateAssessmentTest {
     private final UserService userService = mock(UserService.class);
     private final TotpService totp = new TotpService(Clock.fixed(NOW, ZoneOffset.UTC));
     private final JwtTokenUtils jwt = new JwtTokenUtils();
+    private final TotpReplayStore sharedReplayStore = new SharedReplayStore();
     private UserEntity user;
     private String challenge;
     private String code;
@@ -171,6 +172,34 @@ class TwoFactorStateAssessmentTest {
     }
 
     private TwoFactorAuthService instance() {
-        return new TwoFactorAuthService(totp, users, administrators, jwt, userService);
+        return new TwoFactorAuthService(totp, sharedReplayStore, users, administrators, jwt, userService);
+    }
+
+    /**
+     * Modela a tabela totp_used_steps do PostgreSQL, compartilhada por todas as instancias:
+     * mesma regra do UPSERT condicional (so um passo maior substitui o ultimo consumido).
+     * A atomicidade real no banco e coberta por TotpReplayStoreIntegrationTest.
+     */
+    private static final class SharedReplayStore extends TotpReplayStore {
+        private final java.util.Map<String, Long> lastStepByPrincipal = new java.util.HashMap<>();
+
+        SharedReplayStore() {
+            super(null);
+        }
+
+        @Override
+        public synchronized boolean wasConsumed(String email, long timeStep) {
+            Long last = lastStepByPrincipal.get(email);
+            return last != null && last >= timeStep;
+        }
+
+        @Override
+        public synchronized void consume(String email, long timeStep) {
+            Long last = lastStepByPrincipal.get(email);
+            if (last != null && last >= timeStep) {
+                throw new BadCredentialsException("TOTP code has already been used");
+            }
+            lastStepByPrincipal.put(email, timeStep);
+        }
     }
 }
