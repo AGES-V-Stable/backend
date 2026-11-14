@@ -722,7 +722,7 @@ class TransferExecutionServiceTest {
                 user, confirmed.executionId(), confirmation("1000.00", "980.00"));
 
         verify(processor).acceptRequote(
-                confirmed.executionId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"));
+                confirmed.executionId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"), any(Runnable.class));
         assertThat(result).isNotNull();
         assertThat(result.executionId()).isEqualTo(confirmed.executionId());
     }
