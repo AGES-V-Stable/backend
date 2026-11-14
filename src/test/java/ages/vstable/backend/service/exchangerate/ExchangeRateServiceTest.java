@@ -161,6 +161,68 @@ class ExchangeRateServiceTest {
         verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
     }
 
+
+    @Test
+    void zeroRateWithoutCache_isUnavailableAndIsNotPersisted() {
+        when(repository.findAll()).thenReturn(List.of());
+        when(aveniaTransferService.createQuote(any())).thenReturn(quote("0"));
+
+        ExchangeRatesResponse response = service(DIRECT).currentRates();
+
+        assertThat(response.rates()).containsExactly(
+                new ExchangeRateResponse("BRL", "USDC", null, null, ExchangeRateStatus.UNAVAILABLE));
+        verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void negativeRateWithCache_remainsStaleAndIsNotOverwritten() {
+        OffsetDateTime fetchedAt = NOW_UTC.minusHours(4);
+        when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
+        when(aveniaTransferService.createQuote(any())).thenReturn(quote("-1.25"));
+
+        ExchangeRatesResponse response = service(DIRECT).currentRates();
+
+        assertThat(response.rates()).containsExactly(
+                new ExchangeRateResponse("BRL", "USDC", "5.40000000", fetchedAt, ExchangeRateStatus.STALE));
+        verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void subprecisionRateWithoutCache_isUnavailableInsteadOfDisplayingZeroAsCurrent() {
+        when(repository.findAll()).thenReturn(List.of());
+        when(aveniaTransferService.createQuote(any())).thenReturn(quote("0.000000001"));
+
+        ExchangeRatesResponse response = service(DIRECT).currentRates();
+
+        assertThat(response.rates().getFirst().status()).isEqualTo(ExchangeRateStatus.UNAVAILABLE);
+        assertThat(response.rates().getFirst().rate()).isNull();
+        verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void missingRateWithoutCache_isUnavailableAndIsNotPersisted() {
+        when(repository.findAll()).thenReturn(List.of());
+        when(aveniaTransferService.createQuote(any())).thenReturn(quote(null));
+
+        ExchangeRatesResponse response = service(DIRECT).currentRates();
+
+        assertThat(response.rates().getFirst().status()).isEqualTo(ExchangeRateStatus.UNAVAILABLE);
+        verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void missingProviderResponseWithCache_preservesLastRateAsStale() {
+        OffsetDateTime fetchedAt = NOW_UTC.minusHours(4);
+        when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
+        when(aveniaTransferService.createQuote(any())).thenReturn(null);
+
+        ExchangeRatesResponse response = service(DIRECT).currentRates();
+
+        assertThat(response.rates().getFirst().status()).isEqualTo(ExchangeRateStatus.STALE);
+        assertThat(response.rates().getFirst().rate()).isEqualTo("5.40000000");
+        verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
+    }
+
     @Test
     void aveniaDoesNotAnswerWithinTimeout_isTreatedAsFailure() {
         // Arrange: o executor descarta a tarefa, então a cotação nunca chega.
@@ -256,6 +318,6 @@ class ExchangeRateServiceTest {
     private static AveniaQuoteResponse quote(String basePrice) {
         return new AveniaQuoteResponse("token", "BRL", "PIX", new BigDecimal("1000"), "USDC", "POLYGON",
                 new BigDecimal("182.11"), BigDecimal.ZERO, null, false, false, List.of(),
-                new BigDecimal(basePrice), "BRLUSDC");
+                basePrice == null ? null : new BigDecimal(basePrice), "BRLUSDC");
     }
 }
