@@ -99,6 +99,7 @@ tasks.named('test') {
 	useJUnitPlatform {
 		excludeTags 'blindpay-sandbox'
 		excludeTags 'pentest-impact'
+		excludeTags 'avenia-security-sandbox'
 	}
 	systemProperty 'JWT_SECRET', 'test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes'
 	systemProperty 'TWO_FACTOR_ENCRYPTION_KEY', 'dGVzdC1vbmx5LTJmYS1rZXktMzItYnl0ZXMtbG9uZyE='
@@ -133,6 +134,30 @@ tasks.register('pentestImpactTest', Test) {
 	})
 	outputs.upToDateWhen { false }
 	testLogging { events 'passed', 'failed', 'skipped'; exceptionFormat 'short' }
+}
+
+// Manual only: never a dependency of test/check/build or mutation testing.
+tasks.register('aveniaSecuritySandboxTest', Test) {
+	description = 'cicd#85: avaliacao Avenia sandbox, sequencial e com evidencias sanitizadas.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform { includeTags 'avenia-security-sandbox' }
+	maxParallelForks = 1
+	maxHeapSize = '384m'
+	jvmArgs '-XX:ActiveProcessorCount=2'
+	systemProperty 'avenia.assessment.phase', providers.gradleProperty('aveniaPhase').getOrElse('preflight')
+	systemProperty 'logging.level.root', 'OFF'
+	systemProperty 'spring.profiles.active', 'test'
+	jvmArgumentProviders.add(objects.newInstance(MockitoAgentProvider).tap {
+		agentJar.from(configurations.mockitoAgent)
+	})
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'passed', 'failed', 'skipped'
+		showExceptions = false
+		showStandardStreams = false
+	}
 }
 
 tasks.register('blindpaySandboxTest', Test) {
@@ -184,7 +209,7 @@ pitest {
 		'ages.vstable.backend.*Test',
 		'ages.vstable.backend.*Tests'
 	]
-	excludedGroups = ['blindpay-sandbox', 'pentest-impact']
+	excludedGroups = ['blindpay-sandbox', 'pentest-impact', 'avenia-security-sandbox']
 	excludedTestClasses = [
 		'ages.vstable.backend.BackendApplicationTests',
 		'ages.vstable.backend.DevelopmentDataSeederTest',
