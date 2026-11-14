@@ -865,6 +865,23 @@ class TransferExecutionServiceTest {
     }
 
 
+    private void assertAveniaPostTicketExceptionOutcome(
+            AveniaIntegrationException exception, TransferExecutionStatus expectedStatus, String expectedMessage) {
+        executions.clear();
+        offer.setStatus(ProviderQuoteStatus.SELECTED);
+        org.mockito.Mockito.doAnswer(call -> {
+            Consumer<TransferQuoteResponse> guard = call.getArgument(3);
+            guard.accept(aveniaQuote("1000.00", "180.50"));
+            throw exception;
+        }).when(transferService).createConfirmedOffer(any(), any(), any(), any());
+
+        assertThatThrownBy(() -> service.confirm(user, offer.getId(), confirmation("1000.00", "180.50")))
+                .isSameAs(exception);
+        TransferExecutionEntity exec = executions.values().iterator().next();
+        assertThat(exec.getStatus()).isEqualTo(expectedStatus);
+        assertThat(exec.getFailureMessage()).isEqualTo(expectedMessage);
+    }
+
     @Test
     void confirm_aveniaFailsAfterTicketRequest_requiresReconciliationOrFailsOnExplicitRejection() {
         aveniaOffer();
