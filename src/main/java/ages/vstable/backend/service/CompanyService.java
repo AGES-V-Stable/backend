@@ -9,13 +9,17 @@ import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.exception.ConflictException;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.CompanyRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
 import ages.vstable.backend.repository.ComplianceDocumentRepository;
 import ages.vstable.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +32,11 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +46,7 @@ public class CompanyService {
     private final ComplianceDocumentRepository complianceDocumentRepository;
     private final CompanyDataValidator companyDataValidator;
     private final UserRepository userRepository;
+    private final CompanyMembershipRepository companyMembershipRepository;
 
     public List<CompanyResponse> findAll() {
         return companyRepository.findAll()
@@ -51,19 +55,39 @@ public class CompanyService {
                 .toList();
     }
 
+    /**
+     * A lista administrativa deve apontar para o responsável com acesso vigente à empresa,
+     * nunca para o usuário mais antigo associado ao companyId legado. OWNER não implica,
+     * por si só, que a pessoa seja o representante legal no KYB.
+     */
     @Transactional(readOnly = true)
     public List<CompanySummaryResponse> findSummaries() {
-        Map<UUID, UserEntity> primaryRepresentatives = userRepository.findAll().stream()
-                .filter(user -> user.getCompanyId() != null)
-                .collect(Collectors.toMap(
-                        UserEntity::getCompanyId,
-                        Function.identity(),
-                        (first, second) -> isCreatedBefore(second, first) ? second : first));
+        List<CompanyMembershipEntity> activeOwners = companyMembershipRepository
+                .findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE);
+
+        Map<UUID, UserEntity> usersById = new HashMap<>();
+        for (UserEntity user : userRepository.findAllById(
+                activeOwners.stream().map(CompanyMembershipEntity::getUserId).distinct().toList())) {
+            usersById.put(user.getId(), user);
+        }
+
+        Map<UUID, UserEntity> accountOwners = new HashMap<>();
+        activeOwners.stream()
+                .sorted(Comparator.comparing(CompanyMembershipEntity::getJoinedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(CompanyMembershipEntity::getId,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .forEach(membership -> {
+                    UserEntity owner = usersById.get(membership.getUserId());
+                    if (owner != null) {
+                        accountOwners.putIfAbsent(membership.getCompanyId(), owner);
+                    }
+                });
 
         return companyRepository.findAll().stream()
                 .sorted(Comparator.comparing(CompanyEntity::getUpdatedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(company -> toSummary(company, primaryRepresentatives.get(company.getId())))
+                .map(company -> toSummary(company, accountOwners.get(company.getId())))
                 .toList();
     }
 
@@ -182,11 +206,6 @@ public class CompanyService {
             return ComplianceStatus.APPROVED;
         }
         return ComplianceStatus.PENDING;
-    }
-
-    private static boolean isCreatedBefore(UserEntity candidate, UserEntity current) {
-        if (candidate.getCreatedAt() == null) return false;
-        return current.getCreatedAt() == null || candidate.getCreatedAt().isBefore(current.getCreatedAt());
     }
 
     private CompanySummaryResponse toSummary(CompanyEntity company, UserEntity representative) {
