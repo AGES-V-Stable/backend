@@ -34,7 +34,7 @@ Nesta tentativa foram criadas uma conta bancária e uma carteira gerenciada de t
 - O comando conjunto `build securityAssessmentTest --continue` retornou 1 pelo diagnóstico separado. Não se apresenta esse comando conjunto como `BUILD SUCCESSFUL`.
 - O primeiro diagnóstico no HEAD atualizado produziu 421 casos/23 FAIL. Dois eram uma classificação desatualizada: `/v1/onboarding/account` passou a ser uma rota pública de cadastro em `SecurityConfiguration`, mas a lista do teste ainda exigia autenticação. A lista de teste foi sincronizada com esse contrato; nenhuma regra de produção foi alterada.
 - Diagnóstico local reexecutado: **419 casos, 398 PASS, 21 FAIL, zero ignorados**, preservando os 21 resultados conhecidos da avaliação local. O inventário atual tem 71 operações, cinco públicas, 66 protegidas e 18 administrativas. Sua presença no inventário/regressão não equivale a avaliação de segurança completa do fluxo de convites.
-- Os resultados individuais estão em `local-regression/integration-retest.json` e `local-regression/assessment.json`; a captura anterior à correção de classificação foi preservada em `before-inventory-update/`.
+- O resultado consolidado está em `local-regression/assessment.json`. As listas caso a caso (`integration-retest.json`) e a captura anterior à correção de classificação foram removidas do repositório por tamanho e podem ser regeradas com `scripts/export-security-evidence.ps1`.
 
 Frontend não foi modificado nem reexecutado nesta etapa. Capturas antigas de 385 casos/59 operações e 772 testes frontend pertencem aos seus commits e datas originais.
 
