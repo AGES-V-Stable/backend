@@ -45,6 +45,9 @@ class TwoFactorAuthServiceTest {
         private UserRepository userRepository;
 
         @Mock
+        private TotpReplayStore replayStore;
+
+        @Mock
         private AdministratorRepository administratorRepository;
 
         @Mock
@@ -60,7 +63,7 @@ class TwoFactorAuthServiceTest {
         void setUp() {
                 totpService = new TotpService(Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
                 twoFactorAuthService = new TwoFactorAuthService(
-                                totpService, userRepository, administratorRepository, jwtTokenUtils, userService);
+                                totpService, replayStore, userRepository, administratorRepository, jwtTokenUtils, userService);
         }
 
         @Test
