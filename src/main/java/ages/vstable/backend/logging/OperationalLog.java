@@ -71,6 +71,15 @@ public final class OperationalLog {
         event.log("Provider call completed");
     }
 
+    /** Atualização de uma cotação de referência; pair é o par configurado (ex.: BRL/USDC). */
+    public static void exchangeRateRefresh(String pair, String outcome) {
+        LOG.atLevel("success".equals(outcome) ? Level.INFO : Level.WARN)
+                .addKeyValue("event", "exchange_rate.refresh.completed")
+                .addKeyValue("operation", "exchange_rate.refresh").addKeyValue("pair", pair)
+                .addKeyValue("outcome", outcome)
+                .log("Exchange rate refresh completed");
+    }
+
     public static void quoteAggregation(String outcome, long startedAt, long timeouts) {
         LOG.atLevel("success".equals(outcome) ? Level.INFO : Level.WARN)
                 .addKeyValue("event", "quote.aggregation.completed")

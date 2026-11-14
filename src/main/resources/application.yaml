@@ -111,6 +111,23 @@ balance:
   simulated-deposits:
     enabled: ${BALANCE_SIMULATED_DEPOSITS_ENABLED:false}
 
+# Cotações de referência do dashboard (cicd#55): cache no banco, atualizado na leitura
+# quando passa do TTL. Só rotas que a Avenia cota neste sistema (BRL entra via PIX e sai
+# em token numa rede de carteira); a taxa exibida é o basePrice, sem tarifas.
+exchange-rates:
+  ttl: ${EXCHANGE_RATES_TTL:2h}
+  provider-timeout: ${EXCHANGE_RATES_PROVIDER_TIMEOUT:5s}
+  reference-amount: ${EXCHANGE_RATES_REFERENCE_AMOUNT:1000}
+  pairs:
+    - base-currency: BRL
+      quote-currency: USDC
+      input-payment-method: PIX
+      output-payment-method: POLYGON
+    - base-currency: BRL
+      quote-currency: USDT
+      input-payment-method: PIX
+      output-payment-method: POLYGON
+
 # Economia estimada do dashboard: custo de câmbio bancário de referência, em pontos percentuais.
 dashboard:
   savings:
