@@ -694,6 +694,7 @@ class TransferExecutionServiceTest {
         // Arrange: outra requisição registrou a execução entre a leitura e a gravação.
         TransferExecutionEntity existing = TransferExecutionEntity.builder()
                 .id(UUID.randomUUID()).providerQuoteId(offer.getId()).companyId(company.getId())
+                .requestedBy(user.getId())
                 .provider(IntegrationProvider.BLINDPAY).status(TransferExecutionStatus.AWAITING_FUNDS)
                 .sourceCurrency("BRL").targetCurrency("USD")
                 .sourceAmount(new BigDecimal("1000.00")).targetAmount(new BigDecimal("990.00")).build();
@@ -722,7 +723,8 @@ class TransferExecutionServiceTest {
                 user, confirmed.executionId(), confirmation("1000.00", "980.00"));
 
         verify(processor).acceptRequote(
-                confirmed.executionId(), company.getId(), new BigDecimal("1000.00"), new BigDecimal("980.00"), any(Runnable.class));
+                eq(confirmed.executionId()), eq(company.getId()), eq(new BigDecimal("1000.00")),
+                eq(new BigDecimal("980.00")), any(Runnable.class));
         assertThat(result).isNotNull();
         assertThat(result.executionId()).isEqualTo(confirmed.executionId());
     }
