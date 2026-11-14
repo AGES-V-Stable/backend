@@ -14,10 +14,14 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,8 +64,10 @@ public class TwoFactorAuthService {
                 throw new BadCredentialsException("O código TOTP atual é obrigatório para reconfigurar o 2FA");
             }
             String currentSecret = getSecret(principal);
-            verifyTotpWithSecurityChecks(principal.getUsername(), currentSecret, currentCode);
+            verifyTotpWithSecurityChecks(replayAccountKey(principal), currentSecret, currentCode);
         }
+        String oldReplayKey = principal instanceof UserEntity || principal instanceof AdministratorEntity
+                ? replayAccountKey(principal) : null;
         String secret = totpService.generateSecret();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         if (principal instanceof UserEntity user) {
@@ -77,9 +83,13 @@ public class TwoFactorAuthService {
         } else {
             throw new IllegalArgumentException("Unsupported principal type");
         }
-        failedAttemptsByAccount.remove(principal.getUsername());
-        lockedUntilByAccount.remove(principal.getUsername());
-        lastUsedCodeByAccount.remove(principal.getUsername());
+        // O novo segredo gera outra identidade anti-replay; o anterior mantém seu histórico
+        // persistido para evitar que algum código antigo volte a ser aceito.
+        if (oldReplayKey != null) {
+            failedAttemptsByAccount.remove(oldReplayKey);
+            lockedUntilByAccount.remove(oldReplayKey);
+            lastUsedCodeByAccount.remove(oldReplayKey);
+        }
         String otpauthUri = totpService.buildOtpAuthUri(principal.getUsername(), secret);
         return TwoFactorSetupResponseDTO.builder()
                 .otpauthUri(otpauthUri)
@@ -89,14 +99,14 @@ public class TwoFactorAuthService {
 
     @Transactional
     public void activateTwoFactor(UserDetails principal, String code) {
-        assertNotLocked(principal.getUsername());
+        assertNotLocked(replayAccountKey(principal));
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
         if (principal instanceof UserEntity user) {
             if (user.getTwoFactorSecret() == null || user.getTwoFactorSecret().isBlank()) {
                 throw new UnprocessableEntityException("2FA setup has not been initiated for this account");
             }
-            verifyTotpWithSecurityChecks(user.getEmail(), user.getTwoFactorSecret(), code);
+            verifyTotpWithSecurityChecks(replayAccountKey(user), user.getTwoFactorSecret(), code);
             user.setTwoFactorEnabled(true);
             user.setUpdatedAt(now);
             userRepository.save(user);
@@ -104,7 +114,7 @@ public class TwoFactorAuthService {
             if (admin.getTwoFactorSecret() == null || admin.getTwoFactorSecret().isBlank()) {
                 throw new UnprocessableEntityException("2FA setup has not been initiated for this account");
             }
-            verifyTotpWithSecurityChecks(admin.getEmail(), admin.getTwoFactorSecret(), code);
+            verifyTotpWithSecurityChecks(replayAccountKey(admin), admin.getTwoFactorSecret(), code);
             admin.setTwoFactorEnabled(true);
             admin.setUpdatedAt(now);
             administratorRepository.save(admin);
@@ -165,8 +175,8 @@ public class TwoFactorAuthService {
         }
         String email = jwtTokenUtils.getUsernameFromToken(challengeToken);
         String accountType = jwtTokenUtils.getAccountTypeFromToken(challengeToken);
-        assertNotLocked(email);
         UserDetails principal = userService.loadPrincipal(email, accountType);
+        assertNotLocked(replayAccountKey(principal));
         if (!principal.isEnabled()) {
             throw new LockedException("Account is disabled");
         }
@@ -174,7 +184,7 @@ public class TwoFactorAuthService {
         if (secret == null || secret.isBlank()) {
             throw new BadCredentialsException("2FA is not configured for this account");
         }
-        verifyTotpWithSecurityChecks(email, secret, code);
+        verifyTotpWithSecurityChecks(replayAccountKey(principal), secret, code);
         // Se era o 1º acesso de um Admin (twoFactorEnabled ainda era false), marca como true após validar!
         if (!isTwoFactorAlreadyEnabled(principal) && principal instanceof AdministratorEntity admin) {
             admin.setTwoFactorEnabled(true);
@@ -208,19 +218,19 @@ public class TwoFactorAuthService {
      * aceitas ao mesmo tempo. Se a operação for rejeitada antes de mudar estado, o chamador
      * deve chamar {@link TotpReservation#release()}.
      *
-     * <p>Assim como as demais proteções deste serviço, a reserva vale somente para a instância
-     * atual da aplicação.
+     * <p>A reserva no PostgreSQL vale entre instâncias; o mapa local é defesa complementar.
+     * O chamador deve estar em transação para que o rollback devolva a reserva persistente.
      */
     public TotpReservation reserveTransferTotp(UUID userId, String code) {
         UserEntity user = validateTransferUserTotp(userId, code);
-        String email = user.getEmail();
+        String accountKey = replayAccountKey(user);
         String normalizedCode = code.trim();
         AtomicReference<String> previousCode = new AtomicReference<>();
         AtomicBoolean reserved = new AtomicBoolean(false);
         // A escrita condicional no PostgreSQL é o bloqueio entre Lambdas. Ela participa da
         // transação da confirmação e é revertida automaticamente em caso de rollback.
-        replayStore.consume(email, verifiedTimeStep(user.getTwoFactorSecret(), normalizedCode));
-        lastUsedCodeByAccount.compute(email, (account, currentCode) -> {
+        replayStore.consume(accountKey, verifiedTimeStep(user.getTwoFactorSecret(), normalizedCode));
+        lastUsedCodeByAccount.compute(accountKey, (account, currentCode) -> {
             if (normalizedCode.equals(currentCode)) {
                 return currentCode;
             }
@@ -231,15 +241,15 @@ public class TwoFactorAuthService {
         if (!reserved.get()) {
             throw new BadCredentialsException("TOTP code has already been used");
         }
-        failedAttemptsByAccount.remove(email);
-        lockedUntilByAccount.remove(email);
-        return () -> lastUsedCodeByAccount.computeIfPresent(email,
+        failedAttemptsByAccount.remove(accountKey);
+        lockedUntilByAccount.remove(accountKey);
+        return () -> lastUsedCodeByAccount.computeIfPresent(accountKey,
                 (account, currentCode) -> normalizedCode.equals(currentCode) ? previousCode.get() : currentCode);
     }
 
     private UserEntity validateTransferUserTotp(UUID userId, String code) {
         UserEntity user = loadAuthenticatedUserForTotp(userId);
-        assertNotLocked(user.getEmail());
+        assertNotLocked(replayAccountKey(user));
 
         if (!Boolean.TRUE.equals(user.getTwoFactorEnabled())
                 || user.getTwoFactorSecret() == null
@@ -251,7 +261,7 @@ public class TwoFactorAuthService {
             throw new UnprocessableEntityException(
                     "O código TOTP de 6 dígitos é obrigatório para confirmar a transferência");
         }
-        validateTotpWithoutConsuming(user.getEmail(), user.getTwoFactorSecret(), code);
+        validateTotpWithoutConsuming(replayAccountKey(user), user.getTwoFactorSecret(), code);
         return user;
     }
 
@@ -261,7 +271,26 @@ public class TwoFactorAuthService {
      */
     public void consumeTransferTotp(UUID userId, String code) {
         UserEntity user = loadAuthenticatedUserForTotp(userId);
-        consumeTotpCode(user.getEmail(), user.getTwoFactorSecret(), code);
+        consumeTotpCode(replayAccountKey(user), user.getTwoFactorSecret(), code);
+    }
+
+    /**
+     * O endpoint legado da Avenia tem um efeito externo não transacional. Consome o
+     * TOTP em uma transação independente ANTES de enviar qualquer instrução financeira.
+     * Em timeout ou erro de persistência após a chamada, o código permanece consumido:
+     * não é seguro liberar autorização de uma operação cujo resultado é incerto.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void consumeTransferTotpBeforeExternalCall(UUID userId, String code) {
+        TotpReservation reservation = reserveTransferTotp(userId, code);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    reservation.release();
+                }
+            }
+        });
     }
 
     private UserEntity loadAuthenticatedUserForTotp(UUID userId) {
@@ -299,7 +328,20 @@ public class TwoFactorAuthService {
     private void consumeTotpCode(String email, String secret, String code) {
         String normalizedCode = code == null ? "" : code.trim();
         replayStore.consume(email, verifiedTimeStep(secret, normalizedCode));
-        lastUsedCodeByAccount.put(email, normalizedCode);
+        String previous = lastUsedCodeByAccount.put(email, normalizedCode);
+        // Se a transação de login/ativação falhar, o cache local não pode manter o
+        // código bloqueado enquanto a transação PostgreSQL foi desfeita.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_ROLLED_BACK) {
+                        lastUsedCodeByAccount.compute(email, (account, current) ->
+                                normalizedCode.equals(current) ? previous : current);
+                    }
+                }
+            });
+        }
         failedAttemptsByAccount.remove(email);
         lockedUntilByAccount.remove(email);
     }
@@ -320,6 +362,28 @@ public class TwoFactorAuthService {
         if (attempts >= MAX_FAILED_ATTEMPTS) {
             lockedUntilByAccount.put(email, Instant.now().plusSeconds(LOCKOUT_SECONDS));
         }
+    }
+
+    /**
+     * Isola ADMIN de USER, evita colisão de e-mail e separa cada geração de segredo.
+     * A identificação completa é transformada em SHA-256 por TotpReplayStore antes
+     * de ser persistida; o segredo não é enviado aos logs nem gravado na tabela.
+     */
+    private String replayAccountKey(UserDetails principal) {
+        String category;
+        UUID id;
+        if (principal instanceof AdministratorEntity admin) {
+            category = "admin";
+            id = admin.getId();
+        } else if (principal instanceof UserEntity user) {
+            category = "user";
+            id = user.getId();
+        } else {
+            throw new IllegalArgumentException("Unsupported principal type");
+        }
+        String identity = id != null ? id.toString()
+                : principal.getUsername().trim().toLowerCase(Locale.ROOT);
+        return category + ":" + identity + ":" + String.valueOf(getSecret(principal));
     }
 
     private boolean isTwoFactorAlreadyEnabled(UserDetails principal) {
