@@ -15,6 +15,8 @@ import org.mockito.quality.Strictness;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,12 +41,16 @@ class UserServiceTest {
         userService = new UserService(userRepository, administratorRepository);
 
         UUID companyId = UUID.randomUUID();
+        OffsetDateTime createdAt = OffsetDateTime.of(2026, 1, 10, 12, 0, 0, 0, ZoneOffset.UTC);
+        OffsetDateTime updatedAt = OffsetDateTime.of(2026, 1, 15, 15, 30, 0, 0, ZoneOffset.UTC);
         UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .companyId(companyId)
                 .fullName("Joao da Silva")
                 .email("joao@example.com")
                 .passwordHash("hash-nunca-deve-vazar")
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
                 .build();
 
         when(userRepository.findAll()).thenReturn(List.of(user));
@@ -57,6 +63,8 @@ class UserServiceTest {
         assertThat(response.getCompanyId()).isEqualTo(companyId);
         assertThat(response.getFullName()).isEqualTo("Joao da Silva");
         assertThat(response.getEmail()).isEqualTo("joao@example.com");
+        assertThat(response.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(response.getUpdatedAt()).isEqualTo(updatedAt);
     }
 
     @Test

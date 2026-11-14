@@ -1,6 +1,7 @@
 package ages.vstable.backend.repository;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,11 +21,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V14 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V15 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
  * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
  * invariantes de vínculos e convites, na V12 o histórico de links substituídos e, na V13,
- * contas sem empresa preservando os dados existentes e, na V14, o cache de cotações.
+ * contas sem empresa preservando os dados existentes, na V14, o registro do aceite do convite e
+ * a unicidade do e-mail sem diferenciar maiúsculas e, na V15, o cache de cotações.
  * Ignorado quando não há Docker.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -84,7 +86,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
@@ -112,7 +114,7 @@ class FlywayMigrationIntegrationTest {
 
         // Assert
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13", "14");
+                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13", "14", "15");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
@@ -133,7 +135,7 @@ class FlywayMigrationIntegrationTest {
                 + "VALUES ('" + USER_A3 + "', NULL, 'Sem empresa', 'nova@example.com', 'h', 's')");
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13", "14");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13", "14", "15");
         assertThat(rows("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
                 + "AND table_name = 'users' AND column_name = 'company_id'")).containsExactly("YES");
         assertThat(rows("SELECT id || ':' || company_id FROM users WHERE company_id IS NOT NULL"))
@@ -449,6 +451,125 @@ class FlywayMigrationIntegrationTest {
         // Assert
         assertThat(rows("SELECT user_id FROM company_memberships")).containsExactly(USER_A2);
         assertThat(rows("SELECT id FROM company_invitations")).isEmpty();
+    }
+
+    @Test
+    void invitations_v14_recordsTheAcceptanceAndKeepsTheHistoryWhenTheMembershipIsDeleted() throws SQLException {
+        // Arrange
+        migrateWithCompanyAndTwoUsers();
+        insertMembership(USER_A1, COMPANY_A, "OWNER", "ACTIVE");
+        insertMembership(USER_A2, COMPANY_A, "OPERATOR", "ACTIVE");
+        insertInvitation("a2@example.com", "OPERATOR", "ACCEPTED", "hash-1", false);
+        execute("UPDATE company_invitations SET accepted_at = now(), terms_version = 'v1', terms_accepted_at = now(), "
+                + "accepted_by = '" + USER_A2 + "', membership_id = (SELECT id FROM company_memberships "
+                + "WHERE user_id = '" + USER_A2 + "')");
+
+        // Act
+        execute("DELETE FROM company_memberships WHERE user_id = '" + USER_A2 + "'");
+
+        // Assert
+        assertThat(rows("SELECT accepted_by || ':' || terms_version || ':' || (membership_id IS NULL) "
+                + "FROM company_invitations")).containsExactly(USER_A2 + ":v1:true");
+        assertThatThrownBy(() -> execute("UPDATE company_invitations SET accepted_by = '" + USER_B1 + "'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("company_invitations_accepted_by_fkey");
+    }
+
+    @Test
+    void migrate_v14_keepsExistingInvitationsInEveryStateUntouched() throws SQLException {
+        // Arrange: convites gravados antes da V14
+        flyway("13").migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "a1@example.com", "NULL");
+        insertMembership(USER_A1, COMPANY_A, "OWNER", "ACTIVE");
+        insertInvitation("pendente@example.com", "OPERATOR", "PENDING", "hash-p", true);
+        insertInvitation("revogado@example.com", "VIEWER", "REVOKED", "hash-r", false);
+        insertInvitation("aceito@example.com", "OPERATOR", "ACCEPTED", "hash-a", false);
+
+        // Act
+        MigrateResult result = flyway(null).migrate();
+
+        // Assert
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("14", "15");
+        assertThat(rows("SELECT email || ':' || status || ':' || token_hash || ':' || version "
+                + "|| ':' || (token_ciphertext IS NOT NULL) FROM company_invitations"))
+                .containsExactlyInAnyOrder("pendente@example.com:PENDING:hash-p:1:true",
+                        "revogado@example.com:REVOKED:hash-r:1:false", "aceito@example.com:ACCEPTED:hash-a:1:false");
+        assertThat(rows("SELECT count(*) FROM company_invitations WHERE accepted_by IS NOT NULL "
+                + "OR membership_id IS NOT NULL OR terms_version IS NOT NULL OR terms_accepted_at IS NOT NULL"))
+                .containsExactly("0");
+    }
+
+    @Test
+    void migrate_v14_createsPartialIndexesForTheNewForeignKeys() throws SQLException {
+        // Act
+        flyway(null).migrate();
+
+        // Assert
+        assertThat(rows("SELECT indexname || ' ' || indexdef FROM pg_indexes WHERE schemaname = 'public' "
+                + "AND indexname IN ('idx_company_invitations_accepted_by', 'idx_company_invitations_membership') "
+                + "ORDER BY indexname"))
+                .satisfiesExactly(
+                        accepted -> assertThat(accepted).contains("(accepted_by)")
+                                .contains("WHERE (accepted_by IS NOT NULL)"),
+                        membership -> assertThat(membership).contains("(membership_id)")
+                                .contains("WHERE (membership_id IS NOT NULL)"));
+        assertThat(rows("SELECT conname || ':' || confdeltype::text FROM pg_constraint WHERE conname IN "
+                + "('company_invitations_accepted_by_fkey', 'company_invitations_membership_fkey') ORDER BY conname"))
+                .containsExactly("company_invitations_accepted_by_fkey:n", "company_invitations_membership_fkey:n");
+    }
+
+    @Test
+    void migrate_v14_rejectsASecondAccountWithTheSameEmailInAnotherCase() throws SQLException {
+        // Arrange
+        flyway(null).migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "maria@example.com", "NULL");
+
+        // Act / Assert: o aceite grava em minúsculas e o cadastro como foi digitado; o banco barra os dois.
+        assertThatThrownBy(() -> insertUser(USER_A2, COMPANY_A, "Maria@Example.com", "NULL"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("users_email_lower_key");
+        assertThat(rows("SELECT count(*) FROM users")).containsExactly("1");
+    }
+
+    @Test
+    void migrate_v14_withAccountsDuplicatedByCase_failsAndLeavesTheSchemaUntouched() throws SQLException {
+        // Arrange: duplicatas que a V1 (sensível a maiúsculas) permitia precisam ser resolvidas antes da V14.
+        flyway("13").migrate();
+        insertCompany(COMPANY_A, "1");
+        insertUser(USER_A1, COMPANY_A, "maria@example.com", "NULL");
+        insertUser(USER_A2, COMPANY_A, "MARIA@example.com", "NULL");
+
+        // Act / Assert
+        assertThatThrownBy(() -> flyway(null).migrate()).isInstanceOf(FlywayException.class);
+        assertThat(columnExists("company_invitations", "accepted_by")).isFalse();
+        assertThat(rows("SELECT count(*) FROM users")).containsExactly("2");
+    }
+
+    @Test
+    void migrate_v14_failureIsRolledBackAsAWholeAndCanBeAppliedAgain() throws SQLException {
+        // Arrange: um objeto conflitante faz a V14 falhar no meio do ALTER TABLE
+        flyway("13").migrate();
+        execute("ALTER TABLE company_invitations ADD COLUMN terms_version text");
+
+        // Act
+        assertThatThrownBy(() -> flyway(null).migrate()).isInstanceOf(FlywayException.class);
+
+        // Assert: nada da V14 ficou aplicado
+        assertThat(columnExists("company_invitations", "accepted_by")).isFalse();
+        assertThat(columnExists("company_invitations", "membership_id")).isFalse();
+        assertThat(columnExists("company_invitations", "terms_accepted_at")).isFalse();
+        assertThat(rows("SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_company_invitations_accepted_by'"))
+                .containsExactly("0");
+        assertThat(rows("SELECT count(*) FROM flyway_schema_history WHERE version = '14' AND success"))
+                .containsExactly("0");
+
+        // Act / Assert: removido o conflito, a mesma migration é aplicada normalmente
+        execute("ALTER TABLE company_invitations DROP COLUMN terms_version");
+        assertThat(flyway(null).migrate().migrations).extracting(migration -> migration.version)
+                .containsExactly("14", "15");
+        assertThat(columnExists("company_invitations", "terms_version")).isTrue();
     }
 
     private Flyway flyway(String target) {

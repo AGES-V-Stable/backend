@@ -160,7 +160,19 @@ class AuthControllerTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new BadCredentialsException("Invalid credentials"));
 
-        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
+        ch.qos.logback.classic.Logger opLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ages.vstable.backend.logging.OperationalLog.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        opLogger.addAppender(appender);
+        ResponseEntity<LoginResponseDTO> response;
+        try {
+            response = authController.getPermissions(request);
+            assertFalse(appender.list.isEmpty());
+        } finally {
+            opLogger.detachAppender(appender);
+        }
 
         assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -174,7 +186,19 @@ class AuthControllerTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new LockedException("User is locked"));
 
-        ResponseEntity<LoginResponseDTO> response = authController.getPermissions(request);
+        ch.qos.logback.classic.Logger opLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ages.vstable.backend.logging.OperationalLog.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        opLogger.addAppender(appender);
+        ResponseEntity<LoginResponseDTO> response;
+        try {
+            response = authController.getPermissions(request);
+            assertFalse(appender.list.isEmpty());
+        } finally {
+            opLogger.detachAppender(appender);
+        }
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
         assertNotNull(response.getBody());
@@ -253,5 +277,17 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.LOCKED, response.getStatusCode());
         assertEquals("ACCOUNT_LOCKED", response.getBody().get("code"));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedOnActivateWhenNotAuthenticated() {
+        TwoFactorActivateRequestDTO activateReq = new TwoFactorActivateRequestDTO("123456");
+
+        ResponseEntity<Map<String, Object>> response = authController.activateTwoFactor(null, activateReq);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("UNAUTHENTICATED", response.getBody().get("code"));
+        verifyNoInteractions(twoFactorAuthService);
     }
 }

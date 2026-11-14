@@ -487,6 +487,40 @@ class CompanyDataValidatorTest {
     }
 
     @Test
+    void shouldAcceptExactBoundaryLengthsForLegalNameCountryStateCityAndZipCode() {
+        String minLegalName = "ABC";
+        String maxLegalName = "A".repeat(255);
+        String maxCountry = "C".repeat(100);
+        String maxState = "S".repeat(50);
+        String maxCity = "M".repeat(100);
+        String maxZipCode = "Z".repeat(20);
+
+        CompanyNormalizedData minResult = validator.normalize(
+                minLegalName,
+                VALID_CNPJ,
+                "Brasil",
+                VALID_CEP,
+                maxCity,
+                maxState
+        );
+        assertThat(minResult.legalName()).isEqualTo(minLegalName);
+        assertThat(minResult.city()).isEqualTo(maxCity);
+        assertThat(minResult.state()).isEqualTo(maxState);
+
+        CompanyNormalizedData maxResult = validator.normalize(
+                maxLegalName,
+                VALID_CNPJ,
+                maxCountry,
+                maxZipCode,
+                maxCity,
+                maxState
+        );
+        assertThat(maxResult.legalName()).isEqualTo(maxLegalName);
+        assertThat(maxResult.country()).isEqualTo(maxCountry);
+        assertThat(maxResult.zipCode()).isEqualTo(maxZipCode);
+    }
+
+    @Test
     void shouldAcceptLowercaseBrazilCountry() {
         CompanyNormalizedData result = validator.normalize(
                 "Empresa Teste",

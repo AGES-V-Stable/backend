@@ -212,6 +212,8 @@ class CompanyControllerTest {
 
         mockMvc.perform(delete("/v1/companies/{id}", id))
                 .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(companyService).deleteById(id);
     }
 
     @Test

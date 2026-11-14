@@ -104,4 +104,18 @@ class TransferControllerTest {
         mockMvc.perform(get("/v1/transfers/{id}", id))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void findById_existingTransfer_returns200WithTransferDetails() throws Exception {
+        UUID id = UUID.randomUUID();
+        TransferResponse transfer = new TransferResponse();
+        transfer.setId(id);
+        transfer.setStatus(TransactionStatus.SETTLED);
+        when(transferService.findById(id)).thenReturn(transfer);
+
+        mockMvc.perform(get("/v1/transfers/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.status").value("SETTLED"));
+    }
 }

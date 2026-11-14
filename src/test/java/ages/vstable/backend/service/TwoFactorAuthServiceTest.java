@@ -68,26 +68,33 @@ class TwoFactorAuthServiceTest {
                 assertThat(response.getOtpauthUri()).startsWith("otpauth://totp/V-Stable:user%40vstable.com?secret=");
                 assertThat(user.getTwoFactorSecret()).isNotBlank();
                 assertThat(user.getTwoFactorEnabled()).isFalse();
+                assertThat(user.getUpdatedAt()).isNotNull();
                 verify(userRepository).save(user);
         }
 
         @Test
         void setupTwoFactor_paraAdmin_deveSalvarSegredoTemporarioNoRepositorioDeAdmins() {
+                String oldSecret = totpService.generateSecret();
                 AdministratorEntity admin = AdministratorEntity.builder()
                                 .email("admin@vstable.com")
-                                .twoFactorEnabled(false)
+                                .twoFactorSecret(oldSecret)
+                                .twoFactorEnabled(true)
                                 .build();
+                long window = FIXED_INSTANT.getEpochSecond() / 30L;
+                String validCurrentCode = totpService.generateCodeForWindow(TotpService.decodeBase32(oldSecret), window);
 
-                TwoFactorSetupResponseDTO response = twoFactorAuthService.setupTwoFactor(admin);
+                TwoFactorSetupResponseDTO response = twoFactorAuthService.setupTwoFactor(admin, validCurrentCode);
 
                 assertThat(response.isTwoFactorEnabled()).isFalse();
                 assertThat(response.getOtpauthUri()).startsWith("otpauth://totp/V-Stable:admin%40vstable.com?secret=");
-                assertThat(admin.getTwoFactorSecret()).isNotBlank();
+                assertThat(admin.getTwoFactorSecret()).isNotBlank().isNotEqualTo(oldSecret);
+                assertThat(admin.getTwoFactorEnabled()).isFalse();
+                assertThat(admin.getUpdatedAt()).isNotNull();
                 verify(administratorRepository).save(admin);
         }
 
         @Test
-        void setupTwoFactor_quando2faJaAtivoESemCodigoAtual_deveLancarBadCredentialsException() {
+        void setupTwoFactor_quando2faJaAtivoESemCodigoAtualOuComCodigoInvalido_deveLancarBadCredentialsException() {
                 UserEntity user = UserEntity.builder()
                                 .email("user@vstable.com")
                                 .twoFactorSecret("JBSWY3DPEHPK3PXP")
@@ -96,7 +103,18 @@ class TwoFactorAuthServiceTest {
                 assertThatThrownBy(() -> twoFactorAuthService.setupTwoFactor(user))
                                 .isInstanceOf(BadCredentialsException.class)
                                 .hasMessageContaining("código TOTP atual é obrigatório");
+                assertThatThrownBy(() -> twoFactorAuthService.setupTwoFactor(user, "000000"))
+                                .isInstanceOf(BadCredentialsException.class);
                 verify(userRepository, never()).save(any());
+        }
+
+        @Test
+        void setupTwoFactor_paraPrincipalNaoSuportado_deveLancarIllegalArgumentException() {
+                UserDetails unsupported = mock(UserDetails.class);
+
+                assertThatThrownBy(() -> twoFactorAuthService.setupTwoFactor(unsupported))
+                                .isInstanceOf(IllegalArgumentException.class)
+                                .hasMessageContaining("Unsupported principal type");
         }
 
         @Test
@@ -131,6 +149,7 @@ class TwoFactorAuthServiceTest {
                                 .build();
                 twoFactorAuthService.activateTwoFactor(user, validCode);
                 assertThat(user.getTwoFactorEnabled()).isTrue();
+                assertThat(user.getUpdatedAt()).isNotNull();
                 verify(userRepository).save(user);
 
                 AdministratorEntity admin = AdministratorEntity.builder()
@@ -140,11 +159,12 @@ class TwoFactorAuthServiceTest {
                                 .build();
                 twoFactorAuthService.activateTwoFactor(admin, validCode);
                 assertThat(admin.getTwoFactorEnabled()).isTrue();
+                assertThat(admin.getUpdatedAt()).isNotNull();
                 verify(administratorRepository).save(admin);
         }
 
         @Test
-        void activateTwoFactor_quandoCodigoInvalido_deveRejeitarEManterTwoFactorEnabledFalse() {
+        void activateTwoFactor_quandoCodigoInvalido_deveRejeitarEManterTwoFactorEnabledFalseParaUsuarioEAdmin() {
                 String secret = totpService.generateSecret();
                 UserEntity user = UserEntity.builder()
                                 .email("user@vstable.com")
@@ -157,6 +177,37 @@ class TwoFactorAuthServiceTest {
 
                 assertThat(user.getTwoFactorEnabled()).isFalse();
                 verify(userRepository, never()).save(user);
+
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(false)
+                                .build();
+
+                assertThatThrownBy(() -> twoFactorAuthService.activateTwoFactor(admin, "000000"))
+                                .isInstanceOf(BadCredentialsException.class);
+
+                assertThat(admin.getTwoFactorEnabled()).isFalse();
+                verify(administratorRepository, never()).save(admin);
+        }
+
+        @Test
+        void activateTwoFactor_quandoContaBloqueada_deveLancarLockedException() {
+                String secret = totpService.generateSecret();
+                UserEntity user = UserEntity.builder()
+                                .email("locked-activate@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(false)
+                                .build();
+                for (int i = 0; i < 5; i++) {
+                        assertThatThrownBy(() -> twoFactorAuthService.activateTwoFactor(user, "000000"))
+                                        .isInstanceOf(BadCredentialsException.class);
+                }
+                long window = FIXED_INSTANT.getEpochSecond() / 30L;
+                String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+
+                assertThatThrownBy(() -> twoFactorAuthService.activateTwoFactor(user, validCode))
+                                .isInstanceOf(LockedException.class);
         }
 
         @Test
@@ -169,6 +220,35 @@ class TwoFactorAuthServiceTest {
 
                 assertThatThrownBy(() -> twoFactorAuthService.activateTwoFactor(user, "123456"))
                                 .isInstanceOf(UnprocessableEntityException.class);
+
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorSecret("   ")
+                                .twoFactorEnabled(false)
+                                .build();
+
+                assertThatThrownBy(() -> twoFactorAuthService.activateTwoFactor(admin, "123456"))
+                                .isInstanceOf(UnprocessableEntityException.class);
+        }
+
+        @Test
+        void requiresTwoFactorOnLogin_evaluatesUserAdminAndUnsupportedPrincipals() {
+                UserEntity userEnabled = UserEntity.builder().twoFactorEnabled(true).build();
+                UserEntity userDisabled = UserEntity.builder().twoFactorEnabled(false).build();
+                AdministratorEntity adminEnabled = AdministratorEntity.builder()
+                                .twoFactorEnabled(true).require2fa(false).build();
+                AdministratorEntity adminRequired = AdministratorEntity.builder()
+                                .twoFactorEnabled(false).require2fa(true).build();
+                AdministratorEntity adminOptional = AdministratorEntity.builder()
+                                .twoFactorEnabled(false).require2fa(false).build();
+                UserDetails otherPrincipal = mock(UserDetails.class);
+
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(userEnabled)).isTrue();
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(userDisabled)).isFalse();
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(adminEnabled)).isTrue();
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(adminRequired)).isTrue();
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(adminOptional)).isFalse();
+                assertThat(twoFactorAuthService.requiresTwoFactorOnLogin(otherPrincipal)).isFalse();
         }
 
         @Test
@@ -192,7 +272,7 @@ class TwoFactorAuthServiceTest {
                 AdministratorEntity admin = AdministratorEntity.builder()
                                 .email("admin@vstable.com")
                                 .require2fa(true)
-                                .twoFactorEnabled(false)
+                                .twoFactorEnabled(null)
                                 .build();
                 when(jwtTokenUtils.generateChallengeToken(admin)).thenReturn("admin-challenge-jwt");
 
@@ -201,7 +281,47 @@ class TwoFactorAuthServiceTest {
                 assertThat(response.getRequires2fa()).isTrue();
                 assertThat(response.getChallengeToken()).isEqualTo("admin-challenge-jwt");
                 assertThat(response.getOtpauthUri()).startsWith("otpauth://totp/V-Stable:admin%40vstable.com?secret=");
+                assertThat(admin.getTwoFactorSecret()).isNotBlank();
+                assertThat(admin.getTwoFactorEnabled()).isFalse();
+                assertThat(admin.getUpdatedAt()).isNotNull();
                 verify(administratorRepository).save(admin);
+        }
+
+        @Test
+        void createLoginChallenge_paraAdminComSegredoPendenteExistente_reutilizaSegredoSemSobrescrever() {
+                AdministratorEntity admin = AdministratorEntity.builder()
+                                .email("admin@vstable.com")
+                                .twoFactorSecret("JBSWY3DPEHPK3PXP")
+                                .require2fa(true)
+                                .twoFactorEnabled(false)
+                                .build();
+                when(jwtTokenUtils.generateChallengeToken(admin)).thenReturn("admin-challenge-jwt");
+
+                LoginResponseDTO response = twoFactorAuthService.createLoginChallenge(admin);
+
+                assertThat(response.getRequires2fa()).isTrue();
+                assertThat(response.getOtpauthUri()).contains("secret=JBSWY3DPEHPK3PXP");
+                verify(administratorRepository, never()).save(any());
+        }
+
+        @Test
+        void createLoginChallenge_paraUsuarioSemSegredoPendente_salvaSegredoPendenteNoUserRepository() {
+                UserEntity user = UserEntity.builder()
+                                .email("user@vstable.com")
+                                .twoFactorSecret("   ")
+                                .twoFactorEnabled(null)
+                                .build();
+                when(jwtTokenUtils.generateChallengeToken(user)).thenReturn("user-challenge-jwt");
+
+                LoginResponseDTO response = twoFactorAuthService.createLoginChallenge(user);
+
+                assertThat(response.getRequires2fa()).isTrue();
+                assertThat(response.getChallengeToken()).isEqualTo("user-challenge-jwt");
+                assertThat(response.getOtpauthUri()).startsWith("otpauth://totp/V-Stable:user%40vstable.com?secret=");
+                assertThat(user.getTwoFactorSecret()).isNotBlank();
+                assertThat(user.getTwoFactorEnabled()).isFalse();
+                assertThat(user.getUpdatedAt()).isNotNull();
+                verify(userRepository).save(user);
         }
 
         @Test
@@ -255,6 +375,7 @@ class TwoFactorAuthServiceTest {
                 UserDetails result = twoFactorAuthService.verifyLoginChallenge("admin-challenge", validCode);
                 assertThat(result).isSameAs(admin);
                 assertThat(admin.getTwoFactorEnabled()).isTrue();
+                assertThat(admin.getUpdatedAt()).isNotNull();
                 verify(administratorRepository).save(admin);
         }
 
@@ -355,5 +476,38 @@ class TwoFactorAuthServiceTest {
 
                 assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(userId, "000000"))
                                 .isInstanceOf(BadCredentialsException.class);
+        }
+
+        @Test
+        void validateTransferTotp_quandoContaBloqueadaOuUsuarioNaoEncontrado_lancaExcecaoEsperada() {
+                UUID missingUserId = UUID.randomUUID();
+                when(userRepository.findById(missingUserId)).thenReturn(Optional.empty());
+
+                assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(null, "123456"))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("User not authenticated");
+                assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(missingUserId, "123456"))
+                                .isInstanceOf(BadCredentialsException.class)
+                                .hasMessageContaining("Authenticated user not found");
+
+                UUID lockedUserId = UUID.randomUUID();
+                String secret = totpService.generateSecret();
+                UserEntity lockedUser = UserEntity.builder()
+                                .id(lockedUserId)
+                                .email("locked-transfer@vstable.com")
+                                .twoFactorSecret(secret)
+                                .twoFactorEnabled(true)
+                                .build();
+                when(userRepository.findById(lockedUserId)).thenReturn(Optional.of(lockedUser));
+
+                for (int i = 0; i < 5; i++) {
+                        assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(lockedUserId, "000000"))
+                                        .isInstanceOf(BadCredentialsException.class);
+                }
+                long window = FIXED_INSTANT.getEpochSecond() / 30L;
+                String validCode = totpService.generateCodeForWindow(TotpService.decodeBase32(secret), window);
+
+                assertThatThrownBy(() -> twoFactorAuthService.validateTransferTotp(lockedUserId, validCode))
+                                .isInstanceOf(LockedException.class);
         }
 }

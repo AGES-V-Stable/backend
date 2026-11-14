@@ -328,4 +328,55 @@ class ComplianceKycServiceTest {
         assertThat(resultado.get().getAveniaProcessId()).isEqualTo("kyc-attempt-2");
         verify(aveniaClient).finalizarKyc(any(), eq("doc-123"), eq("liveness-123"), eq(SUB_ACCOUNT_ID));
     }
+
+    @Test
+    void finalizar_semProcessIdSalvo_recuperaTentativaDaListagemAtualizaProcessIdEResultMessage() {
+        ComplianceKycService service = service();
+        UUID kycId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId).userId(userId).aveniaProcessId("   ").build();
+
+        AveniaKycAttempt recovered = attempt("recovered-attempt-99", "COMPLETED", "APPROVED", false);
+        recovered.setResultMessage("Documento validado com sucesso");
+        AveniaKycAttemptsResponse listagem = new AveniaKycAttemptsResponse();
+        listagem.setAttempts(List.of(recovered));
+
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.listarTentativasKyc(SUB_ACCOUNT_ID)).thenReturn(listagem);
+
+        Optional<KycSubmitResponse> resultado = service.finalizar(kycId, userId, kycRequest());
+
+        assertThat(resultado).isPresent();
+        assertThat(resultado.get().getAveniaProcessId()).isEqualTo("recovered-attempt-99");
+        assertThat(resultado.get().getStatus()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(resultado.get().getResultMessage()).isEqualTo("Documento validado com sucesso");
+        assertThat(kyc.getAveniaProcessId()).isEqualTo("recovered-attempt-99");
+        verify(aveniaClient, never()).finalizarKyc(any(), any(), any(), any());
+    }
+
+    @Test
+    void finalizar_listagemComAttemptsNulo_submeteNovaTentativa() {
+        ComplianceKycService service = service();
+        UUID kycId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId).userId(userId).documentId("doc-1").livenessId("liv-1").build();
+
+        AveniaKycAttemptsResponse listagemNula = new AveniaKycAttemptsResponse();
+        listagemNula.setAttempts(null);
+        AveniaKycResponse novaResposta = new AveniaKycResponse();
+        novaResposta.setId("kyc-new-1");
+
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+        when(subAccountProvisioningService.ensureSubAccountId(kyc)).thenReturn(SUB_ACCOUNT_ID);
+        when(aveniaClient.listarTentativasKyc(SUB_ACCOUNT_ID)).thenReturn(listagemNula);
+        when(aveniaClient.finalizarKyc(any(), eq("doc-1"), eq("liv-1"), eq(SUB_ACCOUNT_ID))).thenReturn(novaResposta);
+
+        Optional<KycSubmitResponse> resultado = service.finalizar(kycId, userId, kycRequest());
+
+        assertThat(resultado).isPresent();
+        assertThat(resultado.get().getAveniaProcessId()).isEqualTo("kyc-new-1");
+    }
 }
