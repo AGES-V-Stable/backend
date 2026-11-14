@@ -1,6 +1,7 @@
 package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.balance.BalanceResponse;
+import ages.vstable.backend.dto.balance.MockTopUpResponse;
 import ages.vstable.backend.entity.AdministratorEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.CompanyRole;
@@ -135,8 +136,8 @@ class BalanceControllerTest {
     @Test
     void addMockTopUp_usesExistingServiceAndReturnsCreditAndUpdatedBalance() throws Exception {
         UserEntity user = companyUser(companyId);
-        when(service.addBalance(user, new BigDecimal("10.25")))
-                .thenReturn(new BalanceResponse("12.75"));
+        when(service.addMockTopUp(user, new BigDecimal("10.25"), null))
+                .thenReturn(new MockTopUpResponse("10.25", "12.75"));
 
         mockMvc.perform(post("/v1/balance/mock-top-ups")
                         .principal(authenticated(user))
@@ -147,6 +148,35 @@ class BalanceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.creditedAmountBrl").value("10.25"))
                 .andExpect(jsonPath("$.availableBalanceBrl").value("12.75"));
+    }
+
+    @Test
+    void addMockTopUp_passesTheIdempotencyKeyToTheService() throws Exception {
+        UserEntity user = companyUser(companyId);
+        when(service.addMockTopUp(user, new BigDecimal("10.25"), "test-key-123"))
+                .thenReturn(new MockTopUpResponse("10.25", "12.75"));
+
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(user))
+                        .header("Idempotency-Key", "test-key-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amountBrl\":\"10.25\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditedAmountBrl").value("10.25"))
+                .andExpect(jsonPath("$.availableBalanceBrl").value("12.75"));
+    }
+
+    @Test
+    void addMockTopUp_rejectsMalformedIdempotencyKeyBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/v1/balance/mock-top-ups")
+                        .principal(authenticated(companyUser(companyId)))
+                        .header("Idempotency-Key", "key with spaces")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amountBrl\":\"10.25\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+
+        verifyNoInteractions(service);
     }
 
     @Test
