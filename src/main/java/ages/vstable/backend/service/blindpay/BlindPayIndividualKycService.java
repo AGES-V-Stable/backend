@@ -51,23 +51,28 @@ public class BlindPayIndividualKycService {
         CompanyAccess.rejectRevokedMembership(user);
     }
 
-    @Transactional
     public BlindPayInitiateTosResponse startTerms(UserEntity user) {
         verifyUser(user);
-        BlindPayIndividualKycEntity entry = repository.findForUpdate(user.getId())
+        BlindPayIndividualKycEntity entry = repository.findById(user.getId())
                 .orElseGet(() -> BlindPayIndividualKycEntity.builder()
                         .userId(user.getId()).createdAt(now()).updatedAt(now()).build());
-        if (entry.getCustomerId() != null || entry.getTosAcceptedAt() != null)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "KYC or terms already registered");
+        if (entry.getCustomerId() != null || entry.getTosAcceptedAt() != null
+                || entry.getTosSessionKey() != null)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "KYC or a hosted terms session has already been initiated");
+
         UUID sessionKey = UUID.randomUUID();
+        entry.setTosSessionKey(sessionKey);
+        entry.setUpdatedAt(now());
+        // Commit the webhook correlation BEFORE calling the provider. An immediate
+        // signed tos.accept webhook must never race an uncommitted DB transaction.
+        repository.saveAndFlush(entry);
+
         BlindPayInitiateTosResponse response = gateway.initiateTermsOfService(
                 new BlindPayInitiateTosRequest(sessionKey, null,
                         redirectUrl == null || redirectUrl.isBlank() ? null : redirectUrl));
         if (response == null || !trustedTermsUrl(response.url()))
             throw BlindPayIntegrationException.invalidResponse("Invalid BlindPay terms link");
-        entry.setTosSessionKey(sessionKey);
-        entry.setUpdatedAt(now());
-        repository.save(entry);
         return response;
     }
 
