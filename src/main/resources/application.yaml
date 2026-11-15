@@ -98,6 +98,8 @@ blindpay:
   instance-id: ${BLINDPAY_INSTANCE_ID:}
   webhook-secret: ${BLINDPAY_WEBHOOK_SECRET:}
   tos-redirect-url: ${BLINDPAY_TOS_REDIRECT_URL:}
+  individual-kyc:
+    enabled: ${BLINDPAY_INDIVIDUAL_KYC_ENABLED:false}
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
