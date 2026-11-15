@@ -2,6 +2,9 @@ package ages.vstable.backend.controller;
 
 import ages.vstable.backend.dto.blindpay.BlindPayIndividualKycRequest;
 import ages.vstable.backend.dto.blindpay.BlindPayIndividualKycStatus;
+import ages.vstable.backend.dto.blindpay.BlindPayDocumentUploadResponse;
+import ages.vstable.backend.dto.blindpay.BlindPayRfiDetailsResponse;
+import ages.vstable.backend.dto.blindpay.BlindPayRfiSubmitRequest;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse;
 import ages.vstable.backend.service.blindpay.BlindPayIndividualKycService;
@@ -41,5 +44,30 @@ public class BlindPayIndividualKycController {
             @RequestPart(value = "proofAddress", required = false) MultipartFile proofAddress
     ) throws IOException {
         return service.submit(user, profile, idFront, idBack, selfie, proofAddress);
+    }
+
+    /** Recomeça um KYC recusado: a BlindPay exige um novo cliente com novo aceite dos termos. */
+    @PostMapping("/restart")
+    public BlindPayIndividualKycStatus restart(@AuthenticationPrincipal UserEntity user) {
+        return service.restart(user);
+    }
+
+    @GetMapping("/rfi")
+    public BlindPayRfiDetailsResponse rfi(@AuthenticationPrincipal UserEntity user) {
+        return service.rfi(user);
+    }
+
+    @PostMapping("/rfi")
+    public BlindPayIndividualKycStatus submitRfi(
+            @AuthenticationPrincipal UserEntity user,
+            @RequestBody @Valid BlindPayRfiSubmitRequest request) {
+        return service.submitRfi(user, request.responses());
+    }
+
+    @PostMapping(value = "/rfi/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BlindPayDocumentUploadResponse uploadRfiDocument(
+            @AuthenticationPrincipal UserEntity user,
+            @RequestPart("file") MultipartFile file) throws IOException {
+        return service.uploadRfiDocument(user, file);
     }
 }

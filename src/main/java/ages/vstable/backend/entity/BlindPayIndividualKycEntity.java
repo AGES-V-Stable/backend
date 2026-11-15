@@ -39,6 +39,10 @@ public class BlindPayIndividualKycEntity {
     @Column(name = "provider_updated_at")
     private OffsetDateTime providerUpdatedAt;
 
+    /** Cliente recusado substituído por um novo cadastro; seus webhooks são ignorados. */
+    @Column(name = "superseded_customer_id", length = 50)
+    private String supersededCustomerId;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 

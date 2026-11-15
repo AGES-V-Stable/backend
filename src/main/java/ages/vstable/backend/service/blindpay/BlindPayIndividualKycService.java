@@ -3,6 +3,10 @@ package ages.vstable.backend.service.blindpay;
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.dto.blindpay.BlindPayIndividualKycRequest;
 import ages.vstable.backend.dto.blindpay.BlindPayIndividualKycStatus;
+import ages.vstable.backend.dto.blindpay.BlindPayDocumentUploadResponse;
+import ages.vstable.backend.dto.blindpay.BlindPayRfiDetailsResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiResponse;
+import ages.vstable.backend.external.blindpay.dto.BlindPayRfiSubmitResponse;
 import ages.vstable.backend.entity.BlindPayIndividualKycEntity;
 import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.exception.BlindPayIntegrationException;
@@ -24,8 +28,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +43,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BlindPayIndividualKycService {
     static final int MAX_FILE_BYTES = 3 * 1024 * 1024;
+    private static final String REJECTED = "rejected";
     private final BlindPayGateway gateway;
     private final BlindPayIndividualKycRepository repository;
 
@@ -191,6 +201,73 @@ public class BlindPayIndividualKycService {
         return new BlindPayIndividualKycStatus(true, true, "verifying", entry.getAmlStatus());
     }
 
+    /**
+     * Novo cadastro após recusa: a BlindPay não permite editar um cliente recusado, então
+     * o próximo envio cria outro cliente, com novo aceite dos termos. O cliente recusado
+     * fica registrado para que seus webhooks atrasados sejam ignorados.
+     */
+    @Transactional
+    public BlindPayIndividualKycStatus restart(UserEntity user) {
+        verifyUser(user);
+        BlindPayIndividualKycEntity entry = repository.findForUpdate(user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "No KYC to restart"));
+        if (entry.getCustomerId() == null || !REJECTED.equalsIgnoreCase(entry.getKycStatus()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only a rejected KYC can be restarted");
+        entry.setSupersededCustomerId(entry.getCustomerId());
+        entry.setCustomerId(null);
+        entry.setTosId(null);
+        entry.setTosSessionKey(null);
+        entry.setTosAcceptedAt(null);
+        entry.setKycStatus(null);
+        entry.setAmlStatus(null);
+        entry.setProviderUpdatedAt(null);
+        entry.setUpdatedAt(now());
+        repository.save(entry);
+        return new BlindPayIndividualKycStatus(false, false, null, null);
+    }
+
+    /** Pedido de informações (RFI) aberto pela BlindPay para o cliente do titular. */
+    public BlindPayRfiDetailsResponse rfi(UserEntity user) {
+        BlindPayIndividualKycEntity entry = submitted(user);
+        return BlindPayRfiSupport.toDetails(BlindPayRfiSupport.pending(gateway, entry.getCustomerId()));
+    }
+
+    public BlindPayIndividualKycStatus submitRfi(UserEntity user, Map<String, Object> responses) {
+        BlindPayIndividualKycEntity entry = submitted(user);
+        BlindPayRfiResponse rfi = BlindPayRfiSupport.pending(gateway, entry.getCustomerId());
+        if (rfi == null)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "BlindPay has no pending information request");
+        Map<String, Object> normalized = BlindPayRfiSupport.validateResponses(rfi, responses);
+        BlindPayRfiSubmitResponse result = gateway.submitCustomerRfi(entry.getCustomerId(), normalized,
+                "individual-rfi:" + rfi.id() + ":" + sha256(normalized.toString()));
+        if (result == null || !result.succeeded())
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "BlindPay did not accept the information request response");
+        return status(user);
+    }
+
+    /** Envia um documento pedido no RFI e devolve a URL a ser usada na resposta. */
+    public BlindPayDocumentUploadResponse uploadRfiDocument(UserEntity user, MultipartFile file) throws IOException {
+        submitted(user);
+        return new BlindPayDocumentUploadResponse(upload("rfi", inspect(file, false)));
+    }
+
+    private BlindPayIndividualKycEntity submitted(UserEntity user) {
+        verifyUser(user);
+        return repository.findById(user.getId())
+                .filter(entry -> entry.getCustomerId() != null)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "KYC not submitted"));
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is not available", ex);
+        }
+    }
+
     private String upload(String prefix, Document document) {
         return gateway.uploadFile(BlindPayApi.Upload.Bucket.onboarding,
                 prefix + "." + document.extension(), document.contentType(), document.bytes()).fileUrl();
@@ -262,6 +339,8 @@ public class BlindPayIndividualKycService {
         }
         if (entry == null || (entry.getCustomerId() != null
                 && !entry.getCustomerId().equals(customerId))) return false;
+        // Cliente recusado e substituído por um novo cadastro: nunca volta a ser associado.
+        if (customerId.equals(entry.getSupersededCustomerId())) return false;
         if (externalId != null && !externalId.equals("user:" + entry.getUserId())) return false;
         if (entry.getProviderUpdatedAt() != null && providerUpdatedAt != null
                 && providerUpdatedAt.isBefore(entry.getProviderUpdatedAt())) return false;

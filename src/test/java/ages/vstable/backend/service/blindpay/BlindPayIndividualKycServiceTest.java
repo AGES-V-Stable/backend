@@ -150,6 +150,68 @@ class BlindPayIndividualKycServiceTest {
     }
 
     @Test
+    void rejectedKycCanRestartAndIgnoresLateWebhooksOfTheOldCustomer() {
+        var entry = BlindPayIndividualKycEntity.builder()
+                .userId(user.getId())
+                .customerId("re_000000000001")
+                .tosId("to_000000000001")
+                .tosAcceptedAt(OffsetDateTime.now())
+                .kycStatus("rejected")
+                .build();
+        when(repository.findForUpdate(user.getId())).thenReturn(Optional.of(entry));
+
+        var status = service.restart(user);
+
+        assertThat(status.submitted()).isFalse();
+        assertThat(status.termsAccepted()).isFalse();
+        assertThat(entry.getCustomerId()).isNull();
+        assertThat(entry.getTosId()).isNull();
+        assertThat(entry.getSupersededCustomerId()).isEqualTo("re_000000000001");
+
+        // Webhook atrasado do cliente recusado não pode voltar a ser associado.
+        when(repository.findByCustomerId("re_000000000001")).thenReturn(Optional.empty());
+        when(repository.findById(user.getId())).thenReturn(Optional.of(entry));
+        assertThat(service.updateFromWebhook("re_000000000001", "user:" + user.getId(),
+                "rejected", null, OffsetDateTime.now(), OffsetDateTime.now())).isFalse();
+        assertThat(entry.getCustomerId()).isNull();
+    }
+
+    @Test
+    void onlyRejectedKycCanRestart() {
+        when(repository.findForUpdate(user.getId())).thenReturn(Optional.of(
+                BlindPayIndividualKycEntity.builder().userId(user.getId())
+                        .customerId("re_000000000001").kycStatus("verifying").build()));
+
+        assertThatThrownBy(() -> service.restart(user))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Only a rejected KYC");
+    }
+
+    @Test
+    void rfiIsReadAndAnsweredForTheIndividualCustomer() {
+        when(repository.findById(user.getId())).thenReturn(Optional.of(
+                BlindPayIndividualKycEntity.builder().userId(user.getId())
+                        .customerId("re_000000000001").kycStatus("compliance_request").build()));
+        var field = new BlindPayRfiResponse.Field("occupation", "Ocupação", null, true, null, false, null);
+        var rfi = new BlindPayRfiResponse("rfi_1", "re_000000000001", null, "pending",
+                java.util.List.of(new BlindPayRfiResponse.Section("Perfil", null, null, java.util.List.of(field))),
+                null, null, null);
+        when(gateway.getCustomerRfi("re_000000000001")).thenReturn(rfi);
+        when(gateway.submitCustomerRfi(eq("re_000000000001"), any(), startsWith("individual-rfi:rfi_1:")))
+                .thenReturn(new BlindPayRfiSubmitResponse(true, null));
+
+        var details = service.rfi(user);
+        service.submitRfi(user, java.util.Map.of("occupation", "Engenheira"));
+
+        assertThat(details.open()).isTrue();
+        assertThat(details.sections().getFirst().fields().getFirst().key()).isEqualTo("occupation");
+        verify(gateway).submitCustomerRfi(eq("re_000000000001"),
+                eq(java.util.Map.of("occupation", "Engenheira")), anyString());
+        assertThatThrownBy(() -> service.submitRfi(user, java.util.Map.of("unknown", "x")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void dateOfBirthIsSentAsDateTimeLikeBlindPayOpenApi() {
         var request = BlindPayCreateCustomerRequest.builder()
                 .type(BlindPayApi.Customer.Type.individual)
