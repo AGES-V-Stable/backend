@@ -90,6 +90,29 @@ class AveniaClientTest {
     // Quote / Ticket
     // ---------------------------------------------------------------------
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void getsTicketInCompanySubaccount(boolean wrapped) {
+        UUID id = UUID.randomUUID();
+        String ticket = "{\"id\":\"" + id + "\",\"status\":\"PAID\"}";
+        server.expect(requestTo("https://avenia.test/v2/account/tickets/" + id + "?subAccountId=company-subaccount"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-API-Signature", not(blankString())))
+                .andRespond(withSuccess(wrapped ? "{\"ticket\":" + ticket + "}" : ticket, MediaType.APPLICATION_JSON));
+
+        AveniaTicketResponse response = client.getTicket(id, "company-subaccount");
+
+        assertThat(response.id()).isEqualTo(id);
+        assertThat(response.status()).isEqualTo("PAID");
+        server.verify();
+    }
+
+    @Test
+    void ticketLookupRequiresSubaccount() {
+        assertThatThrownBy(() -> client.getTicket(UUID.randomUUID(), null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void createsQuoteWithOnlyInputAmountAndMapsResponse() {
         server.expect(once(), requestTo("https://avenia.test/v2/account/quote/fixed-rate"

@@ -137,8 +137,8 @@ dashboard:
   savings:
     reference-spread-percentage: ${DASHBOARD_SAVINGS_REFERENCE_SPREAD_PERCENTAGE:4.00}
 
-# Conciliação das transferências BlindPay: retoma execuções paradas (webhook perdido,
-# chamada sem resposta) repetindo cada etapa com a mesma chave de idempotência.
+# Conciliação: consulta tickets Avenia pendentes e retoma execuções BlindPay paradas
+# (webhook perdido, chamada sem resposta) com a mesma chave de idempotência.
 transfers:
   reconciliation:
     enabled: ${TRANSFERS_RECONCILIATION_ENABLED:true}

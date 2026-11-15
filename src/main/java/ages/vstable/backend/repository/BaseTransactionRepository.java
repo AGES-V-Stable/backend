@@ -2,6 +2,8 @@ package ages.vstable.backend.repository;
 
 import ages.vstable.backend.entity.BaseTransactionEntity;
 import ages.vstable.backend.entity.enums.TransactionStatus;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,12 +13,27 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BaseTransactionRepository
         extends JpaRepository<BaseTransactionEntity, UUID>,
         JpaSpecificationExecutor<BaseTransactionEntity> {
+
+    @Query("""
+            select t.id from BaseTransactionEntity t
+            where t.aveniaTicketId is not null and t.status in :statuses
+              and coalesce(t.updatedAt, t.createdAt) < :updatedBefore
+            order by coalesce(t.updatedAt, t.createdAt), t.id
+            """)
+    List<UUID> findAveniaIdsToReconcile(Collection<TransactionStatus> statuses,
+                                      OffsetDateTime updatedBefore, Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from BaseTransactionEntity t where t.id = :id")
+    Optional<BaseTransactionEntity> findForUpdate(UUID id);
 
     /**
      * Soma em BRL das transações com o status dado, criadas em [{@code from}, {@code to}); sem

@@ -89,7 +89,7 @@ Recomendo a opção 2, mas é uma decisão de produto/arquitetura — não imple
 
 ## 6. Fora de escopo desta guideline (mas relevante)
 
-- **Atualização de status depois da criação**: o ticket criado pode mudar de status na Avenia (ex.: `UNPAID` → `PAID`) depois do `POST /transfers` retornar. Esta guideline só persiste o snapshot inicial; manter a linha local sincronizada exige um mecanismo novo (polling em `GET /v2/account/tickets/{id}` ou webhook da Avenia) — não implementado em nenhum lugar do projeto hoje.
+- **Atualização de status depois da criação**: `AveniaTransactionReconciler` consulta `GET /v2/account/tickets/{id}?subAccountId=...` para transações Avenia em `AWAITING_PAYMENT`, `PROCESSING` e `HELD`, incluindo as antigas sem execução. `PAID` atualiza a transação para `SETTLED` e a execução associada para `COMPLETED`. Usa `transfers.reconciliation` (intervalo padrão de 30 segundos); falhas ou status desconhecidos preservam o estado local para nova tentativa. A data efetiva de liquidação não vem no DTO: `settled_at` continua nulo e o dashboard usa a data de criação.
 - **`blockchain_transaction_hash`**: só existe depois que a transferência liquida on-chain; não vem no retorno síncrono de criação do ticket. Fica nulo até o mecanismo acima existir.
 - **Consulta/listagem de transações** (`GET /v1/transfers` ou similar): não pedida nesta card; as entities/repositories acima só cobrem escrita.
 
