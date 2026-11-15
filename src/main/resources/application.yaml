@@ -100,6 +100,7 @@ blindpay:
   tos-redirect-url: ${BLINDPAY_TOS_REDIRECT_URL:}
   individual-kyc:
     enabled: ${BLINDPAY_INDIVIDUAL_KYC_ENABLED:false}
+    redirect-url: ${BLINDPAY_INDIVIDUAL_KYC_REDIRECT_URL:}
 
 quotes:
   provider-timeout: ${QUOTE_PROVIDER_TIMEOUT:10s}
