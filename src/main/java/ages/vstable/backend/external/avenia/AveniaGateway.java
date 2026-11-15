@@ -11,9 +11,13 @@ import ages.vstable.backend.external.avenia.dto.AveniaTicketResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaUsdBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaWalletBeneficiaryRequest;
 
+import java.util.UUID;
+
 public interface AveniaGateway {
 
     AveniaQuoteResponse createQuote(AveniaQuoteRequest request);
+
+    AveniaTicketResponse getTicket(UUID ticketId, String subAccountId);
 
     AveniaTicketResponse createTicket(AveniaTicketRequest request);
 

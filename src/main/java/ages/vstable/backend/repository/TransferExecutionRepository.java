@@ -17,6 +17,8 @@ import java.util.UUID;
 
 public interface TransferExecutionRepository extends JpaRepository<TransferExecutionEntity, UUID> {
 
+    Optional<TransferExecutionEntity> findByTransactionIdAndProvider(UUID transactionId, IntegrationProvider provider);
+
     Optional<TransferExecutionEntity> findByProviderQuoteId(UUID providerQuoteId);
 
     Optional<TransferExecutionEntity> findByIdAndCompanyId(UUID id, UUID companyId);

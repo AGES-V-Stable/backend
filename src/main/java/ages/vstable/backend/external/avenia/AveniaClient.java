@@ -41,6 +41,8 @@ import java.security.PrivateKey;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -297,6 +299,19 @@ public class AveniaClient implements AveniaGateway {
         String body = serialize(aveniaRequest);
         String uri = appendSubAccount(KYC_LEVEL_1_URI, subAccountId);
         return post(uri, body, AveniaKycResponse.class, "Falha ao finalizar KYC na Avenia");
+    }
+
+    @Override
+    public AveniaTicketResponse getTicket(UUID ticketId, String subAccountId) {
+        Objects.requireNonNull(ticketId, "ticketId must be provided");
+        requireFinancialSubAccount(subAccountId);
+        String uri = appendSubAccount(TICKETS_URI + ticketId, subAccountId);
+        JsonNode response = get(uri, JsonNode.class, "Falha ao consultar ticket na Avenia");
+        if (response == null) {
+            throw AveniaIntegrationException.communication("Avenia returned an empty ticket", null);
+        }
+        JsonNode ticket = response.has("ticket") ? response.get("ticket") : response;
+        return objectMapper.convertValue(ticket, AveniaTicketResponse.class);
     }
 
     private String buildQuoteUri(AveniaQuoteRequest request) {

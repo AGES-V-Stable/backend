@@ -585,6 +585,12 @@ class AveniaTransferServiceTest {
     }
 
     private static class FakeAveniaGateway implements AveniaGateway {
+        @Override
+        public ages.vstable.backend.external.avenia.dto.AveniaTicketResponse getTicket(
+                java.util.UUID ticketId, String subAccountId) {
+            throw new UnsupportedOperationException();
+        }
+
         private AveniaQuoteResponse quoteResponse;
         private AveniaTicketResponse ticketResponse;
         private AveniaIntegrationException quoteFailure;
