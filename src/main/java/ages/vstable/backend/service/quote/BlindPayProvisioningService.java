@@ -11,12 +11,14 @@ import ages.vstable.backend.external.blindpay.dto.*;
 import ages.vstable.backend.repository.BeneficiaryProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
 import ages.vstable.backend.repository.ProviderWalletRepository;
+import ages.vstable.backend.service.blindpay.BlindPayIndividualAccountService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +28,7 @@ public class BlindPayProvisioningService {
     private final ProviderAccountRepository providerAccountRepository;
     private final BeneficiaryProviderAccountRepository beneficiaryProviderAccountRepository;
     private final ProviderWalletRepository providerWalletRepository;
+    private final BlindPayIndividualAccountService individualAccountService;
 
     public String ensureBankAccount(CompanyEntity company, BeneficiaryEntity beneficiary) {
         ProviderAccountEntity providerAccount = approvedCustomer(company);
@@ -212,6 +215,8 @@ public class BlindPayProvisioningService {
     private ProviderAccountEntity approvedCustomer(CompanyEntity company) {
         return providerAccountRepository
                 .findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY)
+                // Sem KYB: a empresa opera com o KYC individual aprovado do proprietário.
+                .or(() -> Optional.ofNullable(individualAccountService.accountFor(company.getId())))
                 .filter(account -> hasText(account.getExternalCustomerId()))
                 .filter(account -> BlindPayOnboardingStatus.parse(account.getStatus())
                         == BlindPayOnboardingStatus.APPROVED)

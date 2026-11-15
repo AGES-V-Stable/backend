@@ -102,13 +102,17 @@ public class BlindPayWebhookService {
         if (customerId == null) {
             return Result.IGNORED;
         }
+        if (event.instanceId() != null && !event.instanceId().equals(properties.getInstanceId())) {
+            return Result.IGNORED;
+        }
+        // KYC individual: o serviço confere customer_id e external_id ("user:{id}") do titular.
+        boolean individual = individualKycService.updateFromWebhook(customerId, event.externalId(),
+                event.kycStatus(), event.amlStatus(), event.updatedAt(), now);
         Optional<ProviderAccountEntity> found = providerAccountRepository
                 .findByProviderAndExternalCustomerId(IntegrationProvider.BLINDPAY, customerId)
-                .or(() -> unlinkedAccount(event.externalId()));
+                .or(() -> individual ? Optional.empty() : unlinkedAccount(event.externalId()));
         if (found.isEmpty()) {
-            return individualKycService.updateFromWebhook(customerId, event.externalId(),
-                    event.kycStatus(), event.amlStatus(), event.updatedAt(), now)
-                    ? Result.PROCESSED : Result.IGNORED;
+            return individual ? Result.PROCESSED : Result.IGNORED;
         }
 
         ProviderAccountEntity account = found.get();
@@ -116,15 +120,18 @@ public class BlindPayWebhookService {
             // O cliente foi criado, mas a resposta do POST se perdeu antes de ser gravada.
             account.setExternalCustomerId(customerId);
         }
+        // Conta da empresa vinculada ao KYC do proprietário: a titularidade já foi conferida
+        // acima pelo KYC individual, então o external_id não é o id da empresa.
+        String expectedExternalId = individual ? null : event.externalId();
         if (!BlindPayAccountState.belongsTo(
-                account, customerId, event.externalId(), event.instanceId(), properties.getInstanceId())) {
+                account, customerId, expectedExternalId, event.instanceId(), properties.getInstanceId())) {
             log.warn("Ignored BlindPay customer webhook that does not match the company: account={}",
                     account.getId());
-            return Result.IGNORED;
+            return individual ? Result.PROCESSED : Result.IGNORED;
         }
         if (!BlindPayAccountState.apply(account, event.kycStatus(), event.amlStatus(),
                 event.isTosAccepted(), event.tosId(), event.updatedAt(), now)) {
-            return Result.IGNORED;
+            return individual ? Result.PROCESSED : Result.IGNORED;
         }
         providerAccountRepository.save(account);
         return Result.PROCESSED;

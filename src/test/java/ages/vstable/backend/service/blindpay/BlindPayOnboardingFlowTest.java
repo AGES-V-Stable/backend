@@ -98,7 +98,8 @@ class BlindPayOnboardingFlowTest {
                 org.mockito.Mockito.mock(ages.vstable.backend.service.transfer.BlindPayExecutionProcessor.class),
                 org.mockito.Mockito.mock(BlindPayIndividualKycService.class));
         provisioningService = new BlindPayProvisioningService(gateway, providerAccountRepository,
-                beneficiaryProviderAccountRepository, providerWalletRepository);
+                beneficiaryProviderAccountRepository, providerWalletRepository,
+                org.mockito.Mockito.mock(BlindPayIndividualAccountService.class));
 
         company = CompanyEntity.builder().id(UUID.randomUUID()).legalName("Acme Importadora LTDA")
                 .cnpj("11222333000181").country("BR").zipCode("90000000").state("RS").build();

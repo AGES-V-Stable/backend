@@ -32,13 +32,15 @@ class BlindPayProvisioningServiceTest {
     @Mock private ProviderAccountRepository providerAccountRepository;
     @Mock private BeneficiaryProviderAccountRepository beneficiaryProviderAccountRepository;
     @Mock private ProviderWalletRepository providerWalletRepository;
+    @Mock private ages.vstable.backend.service.blindpay.BlindPayIndividualAccountService individualAccountService;
 
     private BlindPayProvisioningService service;
 
     @BeforeEach
     void setUp() {
         service = new BlindPayProvisioningService(
-                gateway, providerAccountRepository, beneficiaryProviderAccountRepository, providerWalletRepository);
+                gateway, providerAccountRepository, beneficiaryProviderAccountRepository, providerWalletRepository,
+                individualAccountService);
     }
 
     @Test

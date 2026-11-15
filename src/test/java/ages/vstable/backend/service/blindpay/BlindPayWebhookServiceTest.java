@@ -141,6 +141,38 @@ class BlindPayWebhookServiceTest {
     }
 
     @Test
+    void handle_individualCustomerUpdate_syncsKycAndOwnerBoundCompanyAccount() {
+        // Arrange: a conta da empresa usa o KYC individual do proprietário (external_id "user:...").
+        ProviderAccountEntity account = linkedAccount();
+        String externalId = "user:" + UUID.randomUUID();
+        when(individualKycService.updateFromWebhook(eq(CUSTOMER_ID), eq(externalId), eq("rejected"),
+                any(), any(), any())).thenReturn(true);
+
+        // Act
+        BlindPayWebhookService.Result result = deliver("msg_1",
+                customerUpdate("rejected", null, externalId, INSTANCE_ID));
+
+        // Assert
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.PROCESSED);
+        assertThat(account.getStatus()).isEqualTo(BlindPayOnboardingStatus.REJECTED.name());
+        verify(providerAccountRepository).save(account);
+    }
+
+    @Test
+    void handle_individualCustomerFromAnotherInstance_isIgnoredEntirely() {
+        ProviderAccountEntity account = linkedAccount();
+        String externalId = "user:" + UUID.randomUUID();
+
+        BlindPayWebhookService.Result result = deliver("msg_1",
+                customerUpdate("rejected", null, externalId, "in_999999999999"));
+
+        assertThat(result).isEqualTo(BlindPayWebhookService.Result.IGNORED);
+        assertThat(account.getStatus()).isEqualTo(BlindPayOnboardingStatus.VERIFYING.name());
+        verify(individualKycService, never()).updateFromWebhook(any(), any(), any(), any(), any(), any());
+        verify(providerAccountRepository, never()).save(any());
+    }
+
+    @Test
     void handle_customerUpdateWithAmlHit_isNotApproved() {
         ProviderAccountEntity account = linkedAccount();
 
