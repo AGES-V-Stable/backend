@@ -2,6 +2,7 @@ package ages.vstable.backend.service.transfer;
 
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.TransferExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,14 +51,20 @@ public class TransferExecutionReconciler {
             initialDelayString = "${transfers.reconciliation.interval:30s}",
             fixedDelayString = "${transfers.reconciliation.interval:30s}")
     public void reconcile() {
+        long startedAt = System.nanoTime();
         OffsetDateTime updatedBefore = OffsetDateTime.now(ZoneOffset.UTC).minus(staleAfter);
-        for (UUID executionId : executionRepository.findIdsToReconcile(
-                IntegrationProvider.BLINDPAY, RESUMABLE, updatedBefore, PageRequest.of(0, batchSize))) {
+        List<UUID> executionIds = executionRepository.findIdsToReconcile(
+                IntegrationProvider.BLINDPAY, RESUMABLE, updatedBefore, PageRequest.of(0, batchSize));
+        int failed = 0;
+        for (UUID executionId : executionIds) {
             try {
                 processor.reconcile(executionId);
             } catch (RuntimeException ex) {
+                failed++;
                 log.warn("Could not reconcile transfer execution {}: {}", executionId, ex.getMessage());
             }
         }
+        // Heartbeat: emitido a cada execução, mesmo sem nada a conciliar.
+        OperationalLog.reconciliationRun(executionIds.size(), failed, startedAt);
     }
 }

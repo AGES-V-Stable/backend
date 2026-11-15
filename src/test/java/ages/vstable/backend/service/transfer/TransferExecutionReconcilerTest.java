@@ -2,6 +2,8 @@ package ages.vstable.backend.service.transfer;
 
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.entity.enums.TransferExecutionStatus;
+import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.TransferExecutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,5 +66,42 @@ class TransferExecutionReconcilerTest {
         reconciler.reconcile();
 
         verify(processor).reconcile(second);
+    }
+
+    @Test
+    void reconcile_emitsAHeartbeatWithFoundAndFailedCounts() {
+        // Arrange
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(executionRepository.findIdsToReconcile(any(), any(), any(), any())).thenReturn(List.of(first, second));
+        doThrow(new IllegalStateException("boom")).when(processor).reconcile(first);
+
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            // Act
+            reconciler.reconcile();
+
+            // Assert
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "transfer.reconciliation.completed")
+                    .containsEntry("outcome", "partial_failure")
+                    .containsEntry("found", 2).containsEntry("failed", 1);
+        }
+    }
+
+    @Test
+    void reconcile_emitsTheHeartbeatEvenWhenThereIsNothingToDo() {
+        // Arrange
+        when(executionRepository.findIdsToReconcile(any(), any(), any(), any())).thenReturn(List.of());
+
+        try (var capture = new LogCapture(OperationalLog.class)) {
+            // Act
+            reconciler.reconcile();
+
+            // Assert
+            assertThat(capture.events()).hasSize(1);
+            assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("outcome", "success").containsEntry("found", 0).containsEntry("failed", 0);
+        }
     }
 }
