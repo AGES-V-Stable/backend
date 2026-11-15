@@ -937,6 +937,48 @@ class AveniaClientTest {
         server.verify();
     }
 
+    // integration-guide.avenia.io/docs/KYC/termsAcceptance: o id da conta vai no caminho, sem ?subAccountId=.
+    @Test
+    void getTerms_usaOIdDaSubcontaNoCaminhoELeAVersaoVigente() {
+        server.expect(once(), requestTo("https://avenia.test/v2/terms/sub-123"))
+                .andRespond(withSuccess("""
+                        {"userId":"sub-123","bundle":{"key":"DEFAULT","version":2},
+                         "documents":[{"order":1,"documentKey":"TERMS_OF_USE","displayName":"Terms of Use",
+                                       "contentUrl":"https://docs.avenia.test/terms.pdf","contentType":"application/pdf"}],
+                         "currentVersion":2,"acceptedVersion":null,"acceptedAt":null,
+                         "url":"https://pay.avenia.io/terms-conditions/sub-123","required":false,
+                         "acceptanceToken":"tok"}
+                        """, MediaType.APPLICATION_JSON));
+
+        var terms = client.getTerms("sub-123");
+
+        assertThat(terms.currentVersion()).isEqualTo(2);
+        assertThat(terms.accepted()).isFalse();
+        assertThat(terms.documents()).hasSize(1);
+        server.verify();
+    }
+
+    @Test
+    void acceptTerms_enviaVersaoTokenECanal() {
+        server.expect(once(), requestTo("https://avenia.test/v2/terms/sub-123/accept"))
+                .andExpect(content().string(containsString("\"bundleVersion\":2")))
+                .andExpect(content().string(containsString("\"acceptanceToken\":\"tok\"")))
+                .andExpect(content().string(containsString("\"channel\":\"API\"")))
+                .andRespond(withSuccess("{\"bundleVersion\":2,\"acceptedAt\":\"2026-11-03T14:21:07.512Z\"}",
+                        MediaType.APPLICATION_JSON));
+
+        client.acceptTerms("sub-123", new ages.vstable.backend.external.avenia.dto.AveniaTermsAcceptRequest(
+                2, "tok", "API", java.util.Map.of("consentId", "kyc-1")));
+
+        server.verify();
+    }
+
+    @Test
+    void getTerms_recusaIdDeContaQueAlteraOCaminho() {
+        assertThatThrownBy(() -> client.getTerms("../account/x"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void criarSubconta_servidorRetornaErro_lancaAveniaIntegrationException() {
         server.expect(requestTo("https://avenia.test/v2/account/sub-accounts"))

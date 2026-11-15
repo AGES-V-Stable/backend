@@ -35,3 +35,31 @@ O e-mail vem do usuário autenticado, nunca do formulário. O `external_id` é i
 - https://blindpay.com/docs/learn/terms-of-service
 
 Execute `./gradlew test` e `./gradlew build` antes do merge. Para teste de aceite real, utilize somente a instância development da BlindPay e verifique a entrega dos webhooks.
+
+## Aplicação focada em KYC (pessoa física)
+
+A empresa opera nos dois provedores com o **KYC individual do proprietário**:
+
+- **Avenia**: subconta INDIVIDUAL do dono, vinculada em `provider_accounts` (`CompanyFinancialAccountService`).
+- **BlindPay**: sem KYB, a primeira cotação vincula o cliente individual aprovado do dono (`BlindPayIndividualAccountService`). Exige `kyc_status` approved/approved_rfi, `aml_status=clear` e termos aceitos. Um cliente não pode ser vinculado a duas empresas. Os webhooks atualizam o KYC individual e a conta vinculada.
+
+### Compliance
+
+- Cadastro próprio exige aceite da versão vigente dos termos da V-Stable (`GET /v1/onboarding/terms`, público). Versão e instante ficam em `users.terms_version` e `users.terms_accepted_at` (V20).
+- Termos da Avenia: `GET/POST /v1/onboarding/{kycId}/compliance/avenia-terms` usam `GET/POST /v2/terms/{subAccountId}`. O token de aceite nunca sai do backend; a evidência vai em `clientMetadata`. A finalização do KYC Avenia recusa com `AVENIA_TERMS_REQUIRED` sem o aceite.
+- KYC BlindPay recusado: `POST /v1/blindpay/kyc/restart` permite novo cadastro (novo cliente e novo aceite). O cliente anterior fica em `superseded_customer_id` e seus webhooks são ignorados.
+- RFI individual: `GET/POST /v1/blindpay/kyc/rfi` e `POST /v1/blindpay/kyc/rfi/documents`, com a mesma validação do KYB (`BlindPayRfiSupport`).
+
+### Concorrência nas cotações
+
+O orquestrador já escolhe a melhor oferta entre os provedores elegíveis, mas hoje eles atendem destinos diferentes:
+
+- Avenia: BRL (PIX) → token em carteira cripto.
+- BlindPay: → conta bancária.
+
+A rota em que os dois podem concorrer com KYC individual é **BRL (PIX) → USDC/USDT em carteira cripto**. Na BlindPay ela exige payin para a carteira gerenciada e depois transfer (`/transfer-quotes`, `/transfers`) para o endereço do beneficiário. A BlindPay só entrega payin direto em carteira do próprio cliente. Pagamentos bancários em USD/EUR pela Avenia exigem KYC USD/EUR adicional, partem de saldo em token e não existem no sandbox.
+
+### Limitações
+
+- Um vínculo BlindPay já criado nunca é substituído. Se o cliente individual vinculado for recusado depois, a empresa precisa de intervenção operacional.
+- `ip_address` não é enviado à BlindPay: atrás do proxy da AWS o IP do cliente não é confiável sem configuração dedicada.

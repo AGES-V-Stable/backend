@@ -12,6 +12,7 @@ import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaTermsResponse;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -102,6 +103,13 @@ public class ComplianceKycService {
         }
         if (kyc.getLivenessId() == null || kyc.getLivenessId().isBlank()) {
             throw new UnprocessableEntityException("Verificação de liveness ainda não foi concluída");
+        }
+
+        // A Avenia exige que todo usuário final, inclusive de subconta, aceite os termos dela.
+        AveniaTermsResponse terms = aveniaClient.getTerms(subAccountId);
+        if (terms == null || !terms.accepted()) {
+            throw new UnprocessableEntityException("AVENIA_TERMS_REQUIRED",
+                    "Aceite os termos de uso e a política de privacidade da Avenia antes de enviar o KYC");
         }
 
         AveniaKycResponse aveniaResponse =

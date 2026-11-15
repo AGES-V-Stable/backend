@@ -4,7 +4,11 @@ import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.dto.compliance.KycSubmitResponse;
 import ages.vstable.backend.configuration.security.CompanyAccess;
 import ages.vstable.backend.entity.UserEntity;
+import ages.vstable.backend.dto.compliance.AveniaTermsStatusResponse;
+import ages.vstable.backend.service.AveniaTermsService;
 import ages.vstable.backend.service.ComplianceKycService;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -25,6 +29,35 @@ import java.util.UUID;
 public class ComplianceKycController {
 
     private final ComplianceKycService complianceKycService;
+    private final AveniaTermsService aveniaTermsService;
+
+    /** Aceite explícito da versão exibida dos termos da Avenia. */
+    public record AveniaTermsAcceptBody(@NotNull @Positive Integer version) {
+    }
+
+    @GetMapping("/{kycVerificationId}/compliance/avenia-terms")
+    @Operation(summary = "Termos de uso e política de privacidade da Avenia a exibir ao titular antes do KYC")
+    public ResponseEntity<AveniaTermsStatusResponse> aveniaTerms(
+            @PathVariable UUID kycVerificationId,
+            @AuthenticationPrincipal UserEntity currentUser) {
+        CompanyAccess.rejectRevokedMembership(currentUser);
+        return aveniaTermsService.status(kycVerificationId, currentUser == null ? null : currentUser.getId())
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{kycVerificationId}/compliance/avenia-terms")
+    @Operation(summary = "Registra na Avenia o aceite dos termos pelo titular (versão vigente)")
+    public ResponseEntity<AveniaTermsStatusResponse> acceptAveniaTerms(
+            @PathVariable UUID kycVerificationId,
+            @AuthenticationPrincipal UserEntity currentUser,
+            @Valid @RequestBody AveniaTermsAcceptBody body) {
+        CompanyAccess.rejectRevokedMembership(currentUser);
+        return aveniaTermsService.accept(kycVerificationId, currentUser == null ? null : currentUser.getId(),
+                        body.version())
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
 
     @PostMapping("/{kycVerificationId}/compliance/kyc")
     @Operation(summary = "Finaliza o KYC enviando os dados pessoais do representante direto para a Avenia (não persistidos no nosso banco). Idempotente: não reenvia se já aprovado ou em análise.")

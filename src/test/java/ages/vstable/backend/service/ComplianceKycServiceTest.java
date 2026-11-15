@@ -11,6 +11,7 @@ import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaTermsResponse;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,7 +42,12 @@ class ComplianceKycServiceTest {
     @Mock
     private AveniaSubAccountProvisioningService subAccountProvisioningService;
 
+    private static final AveniaTermsResponse ACCEPTED_TERMS =
+            new AveniaTermsResponse(SUB_ACCOUNT_ID, null, null, 2, 2, null, null, false, "token");
+
     private ComplianceKycService service() {
+        // Por padrão a subconta já aceitou os termos da Avenia; os testes do aceite trocam o stub.
+        lenient().when(aveniaClient.getTerms(any())).thenReturn(ACCEPTED_TERMS);
         return new ComplianceKycService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
     }
 
@@ -193,6 +199,24 @@ class ComplianceKycServiceTest {
         verify(aveniaKycVerificationRepository).save(captor.capture());
         assertThat(captor.getValue().getAveniaProcessId()).isEqualTo("kyc-process-123");
         assertThat(captor.getValue().getStatus()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
+    }
+
+    @Test
+    void finalizar_semAceiteDosTermosDaAvenia_bloqueiaSemSubmeter() {
+        ComplianceKycService service = service();
+        UUID kycId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        AveniaKycVerificationEntity kyc = AveniaKycVerificationEntity.builder()
+                .id(kycId).userId(userId).documentId("doc-123").livenessId("liveness-123").build();
+        when(aveniaKycVerificationRepository.findById(kycId)).thenReturn(Optional.of(kyc));
+        stubSemTentativaAnterior(userId);
+        when(aveniaClient.getTerms(SUB_ACCOUNT_ID)).thenReturn(
+                new AveniaTermsResponse(SUB_ACCOUNT_ID, null, null, 2, null, null, null, false, "token"));
+
+        assertThatThrownBy(() -> service.finalizar(kycId, userId, kycRequest()))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .extracting("code").isEqualTo("AVENIA_TERMS_REQUIRED");
+        verify(aveniaClient, never()).finalizarKyc(any(), any(), any(), any());
     }
 
     @Test

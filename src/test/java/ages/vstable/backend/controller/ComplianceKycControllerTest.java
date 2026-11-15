@@ -47,6 +47,41 @@ class ComplianceKycControllerTest {
     @MockitoBean
     private UserRepository userRepository;
 
+    @MockitoBean
+    private ages.vstable.backend.service.AveniaTermsService aveniaTermsService;
+
+    @Test
+    void aveniaTerms_returnsVersionAndDocumentsWithoutTheAcceptanceToken() throws Exception {
+        UUID kycId = UUID.randomUUID();
+        when(aveniaTermsService.status(eq(kycId), any())).thenReturn(Optional.of(
+                new ages.vstable.backend.dto.compliance.AveniaTermsStatusResponse(2, false, java.util.List.of(
+                        new ages.vstable.backend.dto.compliance.AveniaTermsStatusResponse.Document(
+                                "TERMS_OF_USE", "Terms of Use", "https://docs.avenia.test/terms.pdf")))));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/v1/onboarding/{id}/compliance/avenia-terms", kycId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(2))
+                .andExpect(jsonPath("$.accepted").value(false))
+                .andExpect(jsonPath("$.documents[0].url").value("https://docs.avenia.test/terms.pdf"))
+                .andExpect(jsonPath("$.acceptanceToken").doesNotExist());
+    }
+
+    @Test
+    void acceptAveniaTerms_requiresTheDisplayedVersion() throws Exception {
+        UUID kycId = UUID.randomUUID();
+        when(aveniaTermsService.accept(eq(kycId), any(), eq(2))).thenReturn(Optional.of(
+                new ages.vstable.backend.dto.compliance.AveniaTermsStatusResponse(2, true, java.util.List.of())));
+
+        mockMvc.perform(post("/v1/onboarding/{id}/compliance/avenia-terms", kycId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(true));
+        mockMvc.perform(post("/v1/onboarding/{id}/compliance/avenia-terms", kycId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
     private String validPayload() throws Exception {
         return objectMapper.writeValueAsString(new HashMap<>() {{
             put("fullName", "Maria da Silva");
@@ -147,7 +182,7 @@ class ComplianceKycControllerTest {
 
     @Test
     void finalizar_rejeitaMembroRemovidoERepassaIdDoUsuarioAutenticado() {
-        ComplianceKycController controller = new ComplianceKycController(complianceKycService);
+        ComplianceKycController controller = new ComplianceKycController(complianceKycService, aveniaTermsService);
         UUID kycId = UUID.randomUUID();
         ages.vstable.backend.dto.compliance.KycSubmitRequest request =
                 new ages.vstable.backend.dto.compliance.KycSubmitRequest();

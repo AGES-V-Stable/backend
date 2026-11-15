@@ -6,6 +6,8 @@ import ages.vstable.backend.dto.compliance.KycSubmitRequest;
 import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaTermsAcceptRequest;
+import ages.vstable.backend.external.avenia.dto.AveniaTermsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaBrlBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaDocumentStatusResponse;
@@ -46,6 +48,7 @@ public class AveniaClient implements AveniaGateway {
     private static final String LIVENESS_BODY = "{\"documentType\":\"SELFIE-FROM-LIVENESS\"}";
     private static final String KYC_LEVEL_1_URI = "/v2/kyc/new-level-1/api";
     private static final String SUB_ACCOUNTS_URI = "/v2/account/sub-accounts";
+    private static final String TERMS_URI = "/v2/terms/";
     private static final String KYC_ATTEMPTS_URI = "/v2/kyc/attempts/";
     private static final String QUOTE_URI = "/v2/account/quote/fixed-rate";
     private static final String TICKETS_URI = "/v2/account/tickets/";
@@ -190,6 +193,24 @@ public class AveniaClient implements AveniaGateway {
      * "user already approved in level 1" assim que a conta principal for
      * aprovada uma vez. Confirmado contra o sandbox real em 2026-09-23.
      */
+    /** Os endpoints de termos recebem o id da conta no caminho, nunca {@code ?subAccountId=}. */
+    public AveniaTermsResponse getTerms(String accountId) {
+        return get(TERMS_URI + requireAccountId(accountId), AveniaTermsResponse.class,
+                "Falha ao consultar os termos da Avenia");
+    }
+
+    public void acceptTerms(String accountId, AveniaTermsAcceptRequest request) {
+        post(TERMS_URI + requireAccountId(accountId) + "/accept", serialize(request), String.class,
+                "Falha ao registrar o aceite dos termos da Avenia");
+    }
+
+    private static String requireAccountId(String accountId) {
+        if (accountId == null || !accountId.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new IllegalArgumentException("Invalid Avenia account id");
+        }
+        return accountId;
+    }
+
     public AveniaSubAccountResponse criarSubconta(String name) {
         String body = serialize(Map.of("accountType", "INDIVIDUAL", "name", name));
         return post(SUB_ACCOUNTS_URI, body, AveniaSubAccountResponse.class,
