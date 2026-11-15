@@ -50,7 +50,7 @@ spring:
   servlet:
     multipart:
       max-file-size: 3MB
-      max-request-size: 4MB
+      max-request-size: 14MB # multiple KYC files in one authenticated request (each file max 3 MB)
 
   # Timeouts dos clientes HTTP de saída (Avenia e BlindPay). Sem eles, um provedor
   # lento prende a thread da requisição indefinidamente.
