@@ -37,7 +37,7 @@ public class BlindPayIndividualKycService {
     private final BlindPayGateway gateway;
     private final BlindPayIndividualKycRepository repository;
 
-    @Value("\${blindpay.individual-kyc.enabled:false}")
+    @Value("${blindpay.individual-kyc.enabled:false}")
     private boolean enabled;
 
     private void verifyUser(UserEntity user) {
