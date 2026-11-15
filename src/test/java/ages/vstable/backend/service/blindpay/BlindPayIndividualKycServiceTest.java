@@ -61,7 +61,7 @@ class BlindPayIndividualKycServiceTest {
 
     @Test
     void termsAreHostedAndBoundToCurrentUser() {
-        when(repository.findForUpdate(user.getId())).thenReturn(Optional.empty());
+        when(repository.findById(user.getId())).thenReturn(Optional.empty());
         when(gateway.initiateTermsOfService(any()))
                 .thenReturn(new BlindPayInitiateTosResponse("https://app.blindpay.com/e/terms-of-service"));
 
@@ -70,7 +70,7 @@ class BlindPayIndividualKycServiceTest {
         assertThat(response.url()).startsWith("https://app.blindpay.com/");
         ArgumentCaptor<BlindPayIndividualKycEntity> saved =
                 ArgumentCaptor.forClass(BlindPayIndividualKycEntity.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndFlush(saved.capture());
         assertThat(saved.getValue().getUserId()).isEqualTo(user.getId());
         assertThat(saved.getValue().getTosSessionKey()).isNotNull();
         assertThat(saved.getValue().getTosAcceptedAt()).isNull();
