@@ -40,6 +40,9 @@ public class BlindPayIndividualKycService {
     @Value("${blindpay.individual-kyc.enabled:false}")
     private boolean enabled;
 
+    @Value("${blindpay.individual-kyc.redirect-url:}")
+    private String redirectUrl;
+
     private void verifyUser(UserEntity user) {
         if (!enabled) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                 "Individual KYC is disabled for this environment");
@@ -58,7 +61,8 @@ public class BlindPayIndividualKycService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "KYC or terms already registered");
         UUID sessionKey = UUID.randomUUID();
         BlindPayInitiateTosResponse response = gateway.initiateTermsOfService(
-                new BlindPayInitiateTosRequest(sessionKey, null, null));
+                new BlindPayInitiateTosRequest(sessionKey, null,
+                        redirectUrl == null || redirectUrl.isBlank() ? null : redirectUrl));
         if (response == null || !trustedTermsUrl(response.url()))
             throw BlindPayIntegrationException.invalidResponse("Invalid BlindPay terms link");
         entry.setTosSessionKey(sessionKey);
