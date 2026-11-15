@@ -81,7 +81,7 @@ public class SecurityConfiguration {
                         // não entra aqui: exige a sessão completa de quem já tem conta.
                         .requestMatchers(HttpMethod.POST, "/v1/company-invitations/resolve",
                                 "/v1/company-invitations/accept-new-user").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/user/exists").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/user/exists", "/v1/onboarding/terms").permitAll()
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()

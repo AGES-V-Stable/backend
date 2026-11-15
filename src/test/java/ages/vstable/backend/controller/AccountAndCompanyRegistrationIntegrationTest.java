@@ -471,7 +471,7 @@ class AccountAndCompanyRegistrationIntegrationTest {
 
     private static String accountJson(String email) {
         return """
-                {"fullName":"Joao da Silva","email":"%s","password":"%s","confirmPassword":"%s"}
+                {"fullName":"Joao da Silva","email":"%s","password":"%s","confirmPassword":"%s","termsAccepted":true,"termsVersion":"v1"}
                 """.formatted(email, PASSWORD, PASSWORD);
     }
 
@@ -485,7 +485,7 @@ class AccountAndCompanyRegistrationIntegrationTest {
     /** O JSON plano do cadastro em uma etapa, como o frontend envia hoje. */
     private static String singleStepJson(String email) {
         return """
-                {"fullName":"Joao da Silva","email":"%s","password":"%s","confirmPassword":"%s",
+                {"fullName":"Joao da Silva","email":"%s","password":"%s","confirmPassword":"%s","termsAccepted":true,"termsVersion":"v1",
                  "legalName":"Empresa Exemplo Ltda","cnpj":"%s","country":"Brasil","zipCode":"90000-000",
                  "city":"Porto Alegre","state":"RS"}
                 """.formatted(email, PASSWORD, PASSWORD, CNPJ);

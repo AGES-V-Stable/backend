@@ -449,7 +449,8 @@ class ApplicationImpactAssessmentTest extends ImpactEvidence {
         // Este é o cadastro público existente, não um endpoint inventado de aceite.
         JsonNode account = http(post("/v1/onboarding/account").contentType(MediaType.APPLICATION_JSON)
                 .content(JSON.writeValueAsString(Map.of("fullName", "Convidado Sintetico", "email", email,
-                        "password", password, "confirmPassword", password, "enableTwoFactor", false))),
+                        "password", password, "confirmPassword", password, "enableTwoFactor", false,
+                        "termsAccepted", true, "termsVersion", "v1"))),
                 201, "POST /v1/onboarding/account email do convite [REDACTED]");
         UUID invitedUser = UUID.fromString(account.path("userId").asText());
         var login = mvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)

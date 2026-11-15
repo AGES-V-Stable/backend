@@ -95,6 +95,8 @@ class OnboardingIntegrationTest {
         request.setEmail("joao@example.com");
         request.setPassword("Senha@123");
         request.setConfirmPassword("Senha@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
         request.setLegalName("Empresa Exemplo Ltda");
         request.setCnpj("11.222.333/0001-81");
         request.setCountry("Brasil");

@@ -1,5 +1,6 @@
 package ages.vstable.backend.service;
 
+import ages.vstable.backend.configuration.TermsProperties;
 import ages.vstable.backend.logging.OperationalLog;
 
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
@@ -56,6 +57,12 @@ public class OnboardingService {
     private final TotpService totpService;
     private final CompanyMembershipService companyMembershipService;
     private final ComplianceKycService complianceKycService;
+    private final TermsProperties terms;
+
+    /** Termos vigentes que a criação de conta exige aceitar. */
+    public TermsProperties currentTerms() {
+        return terms;
+    }
 
     /** Cadastro em uma etapa: conta, empresa, vínculo de dono e KYC pendente na mesma transação. */
     @Transactional
@@ -146,7 +153,11 @@ public class OnboardingService {
     }
 
     private NewAccount saveAccount(AccountRequestDTO request, UUID companyId, OffsetDateTime now) {
+        requireTerms(request);
         UserEntity user = new UserEntity();
+        // Evidência do consentimento (LGPD): versão vigente e instante do aceite.
+        user.setTermsVersion(terms.version());
+        user.setTermsAcceptedAt(now);
         user.setCompanyId(companyId);
         user.setFullName(request.getFullName());
         user.setEmail(request.getEmail());
@@ -168,6 +179,17 @@ public class OnboardingService {
             // Cadastro simultâneo com o mesmo e-mail: a restrição única do banco decide.
             throw conflictOn(e, new ConflictException("Email already registered"),
                     EMAIL_UNIQUE_CONSTRAINT, EMAIL_CASE_INSENSITIVE_UNIQUE_CONSTRAINT);
+        }
+    }
+
+    /** Mesma regra do aceite de convite: aceite explícito e da versão vigente. */
+    private void requireTerms(AccountRequestDTO request) {
+        if (!Boolean.TRUE.equals(request.getTermsAccepted())) {
+            throw new UnprocessableEntityException("TERMS_NOT_ACCEPTED", "Aceite os termos para continuar.");
+        }
+        if (!terms.version().equals(request.getTermsVersion())) {
+            throw new ConflictException("TERMS_VERSION_MISMATCH",
+                    "Os termos foram atualizados. Recarregue a página e aceite a versão vigente.");
         }
     }
 

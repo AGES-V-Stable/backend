@@ -296,7 +296,7 @@ class CompanyMembershipIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"fullName":"Joao da Silva","email":"joao@example.com","password":"Senha@123",
-                                 "confirmPassword":"Senha@123","legalName":"Empresa Exemplo Ltda",
+                                 "confirmPassword":"Senha@123","termsAccepted":true,"termsVersion":"v1","legalName":"Empresa Exemplo Ltda",
                                  "cnpj":"11.222.333/0001-81","country":"Brasil","zipCode":"90000-000",
                                  "city":"Porto Alegre","state":"RS"}
                                 """))
@@ -311,6 +311,8 @@ class CompanyMembershipIntegrationTest {
         request.setEmail("joao@example.com");
         request.setPassword("Senha@123");
         request.setConfirmPassword("Senha@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
         request.setLegalName("Empresa Exemplo Ltda");
         request.setCnpj("11.222.333/0001-81");
         request.setCountry("Brasil");

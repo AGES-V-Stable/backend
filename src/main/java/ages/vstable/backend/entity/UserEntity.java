@@ -63,6 +63,13 @@ public class UserEntity implements UserDetails {
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
+    /** Versão dos termos de uso e da política de privacidade aceitos no cadastro próprio. */
+    @Column(name = "terms_version", length = 50)
+    private String termsVersion;
+
+    @Column(name = "terms_accepted_at")
+    private OffsetDateTime termsAcceptedAt;
+
     /**
      * Vínculo atual com a empresa (o ativo ou, na falta dele, o último removido), carregado a cada
      * requisição autenticada. Nunca é persistido; sem ele, a autorização por empresa é negada.

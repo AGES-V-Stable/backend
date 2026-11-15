@@ -3,6 +3,7 @@ package ages.vstable.backend.controller;
 import ages.vstable.backend.dto.onboarding.AccountRequestDTO;
 import ages.vstable.backend.dto.onboarding.CompanyRegistrationRequestDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingRequestDTO;
+import ages.vstable.backend.dto.onboarding.TermsResponse;
 import ages.vstable.backend.dto.onboarding.OnboardingResponseDTO;
 import ages.vstable.backend.dto.onboarding.OnboardingStatusResponse;
 import ages.vstable.backend.entity.UserEntity;
@@ -54,6 +55,13 @@ public class OnboardingController {
     })
     public ResponseEntity<OnboardingResponseDTO> createAccount(@Valid @RequestBody AccountRequestDTO request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(onboardingService.createAccount(request));
+    }
+
+    @GetMapping("/terms")
+    @Operation(summary = "Returns the current terms of use and privacy policy that account creation requires accepting")
+    public TermsResponse terms() {
+        var terms = onboardingService.currentTerms();
+        return new TermsResponse(terms.version(), terms.termsUrl(), terms.privacyUrl());
     }
 
     @PostMapping("/company")

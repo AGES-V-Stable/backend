@@ -78,6 +78,8 @@ class OnboardingControllerTest {
                 put("email", "joao@example.com");
                 put("password", "Senha@123");
                 put("confirmPassword", "Senha@123");
+                put("termsAccepted", true);
+                put("termsVersion", "v1");
                 put("legalName", "Empresa Exemplo Ltda");
                 put("cnpj", "11.222.333/0001-81");
                 put("country", "Brasil");
@@ -291,7 +293,7 @@ class OnboardingControllerTest {
     }
 
     private static final String ACCOUNT_PAYLOAD = """
-            {"fullName":"Joao da Silva","email":"joao@example.com","password":"Senha@123","confirmPassword":"Senha@123"}
+            {"fullName":"Joao da Silva","email":"joao@example.com","password":"Senha@123","confirmPassword":"Senha@123","termsAccepted":true,"termsVersion":"v1"}
             """;
 
     private static final String COMPANY_PAYLOAD = """
@@ -340,5 +342,25 @@ class OnboardingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.companyId").value(statusResponse.getCompanyId().toString()))
                 .andExpect(jsonPath("$.kycVerificationId").value(statusResponse.getKycVerificationId().toString()));
+    }
+
+    @Test
+    void terms_arePublicSoTheRegistrationCanShowAndAcceptThem() throws Exception {
+        when(onboardingService.currentTerms()).thenReturn(new ages.vstable.backend.configuration.TermsProperties(
+                "v1", "https://app.example.test/termos", "https://app.example.test/privacidade"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/v1/onboarding/terms"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value("v1"))
+                .andExpect(jsonPath("$.termsUrl").value("https://app.example.test/termos"))
+                .andExpect(jsonPath("$.privacyUrl").value("https://app.example.test/privacidade"));
+    }
+
+    @Test
+    void terms_publicRouteDoesNotOpenTheAuthenticatedOnboardingState() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/v1/onboarding/me"))
+                .andExpect(status().isUnauthorized());
     }
 }

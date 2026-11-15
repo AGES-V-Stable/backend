@@ -30,4 +30,10 @@ public class AccountRequestDTO {
     @ToString.Exclude
     @NotBlank
     private String confirmPassword;
+
+    @Schema(description = "Aceite dos termos de uso e da política de privacidade vigentes")
+    private Boolean termsAccepted;
+
+    @Schema(description = "Versão dos termos aceitos (GET /v1/onboarding/terms)")
+    private String termsVersion;
 }

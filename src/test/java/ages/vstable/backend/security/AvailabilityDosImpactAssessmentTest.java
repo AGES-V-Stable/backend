@@ -159,6 +159,8 @@ class AvailabilityDosImpactAssessmentTest extends ImpactEvidence {
                                             "email", email,
                                             "password", password,
                                             "confirmPassword", password,
+                                            "termsAccepted", true,
+                                            "termsVersion", "v1",
                                             "enableTwoFactor", false))))
                             .andReturn().getResponse();
                     return Map.entry(res.getStatus(), String.valueOf(res.getHeader("Retry-After")));

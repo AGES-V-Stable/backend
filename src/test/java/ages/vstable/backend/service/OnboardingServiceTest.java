@@ -102,7 +102,9 @@ class OnboardingServiceTest {
         onboardingService = new OnboardingService(
                 userRepository, administratorRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
-                companyMembershipService, complianceKycService);
+                companyMembershipService, complianceKycService,
+                new ages.vstable.backend.configuration.TermsProperties(
+                        "v1", "https://app.example.test/termos", "https://app.example.test/privacidade"));
         operationalLogger = (Logger) LoggerFactory.getLogger(OperationalLog.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -353,6 +355,8 @@ class OnboardingServiceTest {
     void performOnboarding_passwordAndConfirmationMismatch_throwsUnprocessable() {
         OnboardingRequestDTO request = validRequest();
         request.setConfirmPassword("Outra@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -363,6 +367,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword("fraca");
         request.setConfirmPassword("fraca");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -373,6 +379,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword("Senha@abc");
         request.setConfirmPassword("Senha@abc");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -383,6 +391,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword("aAzZ0912");
         request.setConfirmPassword("aAzZ0912");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -393,6 +403,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword(null);
         request.setConfirmPassword("Senha@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -413,6 +425,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword(invalidPassword);
         request.setConfirmPassword(invalidPassword);
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.performOnboarding(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -434,6 +448,8 @@ class OnboardingServiceTest {
         OnboardingRequestDTO request = validRequest();
         request.setPassword(validPassword);
         request.setConfirmPassword(validPassword);
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         OnboardingResponseDTO response = onboardingService.performOnboarding(request);
 
@@ -490,6 +506,40 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void createAccount_recordsTheAcceptedTermsVersionAndInstant() {
+        stubCompanyAndUserPersistence(UUID.randomUUID(), UUID.randomUUID());
+
+        onboardingService.createAccount(accountRequest());
+
+        ArgumentCaptor<UserEntity> saved = ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getTermsVersion()).isEqualTo("v1");
+        assertThat(saved.getValue().getTermsAcceptedAt()).isNotNull();
+    }
+
+    @Test
+    void createAccount_withoutAcceptingTerms_isRejectedWithoutSaving() {
+        AccountRequestDTO request = accountRequest();
+        request.setTermsAccepted(false);
+
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(UnprocessableEntityException.class)
+                .extracting("code").isEqualTo("TERMS_NOT_ACCEPTED");
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void createAccount_withOutdatedTermsVersion_isRejectedWithoutSaving() {
+        AccountRequestDTO request = accountRequest();
+        request.setTermsVersion("v0");
+
+        assertThatThrownBy(() -> onboardingService.createAccount(request))
+                .isInstanceOf(ConflictException.class)
+                .extracting("code").isEqualTo("TERMS_VERSION_MISMATCH");
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void createAccount_emailAlreadyRegistered_throwsConflictWithoutSaving() {
         when(userRepository.findFirstByEmailIgnoreCase("joao@example.com")).thenReturn(Optional.of(new UserEntity()));
 
@@ -522,6 +572,8 @@ class OnboardingServiceTest {
     void createAccount_passwordAndConfirmationMismatch_throwsUnprocessableWithoutSaving() {
         AccountRequestDTO request = accountRequest();
         request.setConfirmPassword("Outra@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.createAccount(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -533,6 +585,8 @@ class OnboardingServiceTest {
         AccountRequestDTO request = accountRequest();
         request.setPassword("fraca");
         request.setConfirmPassword("fraca");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         assertThatThrownBy(() -> onboardingService.createAccount(request))
                 .isInstanceOf(UnprocessableEntityException.class);
@@ -545,6 +599,8 @@ class OnboardingServiceTest {
         String tooLong = "1@" + "é".repeat(36);
         request.setPassword(tooLong);
         request.setConfirmPassword(tooLong);
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
 
         // Act / Assert
         assertThatThrownBy(() -> onboardingService.createAccount(request))
@@ -707,6 +763,8 @@ class OnboardingServiceTest {
         request.setEmail("joao@example.com");
         request.setPassword("Senha@123");
         request.setConfirmPassword("Senha@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
         return request;
     }
 
@@ -743,6 +801,8 @@ class OnboardingServiceTest {
         request.setEmail("joao@example.com");
         request.setPassword("Senha@123");
         request.setConfirmPassword("Senha@123");
+        request.setTermsAccepted(true);
+        request.setTermsVersion("v1");
         request.setLegalName("Empresa Exemplo Ltda");
         request.setCnpj("11.222.333/0001-81");
         request.setCountry("Brasil");
