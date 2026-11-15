@@ -47,6 +47,7 @@ public class BlindPayWebhookService {
     private final BlindPayTosSessionRepository tosSessionRepository;
     private final ObjectMapper objectMapper;
     private final BlindPayExecutionProcessor executionProcessor;
+    private final BlindPayIndividualKycService individualKycService;
 
     public enum Result {
         PROCESSED,
@@ -105,7 +106,9 @@ public class BlindPayWebhookService {
                 .findByProviderAndExternalCustomerId(IntegrationProvider.BLINDPAY, customerId)
                 .or(() -> unlinkedAccount(event.externalId()));
         if (found.isEmpty()) {
-            return Result.IGNORED;
+            return individualKycService.updateFromWebhook(customerId, event.externalId(),
+                    event.kycStatus(), event.amlStatus(), event.updatedAt(), now)
+                    ? Result.PROCESSED : Result.IGNORED;
         }
 
         ProviderAccountEntity account = found.get();
@@ -150,7 +153,11 @@ public class BlindPayWebhookService {
         }
         BlindPayTosSessionEntity session = tosSessionRepository.findByIdempotencyKey(event.idempotencyKey())
                 .orElse(null);
-        if (session == null || BlindPayTosSessionEntity.STATUS_ACCEPTED.equals(session.getStatus())) {
+        if (session == null) {
+            return individualKycService.acceptTerms(event.idempotencyKey(), tosId, now)
+                    ? Result.PROCESSED : Result.IGNORED;
+        }
+        if (BlindPayTosSessionEntity.STATUS_ACCEPTED.equals(session.getStatus())) {
             return Result.IGNORED;
         }
         ProviderAccountEntity account = providerAccountRepository
