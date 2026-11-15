@@ -1,62 +1,105 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.entity.ProviderAccountEntity;
+import ages.vstable.backend.entity.CompanyMembershipEntity;
+import ages.vstable.backend.entity.enums.CompanyRole;
+import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
+import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.exception.ForbiddenException;
+import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
+import ages.vstable.backend.repository.CompanyMembershipRepository;
+import ages.vstable.backend.repository.CompanyRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.UUID;
 
 /**
- * Titularidade financeira: resolve a conta do provedor pela empresa, nunca pelo usuário que opera.
- * O usuário autenticado é apenas o ator (autoria, 2FA, auditoria); dois membros autorizados da mesma
- * empresa sempre resolvem a mesma conta.
- *
- * <p>Na Avenia, a associação empresarial é a linha de {@code provider_accounts} da empresa com
- * {@code provider = AVENIA}. Esta classe não provisiona contas: o cadastro de subconta {@code COMPANY}
- * não está comprovado na integração atual, então a associação só existe depois de conciliada
- * (ver docs/avenia-conta-empresarial.md). Sem associação válida a operação é bloqueada — nunca há
- * fallback para a conta principal da API key, para a subconta individual de KYC de um membro ou
- * para a conta de outra empresa.
+ * The first financial operation binds the active owner's approved individual KYC subaccount to the company.
+ * All authorized members share that persisted association, which survives owner changes and failed operations.
+ * Existing associations are never replaced or automatically reactivated.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CompanyFinancialAccountService {
 
-    /** Única situação em que a associação Avenia da empresa pode operar. */
     public static final String AVENIA_ACCOUNT_ACTIVE = "ACTIVE";
 
     private static final String UNAVAILABLE =
-            "A empresa não possui conta financeira empresarial válida na Avenia; a operação foi bloqueada";
+            "A empresa não possui conta financeira válida na Avenia; a operação foi bloqueada";
+    private static final String OWNER_KYC_REQUIRED =
+            "O proprietário da empresa precisa concluir o KYC com uma subconta Avenia aprovada";
+    private static final String ALREADY_LINKED =
+            "A subconta Avenia do proprietário já está vinculada a outra empresa";
 
     private final ProviderAccountRepository providerAccountRepository;
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
+    private final CompanyRepository companyRepository;
+    private final CompanyMembershipRepository membershipRepository;
 
-    /** Subconta Avenia da empresa, validada; lança exceção em vez de devolver uma conta não comprovada. */
-    @Transactional(readOnly = true)
+    // Commit the canonical association independently of a later provider or transfer failure.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String requireAveniaSubAccountId(UUID companyId) {
         if (companyId == null) {
             throw new ForbiddenException("COMPANY_ACCESS_DENIED", "Você não tem acesso a esta empresa.");
         }
-        ProviderAccountEntity account = providerAccountRepository
-                .findByCompanyIdAndProvider(companyId, IntegrationProvider.AVENIA)
-                .orElseThrow(() -> new UnprocessableEntityException(UNAVAILABLE));
+        var existing = providerAccountRepository.findByCompanyIdAndProvider(companyId, IntegrationProvider.AVENIA);
+        if (existing.isPresent()) return requireActive(existing.get());
+
+        // Lock the company even when no account row exists yet; concurrent members must bind only once.
+        var company = companyRepository.findByIdForUpdate(companyId)
+                .orElseThrow(() -> new NotFoundException("Company not found"));
+        existing = providerAccountRepository.findByCompanyIdAndProvider(companyId, IntegrationProvider.AVENIA);
+        if (existing.isPresent()) return requireActive(existing.get());
+
+        var owner = membershipRepository.findByCompanyIdAndStatus(companyId, MembershipStatus.ACTIVE).stream()
+                .filter(member -> member.getRole() == CompanyRole.OWNER)
+                .min(Comparator.comparing(CompanyMembershipEntity::getJoinedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(CompanyMembershipEntity::getId,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElseThrow(() -> new UnprocessableEntityException(OWNER_KYC_REQUIRED));
+        var kyc = aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(owner.getUserId())
+                .filter(verification -> verification.getStatus() == ComplianceStatus.APPROVED)
+                .orElseThrow(() -> new UnprocessableEntityException(OWNER_KYC_REQUIRED));
+        String subAccountId = kyc.getAveniaSubAccountId();
+        if (subAccountId == null || subAccountId.isBlank()) {
+            throw new UnprocessableEntityException(OWNER_KYC_REQUIRED);
+        }
+        if (providerAccountRepository.findByProviderAndExternalCustomerId(IntegrationProvider.AVENIA, subAccountId)
+                .isPresent()) {
+            throw new UnprocessableEntityException(ALREADY_LINKED);
+        }
+
+        var now = OffsetDateTime.now(ZoneOffset.UTC);
+        try {
+            providerAccountRepository.saveAndFlush(ProviderAccountEntity.builder()
+                    .company(company).provider(IntegrationProvider.AVENIA).externalCustomerId(subAccountId)
+                    .status(AVENIA_ACCOUNT_ACTIVE).createdAt(now).updatedAt(now).build());
+        } catch (DataIntegrityViolationException ex) {
+            // Different companies can race to bind the same individual account; the unique index decides.
+            if (String.valueOf(ex.getMostSpecificCause().getMessage())
+                    .contains("provider_accounts_provider_external_customer_key")) {
+                throw new UnprocessableEntityException(ALREADY_LINKED);
+            }
+            throw ex;
+        }
+        return subAccountId;
+    }
+
+    private String requireActive(ProviderAccountEntity account) {
         String subAccountId = account.getExternalCustomerId();
         if (!AVENIA_ACCOUNT_ACTIVE.equals(account.getStatus()) || subAccountId == null || subAccountId.isBlank()) {
-            throw new UnprocessableEntityException(UNAVAILABLE);
-        }
-        // Subconta criada para o KYC individual de um representante não é conta da empresa, mesmo que
-        // alguém a tenha associado: a conversão INDIVIDUAL -> COMPANY nunca é presumida.
-        if (aveniaKycVerificationRepository.existsByAveniaSubAccountId(subAccountId)) {
-            log.warn("Avenia account of company {} points to an individual KYC sub-account; reconciliation required",
-                    companyId);
             throw new UnprocessableEntityException(UNAVAILABLE);
         }
         return subAccountId;

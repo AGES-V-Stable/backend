@@ -518,7 +518,7 @@ class SupportChatClientTest {
                         "Autenticação em Duas Etapas (2FA / TOTP)"),
                 Arguments.of(
                         "O que é necessário para aprovação de compliance KYB e AML?",
-                        "Compliance Institucional (KYB / AML)"),
+                        "Verificação de identidade (KYC)"),
                 Arguments.of(
                         "Como é calculada a cotação, taxa e spread de uma transferência?",
                         "Cotações, Taxas e Transferências"),

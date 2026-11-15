@@ -55,6 +55,7 @@ public class OnboardingService {
     private final JwtTokenUtils jwtTokenUtils;
     private final TotpService totpService;
     private final CompanyMembershipService companyMembershipService;
+    private final ComplianceKycService complianceKycService;
 
     /** Cadastro em uma etapa: conta, empresa, vínculo de dono e KYC pendente na mesma transação. */
     @Transactional
@@ -124,15 +125,17 @@ public class OnboardingService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public OnboardingStatusResponse getCurrentOnboarding(UserEntity user) {
         AveniaKycVerificationEntity kyc = aveniaKycVerificationRepository
                 .findFirstByUserIdOrderByCreatedAtDesc(user.getId())
                 .orElseThrow(() -> new NotFoundException("No KYC verification found for the current user"));
 
+        complianceKycService.refreshStatus(kyc);
+        UUID companyId = CompanyMembershipService.currentCompanyId(user);
         return OnboardingStatusResponse.builder()
                 .kycVerificationId(kyc.getId())
-                .companyId(CompanyMembershipService.currentCompanyId(user))
+                .companyId(companyId)
                 .status(kyc.getStatus())
                 .documentSubmitted(isPresent(kyc.getDocumentId()))
                 .livenessSubmitted(isPresent(kyc.getLivenessId()))

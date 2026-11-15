@@ -45,6 +45,44 @@ class ComplianceKycServiceTest {
         return new ComplianceKycService(aveniaKycVerificationRepository, aveniaClient, subAccountProvisioningService);
     }
 
+    @Test
+    void refreshStatus_readsIndividualAttemptAndSavesOnlyWhenChanged() {
+        var kyc = AveniaKycVerificationEntity.builder().aveniaProcessId("attempt-1")
+                .aveniaSubAccountId(SUB_ACCOUNT_ID).status(ComplianceStatus.UNDER_REVIEW).build();
+        when(aveniaClient.consultarTentativa("attempt-1", SUB_ACCOUNT_ID))
+                .thenReturn(attempt("attempt-1", "COMPLETED", "APPROVED", false));
+
+        service().refreshStatus(kyc);
+        service().refreshStatus(kyc);
+
+        assertThat(kyc.getStatus()).isEqualTo(ComplianceStatus.APPROVED);
+        verify(aveniaKycVerificationRepository, times(1)).save(kyc);
+        verifyNoInteractions(subAccountProvisioningService);
+    }
+
+    @Test
+    void refreshStatus_withoutSubmittedAttemptDoesNotCallProviderOrCreateAccount() {
+        var kyc = AveniaKycVerificationEntity.builder().status(ComplianceStatus.PENDING).build();
+
+        service().refreshStatus(kyc);
+
+        assertThat(kyc.getStatus()).isEqualTo(ComplianceStatus.PENDING);
+        verifyNoInteractions(aveniaClient, aveniaKycVerificationRepository, subAccountProvisioningService);
+    }
+
+    @Test
+    void refreshStatus_rejectsMismatchedAttemptWithoutChangingStoredStatus() {
+        var kyc = AveniaKycVerificationEntity.builder().aveniaProcessId("attempt-1")
+                .aveniaSubAccountId(SUB_ACCOUNT_ID).status(ComplianceStatus.UNDER_REVIEW).build();
+        when(aveniaClient.consultarTentativa("attempt-1", SUB_ACCOUNT_ID))
+                .thenReturn(attempt("another-attempt", "COMPLETED", "APPROVED", false));
+
+        assertThatThrownBy(() -> service().refreshStatus(kyc)).isInstanceOf(AveniaIntegrationException.class);
+
+        assertThat(kyc.getStatus()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
+        verifyNoInteractions(aveniaKycVerificationRepository);
+    }
+
     private KycSubmitRequest kycRequest() {
         KycSubmitRequest request = new KycSubmitRequest();
         request.setFullName("Maria da Silva");

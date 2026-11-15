@@ -1,7 +1,6 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
-import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
 import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.dto.company.CompanyNormalizedData;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
@@ -9,6 +8,8 @@ import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.UserEntity;
@@ -47,6 +48,7 @@ public class CompanyService {
     private final CompanyDataValidator companyDataValidator;
     private final UserRepository userRepository;
     private final CompanyMembershipRepository companyMembershipRepository;
+    private final AveniaKycVerificationRepository verificationRepository;
 
     public List<CompanyResponse> findAll() {
         return companyRepository.findAll()
@@ -57,8 +59,7 @@ public class CompanyService {
 
     /**
      * A lista administrativa deve apontar para o responsável com acesso vigente à empresa,
-     * nunca para o usuário mais antigo associado ao companyId legado. OWNER não implica,
-     * por si só, que a pessoa seja o representante legal no KYB.
+     * nunca para o usuário mais antigo associado ao companyId legado.
      */
     @Transactional(readOnly = true)
     public List<CompanySummaryResponse> findSummaries() {
@@ -84,30 +85,16 @@ public class CompanyService {
                     }
                 });
 
+        Map<UUID, ComplianceStatus> statuses = latestKycStatuses(accountOwners.values().stream().map(UserEntity::getId).toList());
         return companyRepository.findAll().stream()
                 .sorted(Comparator.comparing(CompanyEntity::getUpdatedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(company -> toSummary(company, accountOwners.get(company.getId())))
+                .map(company -> {
+                    UserEntity owner = accountOwners.get(company.getId());
+                    return toSummary(company, owner, owner == null ? ComplianceStatus.PENDING
+                            : statuses.getOrDefault(owner.getId(), ComplianceStatus.PENDING));
+                })
                 .toList();
-    }
-
-    @Transactional
-    public CompanyResponse updateComplianceStatus(UUID id, CompanyComplianceUpdateRequest request) {
-        CompanyEntity company = companyRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Company not found"));
-
-        if (request.getStatusKyb() == null && request.getStatusAml() == null) {
-            throw new IllegalArgumentException("At least one of statusKyb or statusAml is required");
-        }
-        if (request.getStatusKyb() != null) {
-            company.setKybStatus(request.getStatusKyb());
-        }
-        if (request.getStatusAml() != null) {
-            company.setAmlStatus(request.getStatusAml());
-        }
-        company.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-
-        return toResponse(companyRepository.saveAndFlush(company));
     }
 
     public Optional<CompanyResponse> findById(UUID id) {
@@ -172,10 +159,6 @@ public class CompanyService {
         CompanyEntity company = companyRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Company not found"));
 
-        if (company.getKybStatus() == null || company.getAmlStatus() == null) {
-            throw new UnprocessableEntityException("Company has an invalid compliance status");
-        }
-
         List<ComplianceDocumentEntity> documents = complianceDocumentRepository.findByCompanyId(id);
 
         if (documents.stream().anyMatch(document -> document.getStatus() == null)) {
@@ -187,28 +170,32 @@ public class CompanyService {
         response.setLegalName(company.getLegalName());
         response.setTradeName(company.getTradeName());
         response.setCnpj(company.getCnpj());
-        response.setStatusKyb(company.getKybStatus());
-        response.setStatusAml(company.getAmlStatus());
-        response.setOverallStatus(computeOverallStatus(company.getKybStatus(), company.getAmlStatus()));
+        var owners = companyMembershipRepository.findByCompanyIdAndStatus(id, MembershipStatus.ACTIVE).stream()
+                .filter(member -> member.getRole() == CompanyRole.OWNER)
+                .sorted(Comparator.comparing(CompanyMembershipEntity::getJoinedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(CompanyMembershipEntity::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        response.setOverallStatus(owners.isEmpty() ? ComplianceStatus.PENDING
+                : latestKycStatuses(List.of(owners.get(0).getUserId()))
+                        .getOrDefault(owners.get(0).getUserId(), ComplianceStatus.PENDING));
         response.setDocuments(documents.stream().map(this::toDocumentResponse).toList());
 
         return response;
     }
 
-    private ComplianceStatus computeOverallStatus(ComplianceStatus kyb, ComplianceStatus aml) {
-        if (kyb == ComplianceStatus.REJECTED || aml == ComplianceStatus.REJECTED) {
-            return ComplianceStatus.REJECTED;
+    private Map<UUID, ComplianceStatus> latestKycStatuses(List<UUID> userIds) {
+        Map<UUID, ComplianceStatus> statuses = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            for (AveniaKycVerificationEntity verification : verificationRepository.findByUserIdInOrderByCreatedAtDesc(userIds)) {
+                statuses.putIfAbsent(verification.getUserId(), verification.getStatus() == null
+                        ? ComplianceStatus.PENDING : verification.getStatus());
+            }
         }
-        if (kyb == ComplianceStatus.UNDER_REVIEW || aml == ComplianceStatus.UNDER_REVIEW) {
-            return ComplianceStatus.UNDER_REVIEW;
-        }
-        if (kyb == ComplianceStatus.APPROVED && aml == ComplianceStatus.APPROVED) {
-            return ComplianceStatus.APPROVED;
-        }
-        return ComplianceStatus.PENDING;
+        return statuses;
     }
 
-    private CompanySummaryResponse toSummary(CompanyEntity company, UserEntity representative) {
+    private CompanySummaryResponse toSummary(CompanyEntity company, UserEntity representative, ComplianceStatus status) {
         CompanySummaryResponse summary = new CompanySummaryResponse();
         summary.setId(company.getId());
         summary.setLegalName(company.getLegalName());
@@ -216,11 +203,7 @@ public class CompanyService {
         summary.setCnpj(company.getCnpj());
         summary.setCity(company.getCity());
         summary.setState(company.getState());
-        summary.setStatusKyb(company.getKybStatus());
-        summary.setStatusAml(company.getAmlStatus());
-        summary.setOverallStatus(company.getKybStatus() == null || company.getAmlStatus() == null
-                ? ComplianceStatus.PENDING
-                : computeOverallStatus(company.getKybStatus(), company.getAmlStatus()));
+        summary.setOverallStatus(status);
         summary.setCreatedAt(company.getCreatedAt());
         summary.setUpdatedAt(company.getUpdatedAt());
         if (representative != null) {
@@ -253,8 +236,6 @@ public class CompanyService {
         response.setZipCode(entity.getZipCode());
         response.setCity(entity.getCity());
         response.setState(entity.getState());
-        response.setStatusKyb(entity.getKybStatus());
-        response.setStatusAml(entity.getAmlStatus());
         response.setAvailableBalanceBrl(entity.getAvailableBalanceBrl());
         response.setCreatedAt(entity.getCreatedAt());
         response.setUpdatedAt(entity.getUpdatedAt());
@@ -269,7 +250,7 @@ public class CompanyService {
     }
 
     /**
-     * Persiste uma empresa nova com KYB/AML pendentes. Um CNPJ gravado por outra requisição depois da
+     * Persiste uma empresa nova. Um CNPJ gravado por outra requisição depois da
      * verificação prévia é decidido pela restrição única do banco e vira conflito.
      */
     CompanyEntity saveNewCompany(CompanyNormalizedData data, String tradeName, OffsetDateTime now) {
@@ -282,8 +263,6 @@ public class CompanyService {
         applyCompanyData(company, data);
         company.setTradeName(normalizeOptional(tradeName));
 
-        company.setKybStatus(ComplianceStatus.PENDING);
-        company.setAmlStatus(ComplianceStatus.PENDING);
         company.setAvailableBalanceBrl(BigDecimal.ZERO);
         company.setCreatedAt(now);
         company.setUpdatedAt(now);

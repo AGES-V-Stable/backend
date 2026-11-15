@@ -89,7 +89,7 @@ class BlindPayComplianceServiceTest {
 
         company = CompanyEntity.builder().id(UUID.randomUUID()).legalName("Acme Importadora LTDA")
                 .cnpj("11.222.333/0001-81").country("BR").zipCode("90000000").state("RS")
-                .kybStatus(ComplianceStatus.PENDING).amlStatus(ComplianceStatus.PENDING).build();
+                .build();
         user = UserEntity.builder().id(UUID.randomUUID()).companyId(company.getId()).email("u@acme.test").build();
         when(companyRepository.findById(company.getId())).thenReturn(Optional.of(company));
         when(providerAccountRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -271,8 +271,6 @@ class BlindPayComplianceServiceTest {
         assertThat(response.owners()).hasSize(1);
         assertThat(response.synchronizedAt()).isNotNull();
         // O compliance global da empresa (Avenia) não é alterado.
-        assertThat(company.getKybStatus()).isEqualTo(ComplianceStatus.PENDING);
-        assertThat(company.getAmlStatus()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test
@@ -555,7 +553,6 @@ class BlindPayComplianceServiceTest {
         assertThat(account.getStatus()).isEqualTo("APPROVED");
         assertThat(account.getKycStatus()).isEqualTo("approved");
         assertThat(account.getAmlStatus()).isEqualTo("clear");
-        assertThat(company.getKybStatus()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test

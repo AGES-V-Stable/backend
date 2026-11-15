@@ -1,1 +1,1 @@
-org.springframework.boot.EnvironmentPostProcessor=ages.vstable.backend.configuration.LambdaSecretsEnvironmentPostProcessor
+org.springframework.boot.EnvironmentPostProcessor=ages.vstable.backend.configuration.DotenvEnvironmentPostProcessor,ages.vstable.backend.configuration.LambdaSecretsEnvironmentPostProcessor

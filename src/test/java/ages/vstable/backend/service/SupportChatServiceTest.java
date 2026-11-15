@@ -79,8 +79,8 @@ class SupportChatServiceTest {
                 .id(companyId)
                 .legalName("V-Stable Pagamentos LTDA")
                 .tradeName("V-Stable Tech")
-                .kybStatus(ComplianceStatus.APPROVED)
-                .amlStatus(ComplianceStatus.APPROVED)
+
+
                 .build();
 
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
@@ -96,7 +96,7 @@ class SupportChatServiceTest {
                 .contains("COP (Peso Colombiano)")
                 .contains("Wallet Cripto")
                 .contains("V-Stable Tech")
-                .contains("APPROVED");
+                .doesNotContain("Compliance KYB");
         assertThat(response.getProvider()).isEqualTo("vstable-assistant");
         assertThat(response.getSuggestedQuestions()).isNotEmpty();
     }
@@ -246,8 +246,8 @@ class SupportChatServiceTest {
                 .legalName("Empresa Confidencial S.A.")
                 .tradeName(null)
                 .cnpj("12345678000199")
-                .kybStatus(ComplianceStatus.PENDING)
-                .amlStatus(ComplianceStatus.UNDER_REVIEW)
+
+
                 .build();
 
         when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
@@ -262,8 +262,8 @@ class SupportChatServiceTest {
         assertThat(response.getReply())
                 .contains("Empresa Confidencial S.A.")
                 .contains("Pendente de ativação")
-                .contains("PENDING")
-                .contains("UNDER_REVIEW")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =")
                 .doesNotContain("12345678000199")
                 .doesNotContain("$2a$10$hashUser")
                 .doesNotContain("SECRETBASE32KEY");
@@ -358,8 +358,8 @@ class SupportChatServiceTest {
             // Assert
             assertThat(input.userContextSummary())
                     .contains("Empresa Ativa Ltda")
-                    .contains("KYB = `APPROVED`")
-                    .contains("AML = `UNDER_REVIEW`")
+                    .doesNotContain("KYB")
+                    .doesNotContain("AML")
                     .doesNotContain(UNLINKED);
             assertThat(input.systemPrompt()).contains("Empresa Ativa Ltda");
             verify(companyRepository).findById(membershipCompanyId);
@@ -441,8 +441,8 @@ class SupportChatServiceTest {
             return CompanyEntity.builder()
                     .id(id)
                     .legalName("Empresa Ativa Ltda")
-                    .kybStatus(ComplianceStatus.APPROVED)
-                    .amlStatus(ComplianceStatus.UNDER_REVIEW)
+
+
                     .build();
         }
     }

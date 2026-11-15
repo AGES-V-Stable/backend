@@ -1,13 +1,14 @@
 package ages.vstable.backend.service;
 
 import ages.vstable.backend.dto.company.CompanyComplianceStatusResponse;
-import ages.vstable.backend.dto.company.CompanyComplianceUpdateRequest;
 import ages.vstable.backend.dto.company.CompanySummaryResponse;
 import ages.vstable.backend.dto.company.CompanyCreateRequest;
 import ages.vstable.backend.dto.company.CompanyResponse;
 import ages.vstable.backend.dto.company.CompanyUpdateRequest;
 import ages.vstable.backend.dto.company.ComplianceDocumentResponse;
 import ages.vstable.backend.entity.CompanyEntity;
+import ages.vstable.backend.entity.AveniaKycVerificationEntity;
+import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.entity.CompanyMembershipEntity;
 import ages.vstable.backend.entity.ComplianceDocumentEntity;
 import ages.vstable.backend.entity.UserEntity;
@@ -66,11 +67,14 @@ class CompanyServiceTest {
     @Mock
     private CompanyMembershipRepository companyMembershipRepository;
 
+    @Mock
+    private AveniaKycVerificationRepository verificationRepository;
+
     private CompanyService companyService;
 
     @BeforeEach
     void setUp() {
-        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository, companyMembershipRepository);
+        companyService = new CompanyService(companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository, companyMembershipRepository, verificationRepository);
     }
 
     @Test
@@ -95,8 +99,6 @@ class CompanyServiceTest {
         assertThat(response.getCountry()).isEqualTo("Brasil");
         assertThat(response.getCity()).isEqualTo("Porto Alegre");
         assertThat(response.getState()).isEqualTo("RS");
-        assertThat(response.getStatusKyb()).isEqualTo(ComplianceStatus.PENDING);
-        assertThat(response.getStatusAml()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(response.getAvailableBalanceBrl()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUpdatedAt()).isNotNull();
@@ -107,8 +109,6 @@ class CompanyServiceTest {
         assertThat(saved.getLegalName()).isEqualTo("Empresa Legada Ltda");
         assertThat(saved.getTradeName()).isEqualTo("Nome Fantasia");
         assertThat(saved.getCity()).isEqualTo("Porto Alegre");
-        assertThat(saved.getKybStatus()).isEqualTo(ComplianceStatus.PENDING);
-        assertThat(saved.getAmlStatus()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(saved.getAvailableBalanceBrl()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(saved.getUpdatedAt()).isNotNull();
@@ -144,7 +144,7 @@ class CompanyServiceTest {
         UUID companyId = UUID.randomUUID();
         OffsetDateTime createdAt = OffsetDateTime.of(2026, 1, 1, 10, 0, 0, 0, ZoneOffset.UTC);
         OffsetDateTime updatedAt = createdAt.plusDays(1);
-        CompanyEntity company = buildCompany(companyId, ComplianceStatus.APPROVED, ComplianceStatus.UNDER_REVIEW);
+        CompanyEntity company = buildCompany(companyId);
         company.setTradeName("Empresa Fantasia");
         company.setCity("Porto Alegre");
         company.setState("RS");
@@ -161,6 +161,10 @@ class CompanyServiceTest {
         when(companyMembershipRepository.findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE))
                 .thenReturn(List.of(activeOwner));
         when(userRepository.findAllById(any())).thenReturn(List.of(owner));
+        when(verificationRepository.findByUserIdInOrderByCreatedAtDesc(List.of(owner.getId())))
+                .thenReturn(List.of(
+                        AveniaKycVerificationEntity.builder().userId(owner.getId()).status(ComplianceStatus.APPROVED).build(),
+                        AveniaKycVerificationEntity.builder().userId(owner.getId()).status(ComplianceStatus.REJECTED).build()));
 
         CompanySummaryResponse summary = companyService.findSummaries().get(0);
 
@@ -170,9 +174,7 @@ class CompanyServiceTest {
         assertThat(summary.getCnpj()).isEqualTo("11222333000181");
         assertThat(summary.getCity()).isEqualTo("Porto Alegre");
         assertThat(summary.getState()).isEqualTo("RS");
-        assertThat(summary.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(summary.getStatusAml()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
-        assertThat(summary.getOverallStatus()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
+        assertThat(summary.getOverallStatus()).isEqualTo(ComplianceStatus.APPROVED);
         assertThat(summary.getCreatedAt()).isEqualTo(createdAt);
         assertThat(summary.getUpdatedAt()).isEqualTo(updatedAt);
         assertThat(summary.getRepresentativeId()).isEqualTo(owner.getId());
@@ -186,8 +188,8 @@ class CompanyServiceTest {
     void findSummaries_ignoresMissingOwnerIdentityAndLegacyCompanyId() {
         UUID firstCompanyId = UUID.randomUUID();
         UUID secondCompanyId = UUID.randomUUID();
-        CompanyEntity first = buildCompany(firstCompanyId, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
-        CompanyEntity second = buildCompany(secondCompanyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING);
+        CompanyEntity first = buildCompany(firstCompanyId);
+        CompanyEntity second = buildCompany(secondCompanyId);
 
         // A associação correta é o vínculo ativo, não o companyId legado do usuário.
         UserEntity owner = UserEntity.builder().id(UUID.randomUUID()).companyId(secondCompanyId)
@@ -220,7 +222,7 @@ class CompanyServiceTest {
 
     @Test
     void findSummaries_companyWithoutActiveOwner_hasNoRepresentative() {
-        CompanyEntity company = buildCompany(UUID.randomUUID(), ComplianceStatus.PENDING, ComplianceStatus.PENDING);
+        CompanyEntity company = buildCompany(UUID.randomUUID());
         when(companyRepository.findAll()).thenReturn(List.of(company));
         when(companyMembershipRepository.findByRoleAndStatus(CompanyRole.OWNER, MembershipStatus.ACTIVE))
                 .thenReturn(List.of());
@@ -234,59 +236,8 @@ class CompanyServiceTest {
     }
 
     @Test
-    void updateComplianceStatus_updatesOnlyInformedStatuses() {
-        UUID companyId = UUID.randomUUID();
-        OffsetDateTime previousUpdatedAt = OffsetDateTime.now(ZoneOffset.UTC).minusHours(2);
-        CompanyEntity company = buildCompany(companyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING);
-        company.setUpdatedAt(previousUpdatedAt);
-        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
-        when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
-        CompanyComplianceUpdateRequest kybRequest = new CompanyComplianceUpdateRequest();
-        kybRequest.setStatusKyb(ComplianceStatus.APPROVED);
-
-        CompanyResponse kybResponse = companyService.updateComplianceStatus(companyId, kybRequest);
-
-        assertThat(kybResponse.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(kybResponse.getStatusAml()).isEqualTo(ComplianceStatus.PENDING);
-        assertThat(kybResponse.getUpdatedAt()).isNotNull().isAfter(previousUpdatedAt);
-
-        CompanyComplianceUpdateRequest amlRequest = new CompanyComplianceUpdateRequest();
-        amlRequest.setStatusAml(ComplianceStatus.UNDER_REVIEW);
-
-        CompanyResponse amlResponse = companyService.updateComplianceStatus(companyId, amlRequest);
-
-        assertThat(amlResponse.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(amlResponse.getStatusAml()).isEqualTo(ComplianceStatus.UNDER_REVIEW);
-        assertThat(amlResponse.getUpdatedAt()).isNotNull();
-    }
-
-    @Test
-    void updateComplianceStatus_withoutAnyStatus_isRejected() {
-        UUID companyId = UUID.randomUUID();
-        when(companyRepository.findById(companyId))
-                .thenReturn(Optional.of(buildCompany(companyId, ComplianceStatus.PENDING, ComplianceStatus.PENDING)));
-
-        assertThatThrownBy(() -> companyService.updateComplianceStatus(companyId, new CompanyComplianceUpdateRequest()))
-                .isInstanceOf(IllegalArgumentException.class);
-        verify(companyRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void updateComplianceStatus_unknownCompany_throwsNotFound() {
-        UUID companyId = UUID.randomUUID();
-        when(companyRepository.findById(companyId)).thenReturn(Optional.empty());
-
-        CompanyComplianceUpdateRequest request = new CompanyComplianceUpdateRequest();
-        request.setStatusAml(ComplianceStatus.APPROVED);
-
-        assertThatThrownBy(() -> companyService.updateComplianceStatus(companyId, request))
-                .isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
     void findAll_returnsAllCompaniesMapped() {
-        CompanyEntity company = buildCompany(UUID.randomUUID(), ComplianceStatus.APPROVED, ComplianceStatus.PENDING);
+        CompanyEntity company = buildCompany(UUID.randomUUID());
         when(companyRepository.findAll()).thenReturn(List.of(company));
 
         List<CompanyResponse> result = companyService.findAll();
@@ -294,8 +245,6 @@ class CompanyServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getId()).isEqualTo(company.getId());
         assertThat(result.get(0).getCnpj()).isEqualTo("11222333000181");
-        assertThat(result.get(0).getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(result.get(0).getStatusAml()).isEqualTo(ComplianceStatus.PENDING);
     }
 
     @Test
@@ -308,7 +257,7 @@ class CompanyServiceTest {
     @Test
     void findById_returnsCompany_whenExists() {
         UUID id = UUID.randomUUID();
-        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity company = buildCompany(id);
         when(companyRepository.findById(id)).thenReturn(Optional.of(company));
 
         Optional<CompanyResponse> result = companyService.findById(id);
@@ -328,7 +277,7 @@ class CompanyServiceTest {
     @Test
     void findByCnpj_returnsCompanyWhenExistsAndEmptyWhenNotFound() {
         UUID id = UUID.randomUUID();
-        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity company = buildCompany(id);
         when(companyRepository.findByCnpj("11222333000181")).thenReturn(Optional.of(company));
         when(companyRepository.findByCnpj("00000000000191")).thenReturn(Optional.empty());
 
@@ -344,7 +293,7 @@ class CompanyServiceTest {
     @Test
     void update_appliesNewDataAndKeepsSameCnpj_withoutCheckingConflict() {
         UUID id = UUID.randomUUID();
-        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity existing = buildCompany(id);
         existing.setTradeName("Nome Antigo");
         when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -374,7 +323,7 @@ class CompanyServiceTest {
     @Test
     void update_throwsConflict_whenNewCnpjBelongsToAnotherCompany() {
         UUID id = UUID.randomUUID();
-        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity existing = buildCompany(id);
         when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
         when(companyRepository.existsByCnpj("12345678000195")).thenReturn(true);
 
@@ -387,7 +336,7 @@ class CompanyServiceTest {
     @Test
     void update_allowsCnpjChange_whenNewCnpjIsAvailable() {
         UUID id = UUID.randomUUID();
-        CompanyEntity existing = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity existing = buildCompany(id);
         when(companyRepository.findById(id)).thenReturn(Optional.of(existing));
         when(companyRepository.existsByCnpj("12345678000195")).thenReturn(false);
         when(companyRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -434,7 +383,7 @@ class CompanyServiceTest {
         UUID id = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
         OffsetDateTime uploadedAt = OffsetDateTime.of(2026, 2, 10, 14, 0, 0, 0, ZoneOffset.UTC);
-        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity company = buildCompany(id);
         company.setTradeName("Empresa Fantasia");
         ComplianceDocumentEntity document = ComplianceDocumentEntity.builder()
                 .id(documentId)
@@ -455,9 +404,7 @@ class CompanyServiceTest {
         assertThat(response.getLegalName()).isEqualTo("Empresa Legada Ltda");
         assertThat(response.getTradeName()).isEqualTo("Empresa Fantasia");
         assertThat(response.getCnpj()).isEqualTo("11222333000181");
-        assertThat(response.getStatusKyb()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(response.getStatusAml()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(response.getOverallStatus()).isEqualTo(ComplianceStatus.APPROVED);
+        assertThat(response.getOverallStatus()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(response.getDocuments()).hasSize(1);
         ComplianceDocumentResponse docResponse = response.getDocuments().get(0);
         assertThat(docResponse.getId()).isEqualTo(documentId);
@@ -478,19 +425,9 @@ class CompanyServiceTest {
     }
 
     @Test
-    void getComplianceStatus_throwsUnprocessable_whenKybStatusIsNull() {
-        UUID id = UUID.randomUUID();
-        CompanyEntity company = buildCompany(id, null, ComplianceStatus.APPROVED);
-        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
-
-        assertThatThrownBy(() -> companyService.getComplianceStatus(id))
-                .isInstanceOf(UnprocessableEntityException.class);
-    }
-
-    @Test
     void getComplianceStatus_throwsUnprocessable_whenDocumentStatusIsNull() {
         UUID id = UUID.randomUUID();
-        CompanyEntity company = buildCompany(id, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED);
+        CompanyEntity company = buildCompany(id);
         ComplianceDocumentEntity document = ComplianceDocumentEntity.builder()
                 .id(UUID.randomUUID())
                 .company(company)
@@ -505,39 +442,29 @@ class CompanyServiceTest {
     }
 
     @ParameterizedTest
-    @MethodSource("overallStatusCombinations")
-    void getComplianceStatus_computesOverallStatusForEveryCombination(
-            ComplianceStatus kyb, ComplianceStatus aml, ComplianceStatus expected) {
+    @org.junit.jupiter.params.provider.EnumSource(ComplianceStatus.class)
+    void getComplianceStatus_usesLatestIndividualKycOfActiveOwner(ComplianceStatus status) {
         UUID id = UUID.randomUUID();
-        CompanyEntity company = buildCompany(id, kyb, aml);
+        UUID userId = UUID.randomUUID();
+        var owner = CompanyMembershipEntity.builder().id(UUID.randomUUID()).companyId(id).userId(userId)
+                .role(CompanyRole.OWNER).status(MembershipStatus.ACTIVE).build();
+        when(companyRepository.findById(id)).thenReturn(Optional.of(buildCompany(id)));
+        when(companyMembershipRepository.findByCompanyIdAndStatus(id, MembershipStatus.ACTIVE))
+                .thenReturn(List.of(owner));
+        when(verificationRepository.findByUserIdInOrderByCreatedAtDesc(List.of(userId))).thenReturn(List.of(
+                AveniaKycVerificationEntity.builder().userId(userId).status(status).build(),
+                AveniaKycVerificationEntity.builder().userId(userId).status(ComplianceStatus.APPROVED).build()));
 
-        when(companyRepository.findById(id)).thenReturn(Optional.of(company));
-        when(complianceDocumentRepository.findByCompanyId(id)).thenReturn(List.of());
+        var response = companyService.getComplianceStatus(id);
 
-        CompanyComplianceStatusResponse response = companyService.getComplianceStatus(id);
-
-        assertThat(response.getOverallStatus()).isEqualTo(expected);
+        assertThat(response.getOverallStatus()).isEqualTo(status);
     }
 
-    private static Stream<Arguments> overallStatusCombinations() {
-        return Stream.of(
-                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.PENDING, ComplianceStatus.PENDING),
-                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.UNDER_REVIEW, ComplianceStatus.UNDER_REVIEW),
-                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.APPROVED, ComplianceStatus.PENDING),
-                Arguments.of(ComplianceStatus.PENDING, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED),
-                Arguments.of(ComplianceStatus.APPROVED, ComplianceStatus.APPROVED, ComplianceStatus.APPROVED),
-                Arguments.of(ComplianceStatus.UNDER_REVIEW, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED),
-                Arguments.of(ComplianceStatus.REJECTED, ComplianceStatus.REJECTED, ComplianceStatus.REJECTED)
-        );
-    }
-
-    private CompanyEntity buildCompany(UUID id, ComplianceStatus kybStatus, ComplianceStatus amlStatus) {
+    private CompanyEntity buildCompany(UUID id) {
         CompanyEntity company = new CompanyEntity();
         company.setId(id);
         company.setLegalName("Empresa Legada Ltda");
         company.setCnpj("11222333000181");
-        company.setKybStatus(kybStatus);
-        company.setAmlStatus(amlStatus);
         return company;
     }
 

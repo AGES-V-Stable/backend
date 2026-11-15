@@ -43,11 +43,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * backend#76 no PostgreSQL real (schema do Flyway): a associação Avenia da empresa em {@code provider_accounts}
- * é a única fonte da conta usada por OWNER e OPERATOR; associação ausente ou apontando para uma subconta de KYC
- * individual bloqueia. O {@link AveniaClient} é simulado: nenhuma chamada sai para a Avenia. Ignorado sem Docker.
- */
+/** PostgreSQL verifies canonical owner-account binding with mocked Avenia operations only. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
@@ -89,6 +85,9 @@ class CompanyFinancialAccountIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private CompanyFinancialAccountService financialAccountService;
+
     private UUID companyA;
 
     @BeforeEach
@@ -123,29 +122,102 @@ class CompanyFinancialAccountIntegrationTest {
     }
 
     @Test
-    void companyWithoutAveniaAccount_isBlockedEvenWhenTheMemberHasAnIndividualKyc() throws Exception {
-        // Arrange
+    void ownerAndOperator_withoutAssociation_shareApprovedOwnerSubaccount() throws Exception {
         UserEntity owner = insertMember(companyA, CompanyRole.OWNER);
+        UserEntity operator = insertMember(companyA, CompanyRole.OPERATOR);
         insertKyc(owner.getId(), "owner-individual-sub-account");
+        insertKyc(operator.getId(), "operator-individual-sub-account");
+        when(aveniaClient.createWalletBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
 
-        // Act / Assert
-        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(owner))).andExpect(status().is(422));
-        verify(aveniaClient, never()).createWalletBeneficiary(any());
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(operator))).andExpect(status().isCreated());
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(owner))).andExpect(status().isCreated());
+
+        assertThat(jdbcTemplate.queryForList("SELECT external_customer_id FROM provider_accounts WHERE company_id = ?",
+                String.class, companyA)).containsExactly("owner-individual-sub-account");
+        assertThat(jdbcTemplate.queryForList("SELECT avenia_sub_account_id FROM beneficiaries WHERE company_id = ?",
+                String.class, companyA)).containsOnly("owner-individual-sub-account").hasSize(2);
         verify(aveniaClient, never()).criarSubconta(any());
-        assertThat(beneficiaryCount()).isZero();
     }
 
     @Test
-    void legacyAssociationPointingToAnIndividualKycSubAccount_isBlocked() throws Exception {
-        // Arrange
+    void existingIndividualAssociation_isReused() throws Exception {
         UserEntity owner = insertMember(companyA, CompanyRole.OWNER);
         insertKyc(owner.getId(), "owner-individual-sub-account");
         insertAveniaAccount(companyA, "ACTIVE", "owner-individual-sub-account");
+        when(aveniaClient.createWalletBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
 
-        // Act / Assert
-        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(owner))).andExpect(status().is(422));
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(owner))).andExpect(status().isCreated());
+
+        assertThat(beneficiaryCount()).isEqualTo(1);
+    }
+
+    @Test
+    void operatorApprovalDoesNotReplacePendingOwnerKyc() throws Exception {
+        UserEntity owner = insertMember(companyA, CompanyRole.OWNER);
+        insertKyc(owner.getId(), "pending-owner-sub");
+        jdbcTemplate.update("UPDATE avenia_kyc_verifications SET status = 'PENDING' WHERE user_id = ?", owner.getId());
+        UserEntity operator = insertMember(companyA, CompanyRole.OPERATOR);
+        insertKyc(operator.getId(), "approved-operator-sub");
+
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(operator))).andExpect(status().is(422));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM provider_accounts", Integer.class)).isZero();
         verify(aveniaClient, never()).createWalletBeneficiary(any());
+    }
+
+    @Test
+    void ownerChange_keepsOriginalSubaccountForNewOwnerAndMembers() throws Exception {
+        UserEntity originalOwner = insertMember(companyA, CompanyRole.OWNER);
+        insertKyc(originalOwner.getId(), "original-owner-sub");
+        assertThat(financialAccountService.requireAveniaSubAccountId(companyA)).isEqualTo("original-owner-sub");
+        jdbcTemplate.update("UPDATE company_memberships SET status = 'REMOVED', removed_at = now() WHERE user_id = ?",
+                originalOwner.getId());
+        UserEntity newOwner = insertMember(companyA, CompanyRole.OWNER);
+        insertKyc(newOwner.getId(), "new-owner-sub");
+        when(aveniaClient.createWalletBeneficiary(any())).thenReturn(new AveniaBeneficiaryResponse(UUID.randomUUID()));
+
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(newOwner))).andExpect(status().isCreated());
+
+        assertThat(jdbcTemplate.queryForList("SELECT external_customer_id FROM provider_accounts WHERE company_id = ?",
+                String.class, companyA)).containsExactly("original-owner-sub");
+        ArgumentCaptor<AveniaWalletBeneficiaryRequest> request = ArgumentCaptor.forClass(AveniaWalletBeneficiaryRequest.class);
+        verify(aveniaClient).createWalletBeneficiary(request.capture());
+        assertThat(request.getValue().subAccountId()).isEqualTo("original-owner-sub");
+    }
+
+    @Test
+    void providerFailure_doesNotRollbackCanonicalAssociation() throws Exception {
+        UserEntity owner = insertMember(companyA, CompanyRole.OWNER);
+        insertKyc(owner.getId(), "owner-sub");
+        when(aveniaClient.createWalletBeneficiary(any())).thenThrow(
+                ages.vstable.backend.exception.AveniaIntegrationException.communication("Synthetic provider unavailable", null));
+
+        mockMvc.perform(createBeneficiary(jwtTokenUtils.generateToken(owner))).andExpect(status().isServiceUnavailable());
+
         assertThat(beneficiaryCount()).isZero();
+        assertThat(jdbcTemplate.queryForList("SELECT external_customer_id FROM provider_accounts WHERE company_id = ?",
+                String.class, companyA)).containsExactly("owner-sub");
+    }
+
+    @Test
+    void concurrentFirstOperations_createOnlyOneCanonicalAssociation() throws Exception {
+        UserEntity owner = insertMember(companyA, CompanyRole.OWNER);
+        insertKyc(owner.getId(), "concurrent-owner-sub");
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<String> resolve = () -> {
+                start.await();
+                return financialAccountService.requireAveniaSubAccountId(companyA);
+            };
+            var first = executor.submit(resolve);
+            var second = executor.submit(resolve);
+            start.countDown();
+
+            assertThat(first.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("concurrent-owner-sub");
+            assertThat(second.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("concurrent-owner-sub");
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM provider_accounts WHERE company_id = ?",
+                Integer.class, companyA)).isEqualTo(1);
     }
 
     private MockHttpServletRequestBuilder createBeneficiary(String token) {
@@ -162,7 +234,7 @@ class CompanyFinancialAccountIntegrationTest {
     private UUID insertApprovedCompany(String cnpj) {
         UUID id = UUID.randomUUID();
         jdbcTemplate.update(
-                "INSERT INTO companies (id, legal_name, cnpj, kyb_status) VALUES (?, 'Acme', ?, 'APPROVED')", id, cnpj);
+                "INSERT INTO companies (id, legal_name, cnpj) VALUES (?, 'Acme', ?)", id, cnpj);
         return id;
     }
 

@@ -95,8 +95,6 @@ class DevelopmentDataSeederTest {
         ArgumentCaptor<CompanyEntity> companyCaptor = ArgumentCaptor.forClass(CompanyEntity.class);
         verify(companyRepository).saveAndFlush(companyCaptor.capture());
         CompanyEntity company = companyCaptor.getValue();
-        assertThat(company.getKybStatus()).isEqualTo(ComplianceStatus.APPROVED);
-        assertThat(company.getAmlStatus()).isEqualTo(ComplianceStatus.APPROVED);
         assertThat(company.getAvailableBalanceBrl()).isEqualByComparingTo("25000.00");
         assertThat(company.getLegalName()).isNotBlank();
         assertThat(company.getCnpj()).matches("\\d{14}");

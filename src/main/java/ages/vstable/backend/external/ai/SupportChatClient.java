@@ -323,12 +323,12 @@ public class SupportChatClient implements SupportChatGateway {
                     %s""".formatted(userContextSummary).trim();
         }
 
-        if (containsAny(normalized, "compliance", "kyb", "aml", "documento", "cadastro", "pendente", "aprovad", "liveness")) {
+        if (containsAny(normalized, "compliance", "kyc", "kyb", "aml", "documento", "cadastro", "pendente", "aprovad", "liveness")) {
             return """
-                    O processo de **Compliance Institucional (KYB / AML)** garante a segurança regulatória das operações B2B:
+                    A **Verificação de identidade (KYC)** acompanha o cadastro do representante:
 
-                    1. **Etapas do Onboarding:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Envio de Documentos de Compliance e Prova de Vida (*Liveness*).
-                    2. **Liberação de Transferências:** Para criar transferências internacionais ou liquidar câmbio, sua empresa precisa estar com o status **KYB = APPROVED** e **AML = APPROVED**, além do **2FA ativo**.
+                    1. **Etapas do Onboarding:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Envio do Documento de Identidade e Prova de Vida (*Liveness*).
+                    2. **Liberação de Transferências:** O cadastro é aprovado conforme o resultado do KYC individual. Transferências continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -362,7 +362,7 @@ public class SupportChatClient implements SupportChatGateway {
                 - **Países e moedas suportadas** (ex.: por que um país/moeda como a Colômbia está bloqueado via banco e como usar Wallet Cripto ou USD);
                 - **Segurança e 2FA (TOTP)** (ativação, troca de QR Code e bloqueio de segurança);
                 - **Cadastro de Beneficiários** (SWIFT, IBAN, ACH, SEPA e Redes Blockchain);
-                - **Cotações, Taxas e Status de Compliance (KYB/AML)**.
+                - **Cotações, Taxas e Verificação de identidade (KYC)**.
 
                 %s
 

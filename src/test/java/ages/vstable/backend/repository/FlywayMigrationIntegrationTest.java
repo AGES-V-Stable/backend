@@ -82,12 +82,54 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void migrate_removesCompanyComplianceWithoutChangingProviderAccountOrCompanyData() throws SQLException {
+        flyway("16").migrate();
+        execute("""
+                INSERT INTO companies (id, legal_name, cnpj, kyb_status, aml_status) VALUES
+                    ('00000000-0000-0000-0000-0000000000a1', 'Preserved Company', '1', 'PENDING', 'REJECTED');
+                INSERT INTO provider_accounts (company_id, provider, external_customer_id, status, aml_status) VALUES
+                    ('00000000-0000-0000-0000-0000000000a1', 'AVENIA', 'existing-sub', 'SUSPENDED', 'hit');
+                """);
+
+        var result = flyway(null).migrate();
+
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("17");
+        assertThat(columnExists("companies", "kyb_status")).isFalse();
+        assertThat(columnExists("companies", "aml_status")).isFalse();
+        assertThat(rows("SELECT legal_name FROM companies")).containsExactly("Preserved Company");
+        assertThat(rows("SELECT status || ':' || aml_status FROM provider_accounts"))
+                .containsExactly("SUSPENDED:hit");
+    }
+
+    @Test
+    void migrate_companyComplianceAlreadyRemoved_appliesConsolidatedMigration() throws SQLException {
+        flyway("16").migrate();
+        execute("ALTER TABLE companies DROP COLUMN kyb_status, DROP COLUMN aml_status");
+
+        var result = flyway(null).migrate();
+
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("17");
+        flyway(null).validate();
+        assertThat(tableExists("companies")).isTrue();
+        assertThat(columnExists("provider_accounts", "aml_status")).isTrue();
+    }
+
+    @Test
     void migrate_emptyDatabase_appliesAllVersionsInOrder() throws SQLException {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
                 .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
+        assertThat(columnExists("companies", "kyb_status")).isFalse();
+        assertThat(columnExists("companies", "aml_status")).isFalse();
+        assertThat(columnExists("provider_accounts", "aml_status")).isTrue();
+        assertThat(columnExists("provider_accounts", "avenia_kyb_attempt_id")).isFalse();
+        assertThat(columnExists("provider_accounts", "avenia_kyb_submission_mode")).isFalse();
+        assertThat(tableExists("avenia_kyb_documents")).isFalse();
+        assertThat(tableExists("avenia_kyb_ubos")).isFalse();
+        assertThat(columnExists("provider_accounts", "avenia_kyb_representative_url")).isFalse();
+        assertThat(columnExists("provider_accounts", "avenia_kyb_company_url")).isFalse();
         assertThat(columnExists("provider_wallets", "address")).isTrue();
         assertThat(columnExists("transfer_executions", "external_payout_id")).isTrue();
         assertThat(columnExists("administrators", "two_factor_secret")).isTrue();

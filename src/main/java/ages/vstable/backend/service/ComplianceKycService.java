@@ -7,6 +7,7 @@ import ages.vstable.backend.dto.compliance.KycSubmitResponse;
 import ages.vstable.backend.entity.AveniaKycVerificationEntity;
 import ages.vstable.backend.entity.enums.ComplianceStatus;
 import ages.vstable.backend.exception.UnprocessableEntityException;
+import ages.vstable.backend.exception.AveniaIntegrationException;
 import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttempt;
 import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
@@ -14,6 +15,7 @@ import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +40,34 @@ public class ComplianceKycService {
     private final AveniaKycVerificationRepository aveniaKycVerificationRepository;
     private final AveniaClient aveniaClient;
     private final AveniaSubAccountProvisioningService subAccountProvisioningService;
+
+    /** Refresh an existing individual attempt without submitting or provisioning an account. */
+    @Transactional
+    public void refreshStatus(AveniaKycVerificationEntity kyc) {
+        if (kyc.getAveniaProcessId() == null || kyc.getAveniaProcessId().isBlank()
+                || kyc.getAveniaSubAccountId() == null || kyc.getAveniaSubAccountId().isBlank()) {
+            return;
+        }
+        AveniaKycAttempt attempt = aveniaClient.consultarTentativa(
+                kyc.getAveniaProcessId(), kyc.getAveniaSubAccountId());
+        if (attempt == null || !kyc.getAveniaProcessId().equals(attempt.getId()) || attempt.getStatus() == null) {
+            throw AveniaIntegrationException.communication("Resposta de KYC inválida da Avenia", null);
+        }
+        ComplianceStatus status = switch (attempt.getStatus()) {
+            case "PENDING", "PROCESSING" -> ComplianceStatus.UNDER_REVIEW;
+            case "COMPLETED" -> switch (attempt.getResult() == null ? "" : attempt.getResult()) {
+                case "APPROVED" -> ComplianceStatus.APPROVED;
+                case "REJECTED" -> ComplianceStatus.REJECTED;
+                default -> throw AveniaIntegrationException.communication("Resultado de KYC inválido da Avenia", null);
+            };
+            case "EXPIRED" -> ComplianceStatus.PENDING;
+            default -> throw AveniaIntegrationException.communication("Status de KYC inválido da Avenia", null);
+        };
+        if (kyc.getStatus() != status) {
+            kyc.setStatus(status);
+            aveniaKycVerificationRepository.save(kyc);
+        }
+    }
 
     public Optional<KycSubmitResponse> finalizar(UUID kycVerificationId, UUID currentUserId, KycSubmitRequest request) {
         Optional<KycSubmitResponse> result = aveniaKycVerificationRepository.findById(kycVerificationId)

@@ -87,6 +87,9 @@ class OnboardingServiceTest {
     @Mock
     private CompanyMembershipRepository companyMembershipRepository;
 
+    @Mock
+    private ComplianceKycService complianceKycService;
+
     private OnboardingService onboardingService;
     private Logger operationalLogger;
     private ListAppender<ILoggingEvent> logAppender;
@@ -95,11 +98,11 @@ class OnboardingServiceTest {
     void setUp() {
         CompanyService companyService = new CompanyService(
                 companyRepository, complianceDocumentRepository, new CompanyDataValidator(), userRepository,
-                companyMembershipRepository);
+                companyMembershipRepository, aveniaKycVerificationRepository);
         onboardingService = new OnboardingService(
                 userRepository, administratorRepository, aveniaKycVerificationRepository,
                 new CompanyDataValidator(), passwordEncoder, companyService, jwtTokenUtils, new TotpService(),
-                companyMembershipService);
+                companyMembershipService, complianceKycService);
         operationalLogger = (Logger) LoggerFactory.getLogger(OperationalLog.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -230,6 +233,24 @@ class OnboardingServiceTest {
         assertThat(result.getStatus()).isEqualTo(ComplianceStatus.PENDING);
         assertThat(result.isDocumentSubmitted()).isTrue();
         assertThat(result.isLivenessSubmitted()).isFalse();
+        verify(complianceKycService).refreshStatus(kyc);
+    }
+
+    @Test
+    void getCurrentOnboarding_returnsRefreshedIndividualKycWithoutCompanyCompliance() {
+        UUID companyId = UUID.randomUUID();
+        var user = UserEntity.builder().id(UUID.randomUUID()).companyId(companyId).build();
+        var kyc = AveniaKycVerificationEntity.builder().id(UUID.randomUUID()).userId(user.getId())
+                .status(ComplianceStatus.UNDER_REVIEW).build();
+        when(aveniaKycVerificationRepository.findFirstByUserIdOrderByCreatedAtDesc(user.getId()))
+                .thenReturn(Optional.of(kyc));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            kyc.setStatus(ComplianceStatus.APPROVED);
+            return null;
+        }).when(complianceKycService).refreshStatus(kyc);
+
+        assertThat(onboardingService.getCurrentOnboarding(user).getStatus()).isEqualTo(ComplianceStatus.APPROVED);
+        verify(companyRepository, never()).findById(any());
     }
 
     @Test
