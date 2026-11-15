@@ -939,6 +939,62 @@ class AveniaClientTest {
 
     // integration-guide.avenia.io/docs/KYC/termsAcceptance: o id da conta vai no caminho, sem ?subAccountId=.
     @Test
+    void mockTerms_tracksAcceptancePerSubaccountWithoutHttpOrCredentials() {
+        properties.setTermsMockEnabled(true);
+        properties.setBaseUrl("https://api.sandbox.avenia.io:10952");
+        properties.setApiKey(null);
+        properties.setPrivateKey(null);
+
+        var initial = client.getTerms("sub-123");
+        assertThat(initial.accepted()).isFalse();
+        assertThat(initial.documents()).hasSize(2);
+        assertThat(initial.documents()).allSatisfy(document ->
+                assertThat(document.displayName()).contains("simulação de sandbox"));
+        var request = new ages.vstable.backend.external.avenia.dto.AveniaTermsAcceptRequest(
+                initial.currentVersion(), initial.acceptanceToken(), "API", java.util.Map.of());
+
+        client.acceptTerms("sub-123", request);
+        var accepted = client.getTerms("sub-123");
+        assertThat(accepted.accepted()).isTrue();
+        assertThat(accepted.acceptedAt()).isNotBlank();
+        assertThat(client.getTerms("sub-456").accepted()).isFalse();
+        client.acceptTerms("sub-123", request);
+        assertThat(client.getTerms("sub-123").acceptedAt()).isEqualTo(accepted.acceptedAt());
+        server.verify();
+    }
+
+    @Test
+    void mockTerms_rejectsWrongVersionAndAnotherSubaccountsToken() {
+        properties.setTermsMockEnabled(true);
+        properties.setBaseUrl("https://api.sandbox.avenia.io:10952");
+        var initial = client.getTerms("sub-123");
+
+        assertThatThrownBy(() -> client.acceptTerms("sub-123",
+                new ages.vstable.backend.external.avenia.dto.AveniaTermsAcceptRequest(
+                        2, initial.acceptanceToken(), "API", java.util.Map.of())))
+                .isInstanceOf(AveniaIntegrationException.class);
+        assertThatThrownBy(() -> client.acceptTerms("sub-456",
+                new ages.vstable.backend.external.avenia.dto.AveniaTermsAcceptRequest(
+                        1, initial.acceptanceToken(), "API", java.util.Map.of())))
+                .isInstanceOf(AveniaIntegrationException.class);
+        assertThat(client.getTerms("sub-123").accepted()).isFalse();
+        assertThat(client.getTerms("sub-456").accepted()).isFalse();
+    }
+
+    @Test
+    void mockTerms_cannotBeEnabledAgainstProduction() {
+        properties.setTermsMockEnabled(true);
+        properties.setBaseUrl("https://api.avenia.io");
+
+        assertThatThrownBy(() -> client.getTerms("sub-123"))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessageContaining("sandbox base URL");
+        assertThatThrownBy(() -> client.acceptTerms("sub-123", null))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessageContaining("sandbox base URL");
+    }
+
+    @Test
     void getTerms_usaOIdDaSubcontaNoCaminhoELeAVersaoVigente() {
         server.expect(once(), requestTo("https://avenia.test/v2/terms/sub-123"))
                 .andRespond(withSuccess("""

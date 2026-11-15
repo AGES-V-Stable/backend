@@ -47,6 +47,15 @@ A empresa opera nos dois provedores com o **KYC individual do proprietário**:
 
 - Cadastro próprio exige aceite da versão vigente dos termos da V-Stable (`GET /v1/onboarding/terms`, público). Versão e instante ficam em `users.terms_version` e `users.terms_accepted_at` (V20).
 - Termos da Avenia: `GET/POST /v1/onboarding/{kycId}/compliance/avenia-terms` usam `GET/POST /v2/terms/{subAccountId}`. O token de aceite nunca sai do backend; a evidência vai em `clientMetadata`. A finalização do KYC Avenia recusa com `AVENIA_TERMS_REQUIRED` sem o aceite.
+
+Para desenvolver enquanto o endpoint de termos estiver indisponível no sandbox,
+defina `AVENIA_TERMS_MOCK_ENABLED=true` no `.env` do backend e reinicie a aplicação.
+O padrão é `false`; o mock só funciona com o host `api.sandbox.avenia.io`.
+Ele simula leitura e aceite da versão 1 por subconta, em memória (reiniciar apaga
+os aceites). Os documentos são identificados como simulações e seus links apontam
+para o guia de integração, não para documentos legais reais. Nenhum aceite é enviado
+à Avenia. Os demais endpoints continuam reais, incluindo o envio de KYC; o mock não
+remove uma eventual exigência de termos feita pelo próprio provedor.
 - KYC BlindPay recusado: `POST /v1/blindpay/kyc/restart` permite novo cadastro (novo cliente e novo aceite). O cliente anterior fica em `superseded_customer_id` e seus webhooks são ignorados.
 - RFI individual: `GET/POST /v1/blindpay/kyc/rfi` e `POST /v1/blindpay/kyc/rfi/documents`, com a mesma validação do KYB (`BlindPayRfiSupport`).
 

@@ -17,4 +17,5 @@ public class AveniaProperties {
     private String email;
     private String password;
     private String webhookUrl;
+    private boolean termsMockEnabled;
 }

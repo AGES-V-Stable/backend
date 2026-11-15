@@ -39,7 +39,9 @@ import tools.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.security.PrivateKey;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class AveniaClient implements AveniaGateway {
@@ -70,6 +72,7 @@ public class AveniaClient implements AveniaGateway {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
     private volatile PrivateKey privateKey;
+    private final Map<String, String> mockTermsAcceptedAt = new ConcurrentHashMap<>();
 
     public AveniaClient(
             AveniaProperties properties,
@@ -195,13 +198,48 @@ public class AveniaClient implements AveniaGateway {
      */
     /** Os endpoints de termos recebem o id da conta no caminho, nunca {@code ?subAccountId=}. */
     public AveniaTermsResponse getTerms(String accountId) {
-        return get(TERMS_URI + requireAccountId(accountId), AveniaTermsResponse.class,
+        requireAccountId(accountId);
+        if (useMockTerms()) {
+            String acceptedAt = mockTermsAcceptedAt.get(accountId);
+            String guide = "https://integration-guide.avenia.io/docs/KYC/termsAcceptance/";
+            return new AveniaTermsResponse(accountId, new AveniaTermsResponse.Bundle("SANDBOX_MOCK", 1),
+                    List.of(new AveniaTermsResponse.Document(1, "MOCK_TERMS_OF_USE",
+                                    "Termos de uso (simulação de sandbox)", guide + "#step-1-read-the-terms"),
+                            new AveniaTermsResponse.Document(2, "MOCK_PRIVACY_POLICY",
+                                    "Política de privacidade (simulação de sandbox)", guide + "#step-2-show-the-documents")),
+                    1, acceptedAt == null ? null : 1, acceptedAt, null, true, mockTermsToken(accountId));
+        }
+        return get(TERMS_URI + accountId, AveniaTermsResponse.class,
                 "Falha ao consultar os termos da Avenia");
     }
 
     public void acceptTerms(String accountId, AveniaTermsAcceptRequest request) {
-        post(TERMS_URI + requireAccountId(accountId) + "/accept", serialize(request), String.class,
+        requireAccountId(accountId);
+        if (useMockTerms()) {
+            if (request == null || !Integer.valueOf(1).equals(request.bundleVersion())
+                    || !mockTermsToken(accountId).equals(request.acceptanceToken())) {
+                throw AveniaIntegrationException.response("Invalid sandbox mock terms acceptance", 400, null);
+            }
+            mockTermsAcceptedAt.putIfAbsent(accountId, Instant.now().toString());
+            return;
+        }
+        post(TERMS_URI + accountId + "/accept", serialize(request), String.class,
                 "Falha ao registrar o aceite dos termos da Avenia");
+    }
+
+    private boolean useMockTerms() {
+        if (!properties.isTermsMockEnabled()) {
+            return false;
+        }
+        if (properties.getBaseUrl() == null
+                || !"api.sandbox.avenia.io".equals(URI.create(properties.getBaseUrl()).getHost())) {
+            throw AveniaIntegrationException.configuration("Avenia terms mock requires the sandbox base URL", null);
+        }
+        return true;
+    }
+
+    private static String mockTermsToken(String accountId) {
+        return "sandbox-mock-terms-v1-" + accountId;
     }
 
     private static String requireAccountId(String accountId) {
