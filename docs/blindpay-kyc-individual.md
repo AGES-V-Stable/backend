@@ -14,7 +14,7 @@ Desligado por padrão para evitar solicitações acidentais ao provedor:
 ## Endpoints autenticados (ROLE_USER)
 
 - `GET /v1/blindpay/kyc`: status individual (termsAccepted, submitted, kycStatus, amlStatus).
-- `POST /v1/blindpay/kyc/terms`: URL do aceite hospedado. **Não** considera o retorno do navegador como aceite; requer `tos.accept` assinado.
+- `POST /v1/blindpay/kyc/terms`: URL do aceite hospedado. **Não** considera o retorno do navegador como aceite; requer `tos.accept` assinado. Enquanto o aceite não for confirmado, uma nova chamada gera outro link com nova chave de sessão (apenas o link mais recente confirma o aceite); depois do aceite ou do envio responde 409.
 - `POST /v1/blindpay/kyc`: multipart com `profile` JSON, `idFront` (JPEG/PNG), `idBack` (se RG/CNH), `selfie` (JPEG/PNG) e `proofAddress` (opcional no Standard: PDF/JPEG/PNG). Cada arquivo: no máximo 3 MB. Requisição total até 14 MB.
 
 O e-mail vem do usuário autenticado, nunca do formulário. O `external_id` é isolado como `user:{UUID}` para não colidir com o `external_id` empresarial do KYB. O país de residência e emissão é BR, pois a documentação exige `id_doc_country=BR` para pessoa física brasileira.

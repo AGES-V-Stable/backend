@@ -77,6 +77,39 @@ class BlindPayIndividualKycServiceTest {
     }
 
     @Test
+    void pendingTermsSessionCanBeRegeneratedWithNewKey() {
+        UUID previousKey = UUID.randomUUID();
+        var entry = BlindPayIndividualKycEntity.builder()
+                .userId(user.getId())
+                .tosSessionKey(previousKey)
+                .build();
+        when(repository.findById(user.getId())).thenReturn(Optional.of(entry));
+        when(gateway.initiateTermsOfService(any()))
+                .thenReturn(new BlindPayInitiateTosResponse("https://app.blindpay.com/e/terms-of-service"));
+
+        service.startTerms(user);
+
+        assertThat(entry.getTosSessionKey()).isNotNull().isNotEqualTo(previousKey);
+        verify(repository).saveAndFlush(entry);
+    }
+
+    @Test
+    void acceptedTermsCannotBeRestarted() {
+        when(repository.findById(user.getId())).thenReturn(Optional.of(
+                BlindPayIndividualKycEntity.builder()
+                        .userId(user.getId())
+                        .tosSessionKey(UUID.randomUUID())
+                        .tosId("to_000000000001")
+                        .tosAcceptedAt(OffsetDateTime.now())
+                        .build()));
+
+        assertThatThrownBy(() -> service.startTerms(user))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("terms already accepted");
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
     void rejectsSubmissionWithoutVerifiedTermsBeforeAnyUpload() {
         when(repository.findForUpdate(user.getId())).thenReturn(Optional.of(
                 BlindPayIndividualKycEntity.builder().userId(user.getId()).build()));
@@ -114,6 +147,22 @@ class BlindPayIndividualKycServiceTest {
         assertThat(response.submitted()).isTrue();
         assertThat(response.kycStatus()).isEqualTo("verifying");
         assertThat(entry.getCustomerId()).isEqualTo("re_000000000001");
+    }
+
+    @Test
+    void dateOfBirthIsSentAsDateTimeLikeBlindPayOpenApi() {
+        var request = BlindPayCreateCustomerRequest.builder()
+                .type(BlindPayApi.Customer.Type.individual)
+                .kycType(BlindPayApi.Customer.KycType.standard)
+                .email("representante@example.test")
+                .country("BR")
+                .dateOfBirth(LocalDate.of(1994, 5, 12))
+                .build();
+
+        String json = tools.jackson.databind.json.JsonMapper.builder().build()
+                .writeValueAsString(request);
+
+        assertThat(json).contains("\"date_of_birth\":\"1994-05-12T00:00:00Z\"");
     }
 
     @Test

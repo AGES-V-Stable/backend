@@ -1,6 +1,7 @@
 package ages.vstable.backend.external.blindpay.dto;
 
 import ages.vstable.backend.external.blindpay.BlindPayApi;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
@@ -33,6 +34,8 @@ public record BlindPayCreateCustomerRequest(
         String phoneNumber,
         String firstName,
         String lastName,
+        // A OpenAPI da BlindPay declara date_of_birth como date-time (ex.: "1998-01-01T00:00:00Z").
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T00:00:00Z'")
         LocalDate dateOfBirth,
         String idDocCountry,
         BlindPayApi.Customer.IdDocType idDocType,

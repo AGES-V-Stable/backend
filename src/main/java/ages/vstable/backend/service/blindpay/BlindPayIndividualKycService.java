@@ -56,11 +56,13 @@ public class BlindPayIndividualKycService {
         BlindPayIndividualKycEntity entry = repository.findById(user.getId())
                 .orElseGet(() -> BlindPayIndividualKycEntity.builder()
                         .userId(user.getId()).createdAt(now()).updatedAt(now()).build());
-        if (entry.getCustomerId() != null || entry.getTosAcceptedAt() != null
-                || entry.getTosSessionKey() != null)
+        if (entry.getCustomerId() != null || entry.getTosAcceptedAt() != null)
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "KYC or a hosted terms session has already been initiated");
+                    "KYC already submitted or BlindPay terms already accepted");
 
+        // A pending (never accepted) session is replaced: the user may have closed the
+        // hosted page. BlindPay rejects reused idempotency keys, so each link gets a new
+        // key and only the latest one can confirm acceptance through tos.accept.
         UUID sessionKey = UUID.randomUUID();
         entry.setTosSessionKey(sessionKey);
         entry.setUpdatedAt(now());
