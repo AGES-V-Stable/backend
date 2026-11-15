@@ -160,7 +160,7 @@ recente do proprietário ativo. Na primeira operação financeira, a subconta do
 proprietário aprovado é vinculada à empresa e compartilhada pelos membros autorizados.
 O vínculo permanece o mesmo após uma troca de proprietário. Consulte
 [conta financeira Avenia](docs/avenia-conta-empresarial.md). Os campos `statusKyb`/`statusAml` e o PATCH de
-`compliance-status` foram removidos. A migration V17 remove as colunas correspondentes
+`compliance-status` foram removidos. A migration V18 remove as colunas correspondentes
 de `companies`, preservando contas, usuários, verificações KYC e os estados próprios
 dos provedores. Reinicie o backend para aplicar a migration; não é necessário limpar o banco.
 

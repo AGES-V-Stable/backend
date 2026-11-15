@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Valida as migrations num PostgreSQL real: a sequência V1..V17 sem versões duplicadas,
+ * Valida as migrations num PostgreSQL real: a sequência V1..V18 sem versões duplicadas,
  * a V6 idempotente para bancos de desenvolvimento que já tinham os objetos de compliance
  * criados pela antiga V4 da branch BlindPay, na V11 o backfill dos vínculos e as
  * invariantes de vínculos e convites, na V12 o histórico de links substituídos e, na V13,
@@ -83,7 +83,7 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void migrate_removesCompanyComplianceWithoutChangingProviderAccountOrCompanyData() throws SQLException {
-        flyway("16").migrate();
+        flyway("17").migrate();
         execute("""
                 INSERT INTO companies (id, legal_name, cnpj, kyb_status, aml_status) VALUES
                     ('00000000-0000-0000-0000-0000000000a1', 'Preserved Company', '1', 'PENDING', 'REJECTED');
@@ -93,7 +93,7 @@ class FlywayMigrationIntegrationTest {
 
         var result = flyway(null).migrate();
 
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("17");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("18");
         assertThat(columnExists("companies", "kyb_status")).isFalse();
         assertThat(columnExists("companies", "aml_status")).isFalse();
         assertThat(rows("SELECT legal_name FROM companies")).containsExactly("Preserved Company");
@@ -103,12 +103,12 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void migrate_companyComplianceAlreadyRemoved_appliesConsolidatedMigration() throws SQLException {
-        flyway("16").migrate();
+        flyway("17").migrate();
         execute("ALTER TABLE companies DROP COLUMN kyb_status, DROP COLUMN aml_status");
 
         var result = flyway(null).migrate();
 
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("17");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("18");
         flyway(null).validate();
         assertThat(tableExists("companies")).isTrue();
         assertThat(columnExists("provider_accounts", "aml_status")).isTrue();
@@ -119,7 +119,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
+                .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
         assertThat(columnExists("provider_accounts", "kyc_status")).isTrue();
         assertThat(columnExists("companies", "kyb_status")).isFalse();
         assertThat(columnExists("companies", "aml_status")).isFalse();
@@ -158,7 +158,7 @@ class FlywayMigrationIntegrationTest {
 
         // Assert
         assertThat(result.migrations).extracting(migration -> migration.version)
-                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
+                .containsExactly("6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
         assertThat(columnExists("provider_accounts", "tos_id")).isTrue();
         assertThat(tableExists("blindpay_tos_sessions")).isTrue();
     }
@@ -179,7 +179,7 @@ class FlywayMigrationIntegrationTest {
                 + "VALUES ('" + USER_A3 + "', NULL, 'Sem empresa', 'nova@example.com', 'h', 's')");
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13", "14", "15", "16", "17");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("13", "14", "15", "16", "17", "18");
         assertThat(rows("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
                 + "AND table_name = 'users' AND column_name = 'company_id'")).containsExactly("YES");
         assertThat(rows("SELECT id || ':' || company_id FROM users WHERE company_id IS NOT NULL"))
@@ -534,7 +534,7 @@ class FlywayMigrationIntegrationTest {
         MigrateResult result = flyway(null).migrate();
 
         // Assert
-        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("14", "15", "16", "17");
+        assertThat(result.migrations).extracting(migration -> migration.version).containsExactly("14", "15", "16", "17", "18");
         assertThat(rows("SELECT email || ':' || status || ':' || token_hash || ':' || version "
                 + "|| ':' || (token_ciphertext IS NOT NULL) FROM company_invitations"))
                 .containsExactlyInAnyOrder("pendente@example.com:PENDING:hash-p:1:true",
@@ -612,7 +612,7 @@ class FlywayMigrationIntegrationTest {
         // Act / Assert: removido o conflito, a mesma migration é aplicada normalmente
         execute("ALTER TABLE company_invitations DROP COLUMN terms_version");
         assertThat(flyway(null).migrate().migrations).extracting(migration -> migration.version)
-                .containsExactly("14", "15", "16", "17");
+                .containsExactly("14", "15", "16", "17", "18");
         assertThat(columnExists("company_invitations", "terms_version")).isTrue();
     }
 
