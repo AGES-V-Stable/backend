@@ -52,6 +52,7 @@ class BlindPayWebhookServiceTest {
     @Mock private ProviderAccountRepository providerAccountRepository;
     @Mock private BlindPayTosSessionRepository tosSessionRepository;
     @Mock private BlindPayExecutionProcessor executionProcessor;
+    @Mock private BlindPayIndividualKycService individualKycService;
 
     private BlindPayWebhookService service;
     private CompanyEntity company;
@@ -63,7 +64,7 @@ class BlindPayWebhookServiceTest {
         properties.setWebhookSecret(SECRET);
         service = new BlindPayWebhookService(new BlindPayWebhookVerifier(properties), properties,
                 webhookEventRepository, providerAccountRepository, tosSessionRepository,
-                JsonMapper.builder().build(), executionProcessor);
+                JsonMapper.builder().build(), executionProcessor, individualKycService);
         company = CompanyEntity.builder().id(UUID.randomUUID()).build();
         when(webhookEventRepository.insertIfAbsent(anyString(), any(), any())).thenReturn(1);
     }
