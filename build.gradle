@@ -99,6 +99,9 @@ abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
 }
 
 tasks.named('test') {
+    // Cached Spring test contexts must not attach collectors to global loggers for other test databases.
+    // The dedicated observability integration test explicitly enables collection.
+    systemProperty 'observability.enabled', 'false'
 	// Testes contra a instância de desenvolvimento da BlindPay só rodam em blindpaySandboxTest.
 	useJUnitPlatform {
 		excludeTags 'blindpay-sandbox'

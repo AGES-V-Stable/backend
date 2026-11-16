@@ -190,11 +190,17 @@ Análise de mutação com PITest (tarefa dedicada e independente de `test`, `che
 
 ## Operational logging
 
+A aba administrativa **Observability** (`/admin/observability`) persiste uma projeção
+segura desses eventos no PostgreSQL. A migration V21 é aplicada pelo Flyway;
+`OBSERVABILITY_RETENTION_DAYS` controla a retenção (30 dias por padrão).
+Consulte [Observability](docs/observability.md) para eventos, API, limites e validação.
+
 The backend writes logs to stdout. Local runs use readable text, including structured
 key/value fields and `requestId`. Docker Compose sets
 `LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash` for one JSON object per event. You can also
 set that variable for a local run. The existing SLF4J/Logback stack handles both formats;
-no extra logging dependency or database is used.
+no extra logging dependency is used. The Observability tab also stores selected safe
+fields in the existing application database.
 
 Levels default to `INFO`. Override `LOG_LEVEL_APP`, `LOG_LEVEL_SPRING`, or
 `LOG_LEVEL_ROOT` when diagnosing a problem. SQL statements, JDBC bind parameters,
@@ -259,7 +265,8 @@ KYC submission outcomes report the known state (`pending`, `under_review`, `appr
 transfer-creation operation does not imply settlement or payment completion.
 
 Log fields exclude credentials, bearer tokens, headers, bodies, personal and financial
-data, customer/company identifiers, and provider error text. Unexpected diagnostics
+payloads, and provider error text. Internal actor/entity UUIDs may be included for
+authorized investigation through Observability. Unexpected diagnostics
 keep exception class names and code locations (up to eight causes and forty frames per
 cause), excluding exception messages and suppressed exceptions. Do not pass original
 exceptions or DTOs directly to loggers; their messages and `toString()` can contain

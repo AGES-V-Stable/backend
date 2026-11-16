@@ -24,13 +24,20 @@ public final class OperationalLog {
     }
 
     public static void milestone(String event, String outcome) {
+        milestone(event, outcome, null, null);
+    }
+
+    public static void milestone(String event, String outcome, String entityType, java.util.UUID entityId) {
         Map<String, String> context = MDC.getCopyOfContextMap();
         Runnable emit = () -> {
             Map<String, String> previous = MDC.getCopyOfContextMap();
             try {
                 LogContext.restore(context);
-                LOG.atInfo().addKeyValue("event", event).addKeyValue("operation", event)
-                        .addKeyValue("outcome", outcome).log("Business operation completed");
+                var builder = LOG.atInfo().addKeyValue("event", event).addKeyValue("operation", event)
+                        .addKeyValue("outcome", outcome);
+                if (entityType != null && entityId != null)
+                    builder.addKeyValue("entityType", entityType).addKeyValue("entityId", entityId);
+                builder.log("Business operation completed");
             } finally {
                 LogContext.restore(previous);
             }

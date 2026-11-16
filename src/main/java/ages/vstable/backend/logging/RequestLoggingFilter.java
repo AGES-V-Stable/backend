@@ -38,6 +38,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         long startedAt = System.nanoTime();
         boolean escaped = false;
         try {
+            MDC.remove("actorId");
             MDC.put("requestId", requestId);
             response.setHeader(HEADER, requestId);
             chain.doFilter(request, response);

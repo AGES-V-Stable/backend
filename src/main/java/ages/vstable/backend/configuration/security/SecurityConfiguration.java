@@ -60,7 +60,7 @@ public class SecurityConfiguration {
 
     @Bean
     public SecurityFilterChain filterChain(
-            HttpSecurity http
+            HttpSecurity http, BrowserEventBoundaryFilter browserEventBoundaryFilter
     ) throws Exception {
         // Enable CORS (using the corsConfigurationSource bean below) and disable CSRF
         http
@@ -93,6 +93,7 @@ public class SecurityConfiguration {
                 .addFilterBefore(invitationRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // Add JWT token filter
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(browserEventBoundaryFilter, org.springframework.security.web.access.intercept.AuthorizationFilter.class)
                 .authenticationProvider(authenticationProvider)
 
                 // Same JSON error shape ({message, code}) as GlobalExceptionHandler
@@ -112,6 +113,13 @@ public class SecurityConfiguration {
     @Bean
     public FilterRegistrationBean<JwtTokenFilter> jwtTokenFilterRegistration(JwtTokenFilter filter) {
         FilterRegistrationBean<JwtTokenFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<BrowserEventBoundaryFilter> browserEventBoundaryRegistration(BrowserEventBoundaryFilter filter) {
+        FilterRegistrationBean<BrowserEventBoundaryFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

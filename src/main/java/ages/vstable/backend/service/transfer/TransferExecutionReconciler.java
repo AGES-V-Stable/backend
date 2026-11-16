@@ -55,7 +55,8 @@ public class TransferExecutionReconciler {
             try {
                 processor.reconcile(executionId);
             } catch (RuntimeException ex) {
-                log.warn("Could not reconcile transfer execution {}: {}", executionId, ex.getMessage());
+                ages.vstable.backend.logging.OperationalLog.milestone("transfer.reconciliation.completed", "failure", "transfer", executionId);
+                log.warn("Could not reconcile transfer execution {}: {}", executionId, ex.getClass().getSimpleName());
             }
         }
     }
