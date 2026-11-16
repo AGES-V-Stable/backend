@@ -188,9 +188,9 @@ app:
     rate-limit:
       trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}
   terms:
-    version: ${TERMS_VERSION}
-    terms-url: ${TERMS_URL}
-    privacy-url: ${PRIVACY_URL}
+    version: ${TERMS_VERSION:1}
+    terms-url: ${TERMS_URL:google.com}
+    privacy-url: ${PRIVACY_URL:google.com}
 
 ---
 spring:
