@@ -33,7 +33,11 @@ class LambdaSecretsEnvironmentPostProcessorTest {
         var processor = new LambdaSecretsEnvironmentPostProcessor(arn -> {
             assertEquals("arn:aws:secretsmanager:example", arn);
             return "{\"DB_USERNAME\":\"dbuser\",\"DB_PASSWORD\":\"dbpass\","
-                    + "\"JWT_SECRET\":\"test-jwt-secret\",\"BLINDPAY_API_KEY\":\"provider-key\","
+                    + "\"JWT_SECRET\":\"test-jwt-secret\","
+                    + "\"TWO_FACTOR_ENCRYPTION_KEY\":\"test-two-factor-key\","
+                    + "\"INVITATION_ENCRYPTION_KEY\":\"test-invitation-key\","
+                    + "\"AVENIA_PRIVATE_KEY\":\"test-avenia-private-key\","
+                    + "\"BLINDPAY_API_KEY\":\"provider-key\","
                     + "\"UNEXPECTED_PROPERTY\":\"ignored\"}";
         });
 
@@ -42,6 +46,9 @@ class LambdaSecretsEnvironmentPostProcessorTest {
         assertEquals("dbuser", environment.getProperty("DB_USERNAME"));
         assertEquals("dbpass", environment.getProperty("DB_PASSWORD"));
         assertEquals("test-jwt-secret", environment.getProperty("JWT_SECRET"));
+        assertEquals("test-two-factor-key", environment.getProperty("TWO_FACTOR_ENCRYPTION_KEY"));
+        assertEquals("test-invitation-key", environment.getProperty("INVITATION_ENCRYPTION_KEY"));
+        assertEquals("test-avenia-private-key", environment.getProperty("AVENIA_PRIVATE_KEY"));
         assertEquals("provider-key", environment.getProperty("BLINDPAY_API_KEY"));
         assertFalse(environment.containsProperty("UNEXPECTED_PROPERTY"));
     }
