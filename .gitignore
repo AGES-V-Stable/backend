@@ -39,6 +39,7 @@ out/
 ### Environment ###
 .env
 .env.*
+!.env.example
 
 ### Terraform ###
 /terraform/**/.terraform/
