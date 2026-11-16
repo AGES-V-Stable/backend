@@ -526,8 +526,62 @@ class SupportChatClientTest {
                         "Como cadastrar um beneficiário internacional com IBAN ou wallet?",
                         "Para cadastrar um **Beneficiário** na V-Stable:"),
                 Arguments.of(
+                        "Quais são os papéis de membros, permissões OWNER e VIEWER e como funcionam convites?",
+                        "Gestão de Membros, Papéis e Convites"),
+                Arguments.of(
+                        "Como funciona o dashboard, economia estimada, extrato e comprovante em PDF?",
+                        "Dashboard, Economia Estimada e Comprovante em PDF"),
+                Arguments.of(
                         "Olá, tudo bem?",
                         "Olá! Sou o **Assistente Virtual da V-Stable**.")
         );
+    }
+
+    @Test
+    @DisplayName("Built-in knowledge assistant covers enriched details for 2FA anti-replay, KYC ToS/reopen, BRL balance, members, and dashboard")
+    void generateBuiltInKnowledgeReply_coversEnrichedPlatformFeaturesWithoutForbiddenTerms() {
+        properties.setProvider("local");
+
+        var twoFa = client.generateReply("system", List.of(), "O código 2FA TOTP tem uso único?", "Ctx");
+        assertThat(twoFa.reply())
+                .contains("uso único")
+                .contains("90 segundos")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =");
+
+        var kyc = client.generateReply("system", List.of(), "Como enviar documento no KYC e aceitar os termos?", "Ctx");
+        assertThat(kyc.reply())
+                .contains("Termos de Serviço (`ToS`) da BlindPay")
+                .contains("3 MB por arquivo")
+                .contains("reiniciar/refazer")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =");
+
+        var transferBalance = client.generateReply("system", List.of(), "Como funciona o saldo empresarial em BRL?", "Ctx");
+        assertThat(transferBalance.reply())
+                .contains("Idempotency-Key")
+                .contains("comprovante em PDF")
+                .contains("conciliação automática")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =");
+
+        var members = client.generateReply("system", List.of(), "Como revogar convite ou mudar papel de operador?", "Ctx");
+        assertThat(members.reply())
+                .contains("OWNER")
+                .contains("OPERATOR")
+                .contains("VIEWER")
+                .contains("TERMS_VERSION")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =");
+
+        var dashboard = client.generateReply("system", List.of(), "Como funciona a conciliação e a economia no dashboard?", "Ctx");
+        assertThat(dashboard.reply())
+                .contains("BRL -> USDC")
+                .contains("BRL -> USDT")
+                .contains("2h")
+                .contains("4%")
+                .contains("comprovante em PDF")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =");
     }
 }

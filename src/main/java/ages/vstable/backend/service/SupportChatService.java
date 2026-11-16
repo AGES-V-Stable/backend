@@ -16,6 +16,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
@@ -86,7 +87,12 @@ public class SupportChatService {
                 timestamps.pollFirst();
             }
             if (timestamps.size() >= MAX_REQUESTS_PER_MINUTE) {
-                throw new LockedException("Limite de mensagens atingido. Aguarde alguns segundos antes de enviar nova pergunta.");
+                Instant oldest = timestamps.peekFirst();
+                long retryAfterSeconds = oldest == null
+                        ? RATE_LIMIT_WINDOW_SECONDS
+                        : Math.max(1L, Duration.between(now, oldest.plusSeconds(RATE_LIMIT_WINDOW_SECONDS)).toSeconds() + 1L);
+                throw new LockedException("Limite de mensagens atingido. Aguarde %d segundos antes de enviar nova pergunta."
+                        .formatted(Math.min(RATE_LIMIT_WINDOW_SECONDS, retryAfterSeconds)));
             }
             timestamps.addLast(now);
         }
@@ -117,10 +123,14 @@ public class SupportChatService {
                 Optional<CompanyEntity> companyOpt = companyRepository.findById(activeCompanyId);
                 if (companyOpt.isPresent()) {
                     CompanyEntity company = companyOpt.get();
-                    return "**Status atual da sua conta (%s):** 2FA = %s.".formatted(
+                    String roleLabel = user.getMembership() != null && user.getMembership().getRole() != null
+                            ? user.getMembership().getRole().name()
+                            : "MEMBER";
+                    return "**Status atual da sua conta (%s):** Papel = %s | 2FA = %s.".formatted(
                             company.getTradeName() != null && !company.getTradeName().isBlank()
                                     ? company.getTradeName()
                                     : company.getLegalName(),
+                            roleLabel,
                             twoFactor ? "Ativo" : "Pendente de ativação"
                     );
                 }
@@ -192,10 +202,31 @@ public class SupportChatService {
                   - Para trocar de aparelho ou gerar novo QR Code em "Configurações > Segurança", é exigido o código atual de 6 dígitos do celular antigo (revogando o segredo anterior imediatamente).
                   - Ao ler o novo QR Code, o usuário deve remover o registro anterior no app autenticador para não confundir os códigos.
                   - Bloqueio de segurança temporário de 15 minutos após 5 tentativas incorretas.
+                  - Cada código TOTP de 6 dígitos é de **uso único (anti-replay)** e não pode ser reutilizado na mesma janela de 90 segundos (controle atômico entre instâncias).
 
                 - VERIFICAÇÃO DE IDENTIDADE (KYC E LIVENESS):
                   - Onboarding com documento de identidade e prova de vida do representante (Liveness). A situação do cadastro depende do KYC individual.
                   - Não há exigência local de KYB ou AML da empresa. Operações continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
+
+                - GESTÃO DE MEMBROS, PAPÉIS E CONVITES DA EMPRESA:
+                  - Papéis empresariais: `OWNER` (gestão completa de membros, convites, papéis e operações), `OPERATOR` (operação de transferências, cotações e beneficiários) e `VIEWER` (somente visualização/leitura).
+                  - Convites por link criptografado com aceite obrigatório dos Termos de Uso e Política de Privacidade vigentes (`TERMS_VERSION`), alteração de papel e revogação imediata de vínculo.
+
+                - CONTA FINANCEIRA EMPRESARIAL E SALDO EM BRL:
+                  - Saldo empresarial em BRL para liquidação de transferências da empresa.
+                  - Em ambiente de sandbox/homologação, suporte a créditos simulados protegidos por `Idempotency-Key` com emissão de recibo.
+
+                - DASHBOARD, CÂMBIO DE REFERÊNCIA E ECONOMIA ESTIMADA:
+                  - Cotações de referência `BRL -> USDC` e `BRL -> USDT` (rota PIX -> Polygon, `basePrice` sem tarifas, cache com TTL de 2h).
+                  - Cálculo de economia estimada frente ao spread bancário de referência (4%%) e filtros de histórico e status.
+
+                - TERMOS DE SERVIÇO (ToS) BLINDPAY, KYC INDIVIDUAL E REABERTURA:
+                  - Aceite de Termos de Serviço (`ToS`) da BlindPay antes de operar no provedor.
+                  - Verificação de identidade individual (`KYC` Standard BR / *Liveness* e upload de documentos até 3 MB por arquivo) e possibilidade de reiniciar/refazer o processo de verificação quando necessário.
+
+                - COMPROVANTE EM PDF, STATUS E CONCILIAÇÃO AUTOMÁTICA:
+                  - Download de comprovante em PDF das transferências concluídas.
+                  - Rotina de conciliação automática em segundo plano, com consulta de tickets Avenia pendentes e retomada de execuções BlindPay paradas com idempotência.
 
                 CONTEXTO ATUAL DO USUÁRIO LOGADO (SOMENTE LEITURA):
                 %s

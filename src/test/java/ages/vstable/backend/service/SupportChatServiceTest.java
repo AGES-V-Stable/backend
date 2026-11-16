@@ -29,7 +29,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -96,6 +101,7 @@ class SupportChatServiceTest {
                 .contains("COP (Peso Colombiano)")
                 .contains("Wallet Cripto")
                 .contains("V-Stable Tech")
+                .contains("Papel = OWNER | 2FA = Ativo")
                 .doesNotContain("Compliance KYB");
         assertThat(response.getProvider()).isEqualTo("vstable-assistant");
         assertThat(response.getSuggestedQuestions()).isNotEmpty();
@@ -122,7 +128,46 @@ class SupportChatServiceTest {
 
         assertThatThrownBy(() -> supportChatService.chat(auth, request))
                 .isInstanceOf(LockedException.class)
-                .hasMessageContaining("Limite de mensagens atingido");
+                .hasMessageContaining("Limite de mensagens atingido. Aguarde ")
+                .hasMessageContaining("segundos")
+                .hasMessageMatching("Limite de mensagens atingido\\. Aguarde \\d+ segundos antes de enviar nova pergunta\\.");
+    }
+
+    @Test
+    @DisplayName("When rate limit is exceeded with aged window start, should compute remaining retry-after seconds")
+    @SuppressWarnings("unchecked")
+    void chat_whenRateLimitExceededWithAgedTimestamp_computesRemainingSeconds() {
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .fullName("Teste Retry After")
+                .email("retryafter@vstable.com")
+                .twoFactorEnabled(true)
+                .build();
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o 2FA?")
+                .build();
+
+        Map<String, Deque<Instant>> timestampsByUser = (Map<String, Deque<Instant>>) org.springframework.test.util.ReflectionTestUtils
+                .getField(supportChatService, "requestTimestampsByUser");
+        Deque<Instant> timestamps = new ArrayDeque<>();
+        Instant now = Instant.now();
+        timestamps.addLast(now.minusSeconds(55));
+        for (int i = 1; i < SupportChatService.MAX_REQUESTS_PER_MINUTE; i++) {
+            timestamps.addLast(now.minusSeconds(1));
+        }
+        timestampsByUser.put("user:retryafter@vstable.com", timestamps);
+
+        assertThatThrownBy(() -> supportChatService.chat(auth, request))
+                .isInstanceOf(LockedException.class)
+                .satisfies(ex -> {
+                    String msg = ex.getMessage();
+                    assertThat(msg)
+                            .contains("Limite de mensagens atingido. Aguarde ")
+                            .contains("segundos");
+                    int seconds = Integer.parseInt(msg.replaceAll(".*Aguarde (\\d+) segundos.*", "$1"));
+                    assertThat(seconds).isBetween(1, 10);
+                });
     }
 
     @Test
@@ -261,12 +306,55 @@ class SupportChatServiceTest {
 
         assertThat(response.getReply())
                 .contains("Empresa Confidencial S.A.")
-                .contains("Pendente de ativação")
+                .contains("Papel = OPERATOR | 2FA = Pendente de ativação")
                 .doesNotContain("Compliance KYB")
                 .doesNotContain("AML =")
                 .doesNotContain("12345678000199")
                 .doesNotContain("$2a$10$hashUser")
                 .doesNotContain("SECRETBASE32KEY");
+    }
+
+    @Test
+    @DisplayName("Local assistant answers new platform topics: members, dashboard/PDF, ToS/KYC restart, and 2FA anti-replay")
+    void chat_localAssistant_answersNewPlatformTopics() {
+        Authentication auth = new UsernamePasswordAuthenticationToken("service-user", null, List.of());
+
+        SupportChatResponseDTO membersReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
+                .message("Quais são os papéis de membros OWNER, OPERATOR, VIEWER e como funcionam convites?")
+                .build());
+        assertThat(membersReply.getProvider()).isEqualTo("vstable-assistant");
+        assertThat(membersReply.getReply())
+                .contains("OWNER")
+                .contains("OPERATOR")
+                .contains("VIEWER")
+                .contains("TERMS_VERSION");
+
+        SupportChatResponseDTO dashboardReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
+                .message("Como funciona o dashboard, economia estimada e comprovante em PDF?")
+                .build());
+        assertThat(dashboardReply.getProvider()).isEqualTo("vstable-assistant");
+        assertThat(dashboardReply.getReply())
+                .contains("BRL -> USDC")
+                .contains("4%")
+                .contains("comprovante em PDF")
+                .contains("conciliação automática");
+
+        SupportChatResponseDTO kycReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
+                .message("Como aceitar os Termos de Serviço e reiniciar meu KYC com documentos?")
+                .build());
+        assertThat(kycReply.getProvider()).isEqualTo("vstable-assistant");
+        assertThat(kycReply.getReply())
+                .contains("ToS")
+                .contains("3 MB")
+                .contains("reiniciar/refazer");
+
+        SupportChatResponseDTO totpReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
+                .message("O código 2FA TOTP pode ser reutilizado?")
+                .build());
+        assertThat(totpReply.getProvider()).isEqualTo("vstable-assistant");
+        assertThat(totpReply.getReply())
+                .contains("uso único")
+                .contains("90 segundos");
     }
 
     @Test
@@ -358,11 +446,79 @@ class SupportChatServiceTest {
             // Assert
             assertThat(input.userContextSummary())
                     .contains("Empresa Ativa Ltda")
+                    .contains("Papel = OPERATOR | 2FA = Ativo")
                     .doesNotContain("KYB")
                     .doesNotContain("AML")
                     .doesNotContain(UNLINKED);
             assertThat(input.systemPrompt()).contains("Empresa Ativa Ltda");
             verify(companyRepository).findById(membershipCompanyId);
+        }
+
+        @Test
+        @DisplayName("Active membership with OWNER/OPERATOR role never leaks CNPJ, e-mail, hashes, TOTP secret, balance, or UUIDs")
+        void activeMembership_withSensitiveFields_includesRoleWithoutLeakingPiiOrSecrets() {
+            UUID companyId = UUID.randomUUID();
+            UUID userId = UUID.randomUUID();
+            UserEntity user = UserEntity.builder()
+                    .id(userId)
+                    .companyId(companyId)
+                    .fullName("Ana Carolina Silva")
+                    .email("ana.silva@empresa.com.br")
+                    .passwordHash("$2a$12$sensitivePasswordHashValue")
+                    .passwordSalt("sensitiveSaltValue999")
+                    .twoFactorSecret("SUPERSECRETTOTP32KEY")
+                    .twoFactorEnabled(true)
+                    .build();
+            TestCompanyUsers.withMembership(user, companyId, CompanyRole.OWNER, MembershipStatus.ACTIVE);
+            UUID membershipId = user.getMembership().getId();
+
+            CompanyEntity company = CompanyEntity.builder()
+                    .id(companyId)
+                    .legalName("Empresa Segura S.A.")
+                    .tradeName("Empresa Segura")
+                    .cnpj("98765432000188")
+                    .availableBalanceBrl(new BigDecimal("154320.99"))
+                    .build();
+            when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+
+            ProviderInput input = chatAndCapture(user);
+
+            assertThat(input.userContextSummary())
+                    .isEqualTo("**Status atual da sua conta (Empresa Segura):** Papel = OWNER | 2FA = Ativo.")
+                    .doesNotContain("Ana Carolina Silva")
+                    .doesNotContain("ana.silva@empresa.com.br")
+                    .doesNotContain("98765432000188")
+                    .doesNotContain("154320.99")
+                    .doesNotContain("$2a$12$sensitivePasswordHashValue")
+                    .doesNotContain("sensitiveSaltValue999")
+                    .doesNotContain("SUPERSECRETTOTP32KEY")
+                    .doesNotContain(userId.toString())
+                    .doesNotContain(companyId.toString())
+                    .doesNotContain(membershipId.toString())
+                    .doesNotContain("Compliance KYB")
+                    .doesNotContain("AML =");
+
+            assertThat(input.systemPrompt())
+                    .contains("Papel = OWNER | 2FA = Ativo")
+                    .contains("GESTÃO DE MEMBROS, PAPÉIS E CONVITES DA EMPRESA:")
+                    .contains("TERMS_VERSION")
+                    .contains("CONTA FINANCEIRA EMPRESARIAL E SALDO EM BRL:")
+                    .contains("Idempotency-Key")
+                    .contains("DASHBOARD, CÂMBIO DE REFERÊNCIA E ECONOMIA ESTIMADA:")
+                    .contains("TTL de 2h")
+                    .contains("4%")
+                    .contains("TERMOS DE SERVIÇO (ToS) BLINDPAY, KYC INDIVIDUAL E REABERTURA:")
+                    .contains("3 MB")
+                    .contains("COMPROVANTE EM PDF, STATUS E CONCILIAÇÃO AUTOMÁTICA:")
+                    .contains("uso único (anti-replay)")
+                    .contains("90 segundos")
+                    .doesNotContain("Compliance KYB")
+                    .doesNotContain("AML =")
+                    .doesNotContain("98765432000188")
+                    .doesNotContain("154320.99")
+                    .doesNotContain("SUPERSECRETTOTP32KEY")
+                    .doesNotContain(userId.toString())
+                    .doesNotContain(companyId.toString());
         }
 
         @Test

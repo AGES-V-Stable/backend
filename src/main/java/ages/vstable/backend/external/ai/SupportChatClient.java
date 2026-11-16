@@ -318,7 +318,8 @@ public class SupportChatClient implements SupportChatGateway {
                     1. **Onde ativar ou reconfigurar:** Acesse **Configurações > Segurança da Conta** no menu lateral.
                     2. **Troca de celular / Reconfigurar 2FA:** Para gerar um novo QR Code quando o 2FA já está ativo, o sistema exige que você informe o **código atual de 6 dígitos** (revogando imediatamente o segredo anterior por segurança).
                     3. **Dica ao reescanear o QR Code:** Remova o card antigo da V-Stable no seu app autenticador (Google ou Microsoft Authenticator) antes de ler o novo QR Code para não misturar o código antigo com o novo.
-                    4. **Limite de tentativas:** Após **5 tentativas incorretas**, a verificação é bloqueada temporariamente por **15 minutos** contra ataques de força bruta.
+                    4. **Uso único (anti-replay):** Cada código TOTP de 6 dígitos é de **uso único** e não pode ser reutilizado na mesma janela de **90 segundos** (controle atômico entre instâncias).
+                    5. **Limite de tentativas:** Após **5 tentativas incorretas**, a verificação é bloqueada temporariamente por **15 minutos** contra ataques de força bruta.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -327,8 +328,8 @@ public class SupportChatClient implements SupportChatGateway {
             return """
                     A **Verificação de identidade (KYC)** acompanha o cadastro do representante:
 
-                    1. **Etapas do Onboarding:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Envio do Documento de Identidade e Prova de Vida (*Liveness*).
-                    2. **Liberação de Transferências:** O cadastro é aprovado conforme o resultado do KYC individual. Transferências continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
+                    1. **Etapas do Onboarding e ToS:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Aceite dos **Termos de Serviço (`ToS`) da BlindPay** ➔ Envio do Documento de Identidade (até **3 MB por arquivo**) e Prova de Vida (*Liveness*).
+                    2. **Liberação e Reabertura do KYC:** O cadastro é aprovado conforme o resultado do KYC individual (`KYC` Standard BR / *Liveness*). Caso precise corrigir dados ou reenviar arquivos, é possível **reiniciar/refazer o processo de verificação** quando necessário. Transferências continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -337,9 +338,10 @@ public class SupportChatClient implements SupportChatGateway {
             return """
                     Sobre **Cotações, Taxas e Transferências** na V-Stable:
 
-                    1. **Cotação em tempo real:** Ao iniciar uma transferência em **Transferências**, a V-Stable consulta automaticamente os provedores de liquidez (**Avenia** e **BlindPay**) e trava a cotação por alguns minutos.
-                    2. **Transparência de custos:** O painel lateral exibe a taxa de câmbio efetiva, taxas de rede/provedor e o valor líquido exato que chegará ao beneficiário.
-                    3. **Confirmação segura:** Na etapa final (**Autenticação**), é necessário informar o código TOTP de 6 dígitos do seu autenticador antes da execução da ordem.
+                    1. **Saldo empresarial em BRL:** As transferências utilizam o saldo empresarial em BRL para liquidação; em ambiente de sandbox/homologação, há suporte a crédito simulado protegido por `Idempotency-Key` com emissão de recibo.
+                    2. **Cotação em tempo real:** Ao iniciar uma transferência em **Transferências**, a V-Stable consulta automaticamente os provedores de liquidez (**Avenia** e **BlindPay**) e trava a cotação por alguns minutos.
+                    3. **Transparência de custos:** O painel lateral exibe a taxa de câmbio efetiva, taxas de rede/provedor e o valor líquido exato que chegará ao beneficiário.
+                    4. **Confirmação, Comprovante em PDF e Conciliação:** Na etapa final (**Autenticação**), informe o código TOTP de 6 dígitos antes da execução da ordem. Após a conclusão, é possível fazer o **download do comprovante em PDF**, e a **conciliação automática em segundo plano** acompanha tickets Avenia pendentes e retoma execuções BlindPay paradas com idempotência.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -352,6 +354,31 @@ public class SupportChatClient implements SupportChatGateway {
                     2. Escolha a forma de recebimento:
                        - **Conta Bancária:** Informe Banco, SWIFT/BIC, IBAN ou Número da Conta e a Moeda de recebimento (`USD`, `EUR`, `GBP`, etc.).
                        - **Wallet Cripto:** Informe o endereço da carteira (`0x...`) e a rede blockchain (**Polygon, Celo, Ethereum, Gnosis, Moonbeam ou Tron**).
+
+                    %s""".formatted(userContextSummary).trim();
+        }
+
+        if (containsAny(normalized, "membro", "membros", "convite", "convites", "papel", "papeis", "permissao", "permissoes", "owner", "operator", "viewer", "revogar")) {
+            return """
+                    Sobre **Gestão de Membros, Papéis e Convites** na V-Stable:
+
+                    1. **Papéis de acesso da empresa:**
+                       - **OWNER:** Gestão completa de membros, convites, alteração de papéis, revogação de acesso e operações financeiras.
+                       - **OPERATOR:** Operação de transferências, cotações e gestão de beneficiários.
+                       - **VIEWER:** Acesso somente para visualização e leitura.
+                    2. **Convites e Termos vigentes:** O envio de convites ocorre por **link criptografado** e o aceite exige concordância com os **Termos de Uso e Política de Privacidade vigentes (`TERMS_VERSION`)**.
+                    3. **Alteração e Revogação:** O `OWNER` pode alterar o papel do membro ou realizar a **revogação imediata do vínculo** de acesso à empresa.
+
+                    %s""".formatted(userContextSummary).trim();
+        }
+
+        if (containsAny(normalized, "dashboard", "economia", "comprovante", "pdf", "conciliacao", "extrato")) {
+            return """
+                    Sobre **Dashboard, Economia Estimada e Comprovante em PDF** na V-Stable:
+
+                    1. **Câmbio de referência:** O dashboard exibe cotações de referência `BRL -> USDC` e `BRL -> USDT` (rota PIX -> Polygon, `basePrice` sem tarifas, com cache de **2h** de TTL) e filtros de histórico e status.
+                    2. **Economia estimada:** A plataforma calcula a economia estimada das operações frente ao **spread bancário de referência de 4%%**.
+                    3. **Comprovante em PDF e Conciliação:** Transferências concluídas permitem baixar o **comprovante em PDF**, enquanto a **conciliação automática** em segundo plano consulta tickets Avenia pendentes e retoma execuções BlindPay paradas com idempotência.
 
                     %s""".formatted(userContextSummary).trim();
         }
