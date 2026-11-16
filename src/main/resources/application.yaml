@@ -74,8 +74,8 @@ app:
   # Os padrões abaixo são só para desenvolvimento; o perfil lambda exige valores explícitos.
   terms:
     version: ${TERMS_VERSION:v1}
-    terms-url: ${TERMS_URL:${INVITATION_FRONTEND_ORIGIN}/termos-de-uso}
-    privacy-url: ${PRIVACY_URL:${INVITATION_FRONTEND_ORIGIN}/politica-de-privacidade}
+    terms-url: ${TERMS_URL:${INVITATION_FRONTEND_ORIGIN:https://example.com}/termos-de-uso}
+    privacy-url: ${PRIVACY_URL:${INVITATION_FRONTEND_ORIGIN:https://example.com}/politica-de-privacidade}
 
 api:
   auth:
@@ -189,8 +189,8 @@ app:
       trusted-proxy-hops: ${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}
   terms:
     version: ${TERMS_VERSION:1}
-    terms-url: ${TERMS_URL:google.com}
-    privacy-url: ${PRIVACY_URL:google.com}
+    terms-url: ${TERMS_URL:https://example.com/}
+    privacy-url: ${PRIVACY_URL:https://example.com/}
 
 ---
 spring:
