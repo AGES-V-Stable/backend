@@ -5,6 +5,7 @@ plugins {
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
   	id "org.sonarqube" version "7.3.1.8318"
+	id 'com.github.spotbugs' version '6.5.13'
 }
 
 sonar {
@@ -74,6 +75,8 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
+
+	spotbugsPlugins 'com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0'
 
 	constraints {
 		['asm', 'asm-analysis', 'asm-commons', 'asm-tree', 'asm-util'].each { module ->
@@ -190,6 +193,19 @@ tasks.named('jacocoTestReport') {
 
 tasks.named('sonar') {
 	dependsOn tasks.named('jacocoTestReport')
+}
+
+spotbugs {
+	ignoreFailures = true
+	effort = 'max'
+	reportLevel = 'low'
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	reports {
+		xml.required = true
+		html.required = true
+	}
 }
 
 pitest {
