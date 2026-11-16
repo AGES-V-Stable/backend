@@ -21,7 +21,7 @@ import java.util.function.Function;
 public class LambdaSecretsEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
     private static final String SECRET_ARN_PROPERTY = "APP_CONFIG_SECRET_ARN";
-    private static final Set<String> REQUIRED_KEYS = Set.of("DB_USERNAME", "DB_PASSWORD", "JWT_SECRET");
+    private static final Set<String> REQUIRED_KEYS = Set.of("DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "TWO_FACTOR_ENCRYPTION_KEY", "INVITATION_ENCRYPTION_KEY", "AVENIA_PRIVATE_KEY");
     private static final Set<String> OPTIONAL_KEYS = Set.of(
             "AVENIA_API_KEY", "AVENIA_PRIVATE_KEY", "AVENIA_EMAIL", "AVENIA_PASSWORD",
             "BLINDPAY_API_KEY", "BLINDPAY_INSTANCE_ID", "BLINDPAY_WEBHOOK_SECRET");
