@@ -17,14 +17,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LambdaProfileConfigurationTest {
 
     @Test
-    void lambdaProfile_requiresTermsAndProxyTopologyWithoutDefaults() throws IOException {
+    void lambdaProfile_usesConfiguredTermsAndProxyTopologyPlaceholders() throws IOException {
         // Arrange
         PropertySource<?> lambda = lambdaDocument();
 
         // Act / Assert
-        assertThat(lambda.getProperty("app.terms.version")).hasToString("${TERMS_VERSION}");
-        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL}");
-        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL}");
+        assertThat(lambda.getProperty("app.terms.version")).hasToString("${TERMS_VERSION:1}");
+        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL:google.com}");
+        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL:google.com}");
         assertThat(lambda.getProperty("app.invitation.rate-limit.trusted-proxy-hops"))
                 .hasToString("${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}");
     }
