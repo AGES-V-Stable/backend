@@ -23,8 +23,8 @@ class LambdaProfileConfigurationTest {
 
         // Act / Assert
         assertThat(lambda.getProperty("app.terms.version")).hasToString("${TERMS_VERSION:1}");
-        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL:https://www.google.com/}");
-        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL:https://www.google.com/}");
+        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL:https://example.com/}");
+        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL:https://example.com/}");
         assertThat(lambda.getProperty("app.invitation.rate-limit.trusted-proxy-hops"))
                 .hasToString("${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}");
     }
