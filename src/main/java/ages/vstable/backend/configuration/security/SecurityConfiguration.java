@@ -85,6 +85,8 @@ public class SecurityConfiguration {
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()
+                        // Health checks (Lambda Web Adapter, canary): sem detalhes; demais endpoints do Actuator não são expostos.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
