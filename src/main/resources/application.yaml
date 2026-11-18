@@ -1,6 +1,11 @@
 observability:
   enabled: ${OBSERVABILITY_ENABLED:true}
   retention-days: ${OBSERVABILITY_RETENTION_DAYS:30}
+  # Métricas CloudWatch EMF (uma linha JSON no stdout). Desligado por padrão; o profile lambda liga.
+  # O namespace separa os ambientes quando compartilham a conta (ex.: VStable/staging, VStable/production).
+  emf:
+    enabled: ${EMF_METRICS_ENABLED:false}
+    namespace: ${EMF_METRICS_NAMESPACE:VStable}
 
 logging:
   level:
@@ -26,13 +31,6 @@ server:
 
 # Observability: só /actuator/health é exposto (probes de liveness/readiness), sem detalhes,
 # porque o endpoint é público. Liveness não toca em dependências; readiness inclui o banco.
-observability:
-  # Métricas CloudWatch EMF (uma linha JSON no stdout). Desligado por padrão; o profile lambda liga.
-  # O namespace separa os ambientes quando compartilham a conta (ex.: VStable/staging, VStable/production).
-  emf:
-    enabled: ${EMF_METRICS_ENABLED:false}
-    namespace: ${EMF_METRICS_NAMESPACE:VStable}
-
 management:
   endpoints:
     web:

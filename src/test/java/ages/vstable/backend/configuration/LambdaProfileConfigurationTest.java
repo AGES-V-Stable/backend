@@ -17,6 +17,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LambdaProfileConfigurationTest {
 
     @Test
+    void baseConfiguration_keepsCollectorAndMetricDefaultsInOneDocument() throws IOException {
+        // Arrange / Act
+        PropertySource<?> base = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yaml")).getFirst();
+
+        // Assert
+        assertThat(base.getProperty("observability.enabled")).hasToString("${OBSERVABILITY_ENABLED:true}");
+        assertThat(base.getProperty("observability.retention-days")).hasToString("${OBSERVABILITY_RETENTION_DAYS:30}");
+        assertThat(base.getProperty("observability.emf.enabled")).hasToString("${EMF_METRICS_ENABLED:false}");
+        assertThat(base.getProperty("observability.emf.namespace")).hasToString("${EMF_METRICS_NAMESPACE:VStable}");
+    }
+
+    @Test
     void lambdaProfile_requiresTermsAndProxyTopologyWithoutDefaults() throws IOException {
         // Arrange
         PropertySource<?> lambda = lambdaDocument();
@@ -27,6 +40,7 @@ class LambdaProfileConfigurationTest {
         assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL}");
         assertThat(lambda.getProperty("app.invitation.rate-limit.trusted-proxy-hops"))
                 .hasToString("${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}");
+        assertThat(lambda.getProperty("observability.emf.enabled")).hasToString("${EMF_METRICS_ENABLED:true}");
     }
 
     private static PropertySource<?> lambdaDocument() throws IOException {
