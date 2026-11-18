@@ -103,6 +103,61 @@ recursão e crescimento provocado pelo uso da aba. Não se importam logs histór
 
 ## Validação
 
+### Painel administrativo
+
+Acima dos logs, o painel usa Recharts para exibir ERROR, WARN e INFO ao longo do
+tempo, quatro cartões (total e severidades) e os dez módulos com mais eventos
+ERROR. O ranking conta severidade ERROR, não o campo `failed`: uma requisição 4xx
+pode ser WARN e uma operação malsucedida sem ser ERROR.
+
+`GET /v1/admin/observability/events/dashboard` aceita os mesmos filtros da listagem
+e retorna `{summary, events}`. `summary` contém `from`, `to`, `interval`,
+`generatedAt`, totais, `series` com `{from,to,error,warn,info}` e
+`errorsByModule`. As consultas rodam em uma transação read-only REPEATABLE READ
+com timeout de 5 segundos: agregados e logs veem o mesmo snapshot de registros
+confirmados. As agregações ocorrem no PostgreSQL, sem carregar todos os eventos
+na aplicação, e independem de `page` e `size`. O endpoint exige ADMIN.
+
+Todos os filtros (inclusive ação, resultado e correlação) valem para o painel e a
+listagem. O período padrão da tela é 24 horas; há opções de 1 hora, 7 dias e
+intervalo personalizado, limitado a 90 dias e à retenção configurada. Atualizar
+avança os períodos relativos e preserva os limites de períodos personalizados.
+A tela informa o período efetivamente consultado, o fuso IANA do navegador e o
+horário da última resposta bem-sucedida. Datas são enviadas e processadas em UTC.
+
+As séries têm limites UTC e vêm ordenadas, com zero nos intervalos vazios:
+minuto até 1 hora; hora até 2 dias; dia nos demais casos (máximo 91 pontos).
+Intervalos usam início inclusivo e fim exclusivo, inclusive na listagem, para
+evitar dupla contagem ao selecionar pontos adjacentes. As pontas podem ser
+parciais. Os campos de início e fim definem o intervalo da consulta. Os botões
+Ver ERROR, Ver WARN e Ver INFO exibem a série correspondente no gráfico e filtram
+a tabela pelo mesmo intervalo e severidade. Selecionar um ponto preenche seus
+limites e aplica sua severidade. Clicar novamente no botão ativo restaura todas
+as séries e os filtros anteriores; editar o intervalo e clicar reaplica a consulta.
+Falhas de consulta exibem erro e retentativa; períodos vazios exibem totais zero.
+Requisições obsoletas são canceladas e suas respostas ignoradas.
+
+Para conferir manualmente em ambiente de desenvolvimento:
+
+1. Entre como administrador e abra `/admin/observability`. Selecione última hora.
+2. Execute uma operação local já instrumentada, como criar uma empresa de teste,
+   e uma tentativa com conflito (mesmo CNPJ). Volte e clique em **Atualizar**:
+   os eventos de sucesso aparecem em INFO e o HTTP 409 aparece em WARN.
+3. Para conferir ERROR sem provocar falhas em provedores, reproduza uma falha de
+   interface em desenvolvimento ou envie uma categoria válida ao endpoint
+   autenticado de browser-events descrito acima; o módulo e a origem browser
+   devem aparecer nos logs e nos agregados. Não use dados de produção.
+4. Confira o total da tabela contra o cartão; mude a página e verifique que os
+   totais e as séries permanecem iguais. A soma das três séries deve corresponder
+   ao total. Filtre módulo/severidade e selecione um ponto para conferir seus logs.
+5. Confira um período sem eventos, um intervalo inválido e uma falha de consulta
+   (backend indisponível). Refaça filtros rapidamente para validar a atualização.
+
+Os testes integrados verificam o painel com eventos reais de criação, conflito
+HTTP e ingestão do navegador, além de limites de buckets, zeros, retenção,
+granularidade, filtros, paginação e permissões. Dados artificiais de fronteira
+são exclusivos dos testes.
+
 `ObservabilityIntegrationTest` usa PostgreSQL efêmero e JWT real para criar empresa,
 verificar commit, persistência, filtros, detalhes, conflito, deduplicação e retenção,
 sem chamadas externas. Testes de segurança cobrem acesso anônimo, USER e ADMIN,

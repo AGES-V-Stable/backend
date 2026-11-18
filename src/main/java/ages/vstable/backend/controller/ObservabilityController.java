@@ -18,6 +18,9 @@ public class ObservabilityController {
     @GetMapping
     public EventPageResponse list(@Valid @ModelAttribute EventFilter filter) { return service.list(filter); }
 
+    @GetMapping("/dashboard")
+    public EventDashboardResponse dashboard(@Valid @ModelAttribute EventFilter filter) { return service.dashboard(filter); }
+
     @GetMapping("/{id}")
     public EventResponse detail(@PathVariable UUID id) { return service.detail(id); }
 }

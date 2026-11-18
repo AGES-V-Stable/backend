@@ -43,6 +43,7 @@ class ObservabilityControllerSecurityTest {
     @Test
     void anonymousCannotReadOrIngest() throws Exception {
         mvc.perform(get("/v1/admin/observability/events")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/v1/admin/observability/events/dashboard")).andExpect(status().isUnauthorized());
         mvc.perform(post("/v1/observability/browser-events")).andExpect(status().isUnauthorized());
         verifyNoInteractions(service, recorder);
     }
@@ -50,6 +51,7 @@ class ObservabilityControllerSecurityTest {
     @Test @WithMockUser(roles = "USER")
     void companyUserCannotReadEventsOrDetails() throws Exception {
         mvc.perform(get("/v1/admin/observability/events")).andExpect(status().isForbidden());
+        mvc.perform(get("/v1/admin/observability/events/dashboard")).andExpect(status().isForbidden());
         mvc.perform(get("/v1/admin/observability/events/" + UUID.randomUUID())).andExpect(status().isForbidden());
         verifyNoInteractions(service);
     }
@@ -61,6 +63,13 @@ class ObservabilityControllerSecurityTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mvc.perform(get("/v1/admin/observability/events").param("size", "10000")).andExpect(status().isBadRequest());
         mvc.perform(get("/v1/admin/observability/events").param("severity", "SECRET")).andExpect(status().isBadRequest());
+        mvc.perform(get("/v1/admin/observability/events/dashboard").param("module", "transfer"))
+                .andExpect(status().isOk());
+        verify(service).dashboard(argThat(filter -> "transfer".equals(filter.module())));
+        for (String[] invalid : List.of(new String[]{"severity", "DEBUG"}, new String[]{"module", "bad.module"},
+                new String[]{"from", "yesterday"}, new String[]{"page", "1001"}, new String[]{"size", "101"}))
+            mvc.perform(get("/v1/admin/observability/events/dashboard").param(invalid[0], invalid[1]))
+                    .andExpect(status().isBadRequest());
     }
 
     @Test
