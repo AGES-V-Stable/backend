@@ -60,6 +60,7 @@ jobs:
           BLINDPAY_API_KEY: test-only-not-a-real-credential
           BLINDPAY_INSTANCE_ID: in_000000000000
           BLINDPAY_WEBHOOK_SECRET: test-only-not-a-real-credential
+          TWO_FACTOR_ENCRYPTION_KEY: test-only-jwt-secret-do-not-use-in-production-hs512-needs-at-least-64-bytes
 
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:

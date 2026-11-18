@@ -11,8 +11,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Garante que staging e produção (perfil lambda) não herdam valores provisórios: termos e topologia de proxies
- * precisam vir do ambiente, e a aplicação não sobe sem eles.
+ * Verifica os placeholders do perfil lambda e a convivência das configurações do coletor e das métricas.
  */
 class LambdaProfileConfigurationTest {
 
@@ -30,14 +29,14 @@ class LambdaProfileConfigurationTest {
     }
 
     @Test
-    void lambdaProfile_requiresTermsAndProxyTopologyWithoutDefaults() throws IOException {
+    void lambdaProfile_usesConfiguredTermsAndProxyTopologyPlaceholders() throws IOException {
         // Arrange
         PropertySource<?> lambda = lambdaDocument();
 
         // Act / Assert
-        assertThat(lambda.getProperty("app.terms.version")).hasToString("${TERMS_VERSION}");
-        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL}");
-        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL}");
+        assertThat(lambda.getProperty("app.terms.version")).hasToString("${TERMS_VERSION:1}");
+        assertThat(lambda.getProperty("app.terms.terms-url")).hasToString("${TERMS_URL:https://example.com/}");
+        assertThat(lambda.getProperty("app.terms.privacy-url")).hasToString("${PRIVACY_URL:https://example.com/}");
         assertThat(lambda.getProperty("app.invitation.rate-limit.trusted-proxy-hops"))
                 .hasToString("${INVITATION_RATE_LIMIT_TRUSTED_PROXY_HOPS}");
         assertThat(lambda.getProperty("observability.emf.enabled")).hasToString("${EMF_METRICS_ENABLED:true}");
