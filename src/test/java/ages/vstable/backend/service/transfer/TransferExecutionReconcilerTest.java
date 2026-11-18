@@ -81,8 +81,12 @@ class TransferExecutionReconcilerTest {
             reconciler.reconcile();
 
             // Assert
-            assertThat(capture.events()).hasSize(1);
+            assertThat(capture.events()).hasSize(2);
             assertThat(LogCapture.fields(capture.events().getFirst()))
+                    .containsEntry("event", "transfer.reconciliation.completed")
+                    .containsEntry("outcome", "failure")
+                    .containsEntry("entityType", "transfer").containsEntry("entityId", first);
+            assertThat(LogCapture.fields(capture.events().get(1)))
                     .containsEntry("event", "transfer.reconciliation.completed")
                     .containsEntry("outcome", "partial_failure")
                     .containsEntry("found", 2).containsEntry("failed", 1);
