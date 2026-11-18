@@ -89,6 +89,55 @@ class BlindPayProvisioningServiceTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"approved", "verifying"})
+    void registerBankAccount_sepaPersistsProviderLinkWithoutRequiringApproval(String status) {
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("SEPA supplier").paymentRail("sepa").iban("DE89370400440532013000")
+                .accountHolderName("Test GmbH").accountClass("business").countryCode("DEU")
+                .addressLine1("Teststrasse 1").city("Berlin").postalCode("10115").build();
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), anyString()))
+                .thenReturn(new BlindPayBankAccountResponse(
+                        "ba_sepa", "sepa", "SEPA supplier", status, null, "DE", null, OffsetDateTime.now()));
+
+        service.registerBankAccount(company, beneficiary);
+
+        var payload = ArgumentCaptor.forClass(BlindPayCreateBankAccountRequest.class);
+        verify(gateway).createBankAccount(eq("customer-id"), payload.capture(),
+                eq("beneficiary:" + beneficiary.getId() + ":blindpay"));
+        assertThat(payload.getValue().sepaIban()).isEqualTo("DE89370400440532013000");
+        assertThat(payload.getValue().sepaBeneficiaryCountry()).isEqualTo("DE");
+        assertThat(payload.getValue().sepaBeneficiaryAddressLine1()).isEqualTo("Teststrasse 1");
+        assertThat(payload.getValue().sepaBeneficiaryCity()).isEqualTo("Berlin");
+        assertThat(payload.getValue().sepaBeneficiaryPostalCode()).isEqualTo("10115");
+        var link = ArgumentCaptor.forClass(BeneficiaryProviderAccountEntity.class);
+        verify(beneficiaryProviderAccountRepository).save(link.capture());
+        assertThat(link.getValue().getExternalBankAccountId()).isEqualTo("ba_sepa");
+        assertThat(link.getValue().getStatus()).isEqualTo(status.toUpperCase());
+    }
+
+    @Test
+    void registerBankAccount_rejectedDestinationDoesNotReportSuccess() {
+        CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();
+        BeneficiaryEntity beneficiary = BeneficiaryEntity.builder().id(UUID.randomUUID()).company(company)
+                .nickname("Rejected").paymentRail("sepa").build();
+        when(providerAccountRepository.findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY))
+                .thenReturn(Optional.of(account(company, "customer-id", BlindPayOnboardingStatus.APPROVED)));
+        when(beneficiaryProviderAccountRepository.findByBeneficiaryIdAndProvider(
+                beneficiary.getId(), IntegrationProvider.BLINDPAY)).thenReturn(Optional.empty());
+        when(gateway.createBankAccount(eq("customer-id"), any(), anyString()))
+                .thenReturn(new BlindPayBankAccountResponse(
+                        "ba_rejected", "sepa", "Rejected", "rejected", null, "DE", null, OffsetDateTime.now()));
+
+        assertThatThrownBy(() -> service.registerBankAccount(company, beneficiary))
+                .isInstanceOf(BlindPayComplianceException.class);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"verifying", "rejected", "deprecated"})
     void ensureBankAccount_pendingOrRejectedBankAccount_isNotUsedForQuote(String status) {
         CompanyEntity company = CompanyEntity.builder().id(UUID.randomUUID()).build();

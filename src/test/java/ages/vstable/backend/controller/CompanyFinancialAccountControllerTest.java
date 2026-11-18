@@ -30,6 +30,7 @@ import ages.vstable.backend.repository.ExportTransactionRepository;
 import ages.vstable.backend.repository.ImportTransactionRepository;
 import ages.vstable.backend.repository.ProviderAccountRepository;
 import ages.vstable.backend.service.BeneficiaryService;
+import ages.vstable.backend.service.quote.BlindPayProvisioningService;
 import ages.vstable.backend.service.CompanyFinancialAccountService;
 import ages.vstable.backend.service.TransferService;
 import ages.vstable.backend.service.TwoFactorAuthService;
@@ -88,6 +89,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         CompanyFinancialAccountService.class, AveniaTransferService.class, AveniaBeneficiaryService.class,
         CompanyFinancialAccountControllerTest.PackagePrivateServices.class})
 class CompanyFinancialAccountControllerTest {
+
+    @MockitoBean
+    private BlindPayProvisioningService blindPayProvisioningService;
 
     /** BeneficiaryValidator é package-private em service; registrado pelo nome, sem mudar sua visibilidade. */
     @TestConfiguration
