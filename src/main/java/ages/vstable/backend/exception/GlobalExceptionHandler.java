@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -221,6 +222,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(Map.of("code", "ACCESS_DENIED", "message", "Access denied"));
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        String code = status != null ? status.name() : "ERROR";
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .body(Map.of("code", code, "message", message != null ? message : ""));
     }
 
     @ExceptionHandler(Exception.class)

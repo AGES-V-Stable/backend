@@ -22,11 +22,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -54,17 +56,50 @@ class SupportChatServiceTest {
     @Mock
     private CompanyRepository companyRepository;
 
+    private SupportChatProperties properties;
     private SupportChatService supportChatService;
 
     @BeforeEach
     void setUp() {
-        SupportChatProperties properties = new SupportChatProperties();
+        properties = new SupportChatProperties();
         properties.setProvider("local");
         SupportChatClient client = new SupportChatClient(
                 properties,
                 new ObjectMapper(),
                 RestClient.builder());
-        supportChatService = new SupportChatService(client, companyRepository);
+        supportChatService = new SupportChatService(client, companyRepository, properties);
+    }
+
+    @Test
+    @DisplayName("When support chat feature flag is disabled, throws 404 ResponseStatusException before rate limit and gateway")
+    void chat_whenDisabled_throws404AndDoesNotCallGatewayOrRateLimit() {
+        SupportChatGateway mockGateway = org.mockito.Mockito.mock(SupportChatGateway.class);
+        SupportChatProperties disabledProps = new SupportChatProperties();
+        disabledProps.setEnabled(false);
+        SupportChatService disabledService = new SupportChatService(mockGateway, companyRepository, disabledProps);
+
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("disabled-check@vstable.com")
+                .twoFactorEnabled(true)
+                .build();
+        Authentication auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SupportChatRequestDTO request = SupportChatRequestDTO.builder()
+                .message("Como funciona o 2FA?")
+                .build();
+
+        assertThatThrownBy(() -> disabledService.chat(auth, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> {
+                    ResponseStatusException rse = (ResponseStatusException) ex;
+                    assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(rse.getReason()).isEqualTo("Assistente de suporte desabilitado.");
+                });
+
+        verifyNoInteractions(mockGateway, companyRepository);
+        Object timestamps = org.springframework.test.util.ReflectionTestUtils
+                .getField(disabledService, "requestTimestampsByUser");
+        assertThat((Map<?, ?>) timestamps).isEmpty();
     }
 
     @Test

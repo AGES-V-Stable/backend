@@ -10,12 +10,15 @@ import ages.vstable.backend.entity.UserEntity;
 import ages.vstable.backend.entity.enums.CompanyRole;
 import ages.vstable.backend.entity.enums.MembershipStatus;
 import ages.vstable.backend.external.ai.SupportChatGateway;
+import ages.vstable.backend.external.ai.SupportChatProperties;
 import ages.vstable.backend.repository.CompanyRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -30,7 +33,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-@RequiredArgsConstructor
 public class SupportChatService {
 
     static final int MAX_REQUESTS_PER_MINUTE = 15;
@@ -45,10 +47,33 @@ public class SupportChatService {
 
     private final SupportChatGateway supportChatGateway;
     private final CompanyRepository companyRepository;
+    private final SupportChatProperties properties;
 
     private final Map<String, Deque<Instant>> requestTimestampsByUser = new ConcurrentHashMap<>();
 
+    @Autowired
+    public SupportChatService(
+            SupportChatGateway supportChatGateway,
+            CompanyRepository companyRepository,
+            SupportChatProperties properties
+    ) {
+        this.supportChatGateway = supportChatGateway;
+        this.companyRepository = companyRepository;
+        this.properties = properties;
+    }
+
+    public SupportChatService(
+            SupportChatGateway supportChatGateway,
+            CompanyRepository companyRepository
+    ) {
+        this(supportChatGateway, companyRepository, new SupportChatProperties());
+    }
+
     public SupportChatResponseDTO chat(Authentication authentication, SupportChatRequestDTO request) {
+        if (!properties.isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Assistente de suporte desabilitado.");
+        }
+
         if (authentication == null || authentication.getPrincipal() == null) {
             throw new BadCredentialsException("Authentication is required");
         }

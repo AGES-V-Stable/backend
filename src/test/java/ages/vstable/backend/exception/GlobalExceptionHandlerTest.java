@@ -11,6 +11,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -328,5 +329,18 @@ class GlobalExceptionHandlerTest {
         assertThat(nonEmailResponse.getBody())
                 .containsEntry("code", "VALIDATION_ERROR")
                 .containsEntry("message", "email: must not be blank");
+    }
+
+    @Test
+    void handleResponseStatus_returnsExceptionStatusCodeAndReason() {
+        ResponseStatusException ex = new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Assistente de suporte desabilitado.");
+
+        ResponseEntity<Map<String, String>> response = handler.handleResponseStatus(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody())
+                .containsEntry("code", "NOT_FOUND")
+                .containsEntry("message", "Assistente de suporte desabilitado.");
     }
 }
