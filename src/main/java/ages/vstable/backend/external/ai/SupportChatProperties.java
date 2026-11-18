@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "ai.support")
 public class SupportChatProperties {
 
+    private boolean enabled = true;
     private String provider = "gemini";
     private String apiKey = "";
     private String geminiModel = "gemini-flash-lite-latest";

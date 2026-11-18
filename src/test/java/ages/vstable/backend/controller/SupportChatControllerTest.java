@@ -11,11 +11,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -147,6 +149,28 @@ class SupportChatControllerTest {
                 .andExpect(status().isLocked())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"))
                 .andExpect(jsonPath("$.message").value("Limite de mensagens atingido."));
+    }
+
+    @Test
+    @DisplayName("When support chat is disabled, returns 404 Not Found")
+    void chat_whenDisabled_returns404() throws Exception {
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email("u@v.com").build();
+        Authentication authentication = new UsernamePasswordAuthenticationToken(user, null, List.of());
+
+        when(supportChatService.chat(any(), any()))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Assistente de suporte desabilitado."));
+
+        mockMvc.perform(post("/v1/support/chat")
+                        .principal(authentication)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "message": "Olá"
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Assistente de suporte desabilitado."));
     }
 
     @Test
