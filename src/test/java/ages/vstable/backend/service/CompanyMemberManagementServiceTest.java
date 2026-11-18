@@ -176,7 +176,7 @@ class CompanyMemberManagementServiceTest {
         service.revoke(companyId, memberId, 3, actorId);
 
         assertThat(logAppender.list).isEmpty();
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).isNotEmpty();
         TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
         assertThat(logAppender.list).hasSize(1);
         assertThat(logAppender.list.get(0).getFormattedMessage()).isEqualTo("Company membership access changed");

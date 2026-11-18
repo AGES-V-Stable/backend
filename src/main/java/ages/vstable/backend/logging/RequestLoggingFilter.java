@@ -38,6 +38,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         long startedAt = System.nanoTime();
         boolean escaped = false;
         try {
+            MDC.remove("actorId");
             MDC.put("requestId", requestId);
             response.setHeader(HEADER, requestId);
             chain.doFilter(request, response);
@@ -62,6 +63,11 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                             .addKeyValue("status", status).addKeyValue("outcome", status >= 400 ? "failure" : "success")
                             .addKeyValue("durationMs", OperationalLog.elapsedMillis(startedAt))
                             .log("HTTP request completed");
+                    // Probes (canary, Lambda Web Adapter) bateriam a cada poucos segundos e distorceriam latência e volume.
+                    if (!request.getRequestURI().startsWith(request.getContextPath() + "/actuator/health")) {
+                        OperationalLog.httpRequest(route == null ? "UNMATCHED" : route.toString(),
+                                status / 100 + "xx", OperationalLog.elapsedMillis(startedAt));
+                    }
                 }
             } finally {
                 LogContext.restore(previous);

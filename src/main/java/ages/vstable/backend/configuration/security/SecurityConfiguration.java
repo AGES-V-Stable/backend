@@ -60,7 +60,7 @@ public class SecurityConfiguration {
 
     @Bean
     public SecurityFilterChain filterChain(
-            HttpSecurity http
+            HttpSecurity http, BrowserEventBoundaryFilter browserEventBoundaryFilter
     ) throws Exception {
         // Enable CORS (using the corsConfigurationSource bean below) and disable CSRF
         http
@@ -85,6 +85,8 @@ public class SecurityConfiguration {
                         // Webhook BlindPay autenticado pela assinatura Svix.
                         .requestMatchers(HttpMethod.POST, "/v1/webhooks/blindpay").permitAll()
                         .requestMatchers(HttpMethod.GET, SWAGGER_PERMIT_LIST).permitAll()
+                        // Health checks (Lambda Web Adapter, canary): sem detalhes; demais endpoints do Actuator não são expostos.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -93,6 +95,7 @@ public class SecurityConfiguration {
                 .addFilterBefore(invitationRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 // Add JWT token filter
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(browserEventBoundaryFilter, org.springframework.security.web.access.intercept.AuthorizationFilter.class)
                 .authenticationProvider(authenticationProvider)
 
                 // Same JSON error shape ({message, code}) as GlobalExceptionHandler
@@ -112,6 +115,13 @@ public class SecurityConfiguration {
     @Bean
     public FilterRegistrationBean<JwtTokenFilter> jwtTokenFilterRegistration(JwtTokenFilter filter) {
         FilterRegistrationBean<JwtTokenFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<BrowserEventBoundaryFilter> browserEventBoundaryRegistration(BrowserEventBoundaryFilter filter) {
+        FilterRegistrationBean<BrowserEventBoundaryFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

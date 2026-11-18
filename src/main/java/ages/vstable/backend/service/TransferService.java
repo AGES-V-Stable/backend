@@ -144,10 +144,10 @@ public class TransferService {
         AveniaTransferResult result = aveniaTransferService.createTransfer(quoteRequest, ticketRequest);
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
-        persistTransaction(beneficiary, request, result, status, currentUserId);
+        ImportTransactionEntity transaction = persistTransaction(beneficiary, request, result, status, currentUserId);
 
         CreateTransferResponse response = new CreateTransferResponse(status);
-        OperationalLog.milestone("transfer.creation.completed", "success");
+        OperationalLog.milestone("transfer.creation.completed", "success", "transfer", transaction.getId());
         return response;
     }
 
@@ -177,6 +177,7 @@ public class TransferService {
         TransactionStatus status = mapAveniaTicketStatus(result.ticket().status());
 
         ImportTransactionEntity transaction = persistTransaction(beneficiary, request, result, status, currentUserId);
+        OperationalLog.milestone("transfer.creation.completed", "success", "transfer", transaction.getId());
         return new ExecutedTransfer(transaction.getId(), status, result.ticket().id());
     }
 
