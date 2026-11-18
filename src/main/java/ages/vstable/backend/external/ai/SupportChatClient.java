@@ -238,21 +238,21 @@ public class SupportChatClient implements SupportChatGateway {
 
         if (containsAny(normalized, "avenia", "blindpay", "provedor", "provedores", "orquestrador", "parceiro")) {
             return """
-                    A V-Stable opera com uma arquitetura **multi-provedor de liquidez institucional** combinando **Avenia** e **BlindPay**:
+                    A V-Stable opera com uma estrutura **multi-provedor de liquidez institucional** utilizando provedores parceiros regulados de liquidez e pagamento:
 
-                    1. **Avenia (On-ramp e Liquidação Cripto):**
+                    1. **Entrada em BRL e Liquidação Cripto:**
                        - Entrada de recursos via **PIX em BRL** no Brasil;
                        - Emissão e trânsito em stablecoins: **USDC, USDT, BRLA e EURC**;
-                       - Suporte a transferências on-chain diretas para **Wallet Cripto** em múltiplas blockchains (*Polygon, Celo, Ethereum, Gnosis, Moonbeam, Tron e Base*) e liquidação bancária via SWIFT.
-                    2. **BlindPay (Off-ramp Bancário em Moeda Local):**
-                       - Liquidação em moeda fiduciária direto na conta bancária do beneficiário em parceiros de primeira linha (JPMorgan, Citi, Bitso):
+                       - Suporte a transferências diretas para **Wallet Cripto** em múltiplas blockchains (*Polygon, Celo, Ethereum, Gnosis, Moonbeam, Tron e Base*) e liquidação bancária via SWIFT.
+                    2. **Liquidação Bancária Local em Moeda Fiduciária:**
+                       - Liquidação em moeda fiduciária direto na conta bancária do beneficiário por meio de provedores parceiros regulados:
                        - **EUA (USD):** Trilhos ACH, Wire e RTP (tempo real);
                        - **Europa (EUR):** Trilho SEPA e SEPA Instant;
                        - **Reino Unido (GBP):** Trilho Faster Payments;
                        - **América Latina:** México (**SPEI / MXN**) e Argentina (**CVU/CBU/ALIAS / ARS**);
                        - **Global:** SWIFT para mais de 16 moedas globais.
-                    3. **Orquestrador de Melhores Cotações (`QuoteOrchestratorService`):**
-                       - Ao solicitar uma cotação, a plataforma consulta ambos os provedores em paralelo e entrega automaticamente a **Melhor Cotação (Best Execution)** com menores taxas e spread.
+                    3. **Busca automática pela Melhor Cotação:**
+                       - Ao solicitar uma cotação, a plataforma consulta os provedores em tempo real e entrega automaticamente a **Melhor Cotação** disponível com menores taxas e spread.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -265,7 +265,7 @@ public class SupportChatClient implements SupportChatGateway {
                        - **Estados Unidos (USD):** Trilhos `ACH` (1-2 dias úteis), `Wire` (mesmo dia) e `RTP` (em minutos);
                        - **Zona do Euro (EUR):** Trilho `SEPA` e `SEPA Instant` para todos os países da União Europeia;
                        - **Reino Unido (GBP):** Trilho `Faster Payments`.
-                    2. **América Latina (via BlindPay / Bitso):**
+                    2. **América Latina (Trilhos Locais):**
                        - **México (MXN):** Liquidação instantânea via trilho `SPEI` utilizando a chave CLABE do fornecedor;
                        - **Argentina (ARS):** Transferências locais para contas bancárias argentinas com `CVU`, `CBU` ou `ALIAS`;
                        - **Brasil (BRL):** Depósitos e retiradas via `PIX`.
@@ -282,8 +282,8 @@ public class SupportChatClient implements SupportChatGateway {
                     As transações bancárias diretas em **COP (Peso Colombiano)** estão indisponíveis no momento por regras de corredor de liquidação e compliance da V-Stable:
 
                     1. **Por que o trilho bancário local em COP está indisponível?**
-                       - O conector de liquidação local `ACH COP` (via Bitso/BlindPay) está em fase final de homologação técnica e regulatória.
-                       - O trilho SWIFT padrão da V-Stable (`BeneficiaryValidator`) atende a lista oficial de 16 moedas globais (onde o COP não faz parte da grade direta).
+                       - O recebimento bancário local em pesos colombianos ainda está em fase final de liberação técnica e regulatória.
+                       - O trilho SWIFT padrão da V-Stable atende a lista oficial de 16 moedas globais (onde o COP não faz parte da grade direta).
                     2. **Como enviar dinheiro para um fornecedor ou parceiro na Colômbia hoje:**
                        - **Opção 1 (Wallet Cripto - Recomendada):** Cadastre o beneficiário em **Beneficiários > Cadastrar beneficiário** com o método **Wallet Cripto** em redes como **Polygon, Celo, Ethereum, Gnosis, Moonbeam ou Tron** para liquidar em **USDC** ou **USDT** sem barreiras bancárias locais.
                        - **Opção 2 (Conta Internacional em USD/EUR):** Se o fornecedor colombiano possuir conta internacional capaz de receber em **USD** (ACH/Wire/SWIFT) ou **EUR** (SEPA/SWIFT), cadastre-o informando a moeda `USD` ou `EUR`.
@@ -300,7 +300,7 @@ public class SupportChatClient implements SupportChatGateway {
                        - **USDT** (Tether USD);
                        - **BRLA** (Real brasileiro tokenizado);
                        - **EURC** (Euro digital).
-                    2. **Redes Blockchain Homologadas:**
+                    2. **Redes Blockchain Suportadas:**
                        - **Polygon (PoS):** Baixíssimo custo de gás e liquidação em segundos (ideal para transferências comerciais frequentes);
                        - **Celo:** Foco em pagamentos ágeis para dispositivos móveis e taxas mínimas;
                        - **Base (Layer 2 Coinbase):** Alta performance e segurança ancorada na Ethereum;
@@ -318,7 +318,7 @@ public class SupportChatClient implements SupportChatGateway {
                     1. **Onde ativar ou reconfigurar:** Acesse **Configurações > Segurança da Conta** no menu lateral.
                     2. **Troca de celular / Reconfigurar 2FA:** Para gerar um novo QR Code quando o 2FA já está ativo, o sistema exige que você informe o **código atual de 6 dígitos** (revogando imediatamente o segredo anterior por segurança).
                     3. **Dica ao reescanear o QR Code:** Remova o card antigo da V-Stable no seu app autenticador (Google ou Microsoft Authenticator) antes de ler o novo QR Code para não misturar o código antigo com o novo.
-                    4. **Uso único (anti-replay):** Cada código TOTP de 6 dígitos é de **uso único** e não pode ser reutilizado na mesma janela de **90 segundos** (controle atômico entre instâncias).
+                    4. **Uso único:** Cada código de 6 dígitos do autenticador é de **uso único** dentro da sua janela de validade e não pode ser reutilizado.
                     5. **Limite de tentativas:** Após **5 tentativas incorretas**, a verificação é bloqueada temporariamente por **15 minutos** contra ataques de força bruta.
 
                     %s""".formatted(userContextSummary).trim();
@@ -328,8 +328,8 @@ public class SupportChatClient implements SupportChatGateway {
             return """
                     A **Verificação de identidade (KYC)** acompanha o cadastro do representante:
 
-                    1. **Etapas do Onboarding e ToS:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Aceite dos **Termos de Serviço (`ToS`) da BlindPay** ➔ Envio do Documento de Identidade (até **3 MB por arquivo**) e Prova de Vida (*Liveness*).
-                    2. **Liberação e Reabertura do KYC:** O cadastro é aprovado conforme o resultado do KYC individual (`KYC` Standard BR / *Liveness*). Caso precise corrigir dados ou reenviar arquivos, é possível **reiniciar/refazer o processo de verificação** quando necessário. Transferências continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
+                    1. **Etapas do Cadastro e Verificação:** Cadastro da Empresa (CNPJ) ➔ Representante Legal ➔ Ativação do 2FA ➔ Aceite dos **termos do provedor de pagamento** e Termos de Uso ➔ Envio do Documento de Identidade (até **3 MB por arquivo**) e Prova de Vida (*Liveness*).
+                    2. **Liberação e Reabertura do KYC:** O cadastro é aprovado conforme o resultado da verificação individual de identidade. Caso precise corrigir dados ou reenviar arquivos, é possível **reiniciar/refazer o processo de verificação** quando necessário. Transferências continuam sujeitas às permissões, ao 2FA e às condições do provedor de pagamento.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -338,10 +338,10 @@ public class SupportChatClient implements SupportChatGateway {
             return """
                     Sobre **Cotações, Taxas e Transferências** na V-Stable:
 
-                    1. **Saldo empresarial em BRL:** As transferências utilizam o saldo empresarial em BRL para liquidação; em ambiente de sandbox/homologação, há suporte a crédito simulado protegido por `Idempotency-Key` com emissão de recibo.
-                    2. **Cotação em tempo real:** Ao iniciar uma transferência em **Transferências**, a V-Stable consulta automaticamente os provedores de liquidez (**Avenia** e **BlindPay**) e trava a cotação por alguns minutos.
+                    1. **Saldo empresarial em BRL:** As transferências utilizam o saldo empresarial em BRL para liquidação; quando habilitado em ambiente de testes/simulação, é possível adicionar saldo simulado com emissão de recibo.
+                    2. **Cotação em tempo real:** Ao iniciar uma transferência em **Transferências**, a V-Stable consulta automaticamente provedores parceiros regulados de liquidez e pagamento e trava a cotação por alguns minutos.
                     3. **Transparência de custos:** O painel lateral exibe a taxa de câmbio efetiva, taxas de rede/provedor e o valor líquido exato que chegará ao beneficiário.
-                    4. **Confirmação, Comprovante em PDF e Conciliação:** Na etapa final (**Autenticação**), informe o código TOTP de 6 dígitos antes da execução da ordem. Após a conclusão, é possível fazer o **download do comprovante em PDF**, e a **conciliação automática em segundo plano** acompanha tickets Avenia pendentes e retoma execuções BlindPay paradas com idempotência.
+                    4. **Confirmação, Comprovante em PDF e Acompanhamento:** Na etapa final (**Autenticação**), informe o código de 6 dígitos do seu autenticador antes de concluir a operação. Após finalizada, é possível fazer o **download do comprovante em PDF**, com **acompanhamento e atualização automática do status das transferências**.
 
                     %s""".formatted(userContextSummary).trim();
         }
@@ -358,27 +358,27 @@ public class SupportChatClient implements SupportChatGateway {
                     %s""".formatted(userContextSummary).trim();
         }
 
-        if (containsAny(normalized, "membro", "membros", "convite", "convites", "papel", "papeis", "permissao", "permissoes", "owner", "operator", "viewer", "revogar")) {
+        if (containsAny(normalized, "membro", "membros", "convite", "convites", "papel", "papeis", "permissao", "permissoes", "owner", "operator", "viewer", "revogar", "representante", "visualizar", "operar", "perfil", "perfis")) {
             return """
-                    Sobre **Gestão de Membros, Papéis e Convites** na V-Stable:
+                    Sobre **Gestão de Membros, Perfis e Convites** na V-Stable:
 
-                    1. **Papéis de acesso da empresa:**
-                       - **OWNER:** Gestão completa de membros, convites, alteração de papéis, revogação de acesso e operações financeiras.
-                       - **OPERATOR:** Operação de transferências, cotações e gestão de beneficiários.
-                       - **VIEWER:** Acesso somente para visualização e leitura.
-                    2. **Convites e Termos vigentes:** O envio de convites ocorre por **link criptografado** e o aceite exige concordância com os **Termos de Uso e Política de Privacidade vigentes (`TERMS_VERSION`)**.
-                    3. **Alteração e Revogação:** O `OWNER` pode alterar o papel do membro ou realizar a **revogação imediata do vínculo** de acesso à empresa.
+                    1. **Perfis de acesso na empresa:**
+                       - **Representante:** Gestão completa da conta da empresa, envio de convites para membros, alteração de permissões, revogação de acesso e operações financeiras.
+                       - **Membro com permissão para operar:** Pode realizar cotações, transferências e gerenciar beneficiários.
+                       - **Membro com acesso apenas de visualização:** Pode consultar e acompanhar informações, sem permissão para operar.
+                    2. **Convites e Termos vigentes:** O envio de convites ocorre por **link seguro** e o aceite exige concordância com os **Termos de Uso e Política de Privacidade vigentes**.
+                    3. **Alteração e Revogação:** O **Representante** pode alterar as permissões de um membro ou realizar a **revogação imediata de acesso** à empresa.
 
                     %s""".formatted(userContextSummary).trim();
         }
 
-        if (containsAny(normalized, "dashboard", "economia", "comprovante", "pdf", "conciliacao", "extrato")) {
+        if (containsAny(normalized, "dashboard", "economia", "comprovante", "pdf", "conciliacao", "extrato", "acompanhamento")) {
             return """
                     Sobre **Dashboard, Economia Estimada e Comprovante em PDF** na V-Stable:
 
-                    1. **Câmbio de referência:** O dashboard exibe cotações de referência `BRL -> USDC` e `BRL -> USDT` (rota PIX -> Polygon, `basePrice` sem tarifas, com cache de **2h** de TTL) e filtros de histórico e status.
+                    1. **Câmbio de referência:** O dashboard exibe cotações de referência `BRL -> USDC` e `BRL -> USDT` (rota PIX -> Polygon, sem tarifas embutidas), com atualização periódica e filtros de histórico e status.
                     2. **Economia estimada:** A plataforma calcula a economia estimada das operações frente ao **spread bancário de referência de 4%%**.
-                    3. **Comprovante em PDF e Conciliação:** Transferências concluídas permitem baixar o **comprovante em PDF**, enquanto a **conciliação automática** em segundo plano consulta tickets Avenia pendentes e retoma execuções BlindPay paradas com idempotência.
+                    3. **Comprovante em PDF e Acompanhamento:** Transferências concluídas permitem baixar o **comprovante em PDF**, além de contarem com **acompanhamento e atualização automática do status das transferências**.
 
                     %s""".formatted(userContextSummary).trim();
         }

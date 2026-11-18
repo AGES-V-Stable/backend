@@ -101,10 +101,19 @@ class SupportChatServiceTest {
                 .contains("COP (Peso Colombiano)")
                 .contains("Wallet Cripto")
                 .contains("V-Stable Tech")
-                .contains("Papel = OWNER | 2FA = Ativo")
+                .contains("Perfil = Representante | 2FA = Ativo")
+                .doesNotContain("OWNER")
+                .doesNotContain("Papel =")
                 .doesNotContain("Compliance KYB");
         assertThat(response.getProvider()).isEqualTo("vstable-assistant");
-        assertThat(response.getSuggestedQuestions()).isNotEmpty();
+        assertThat(response.getSuggestedQuestions())
+                .isNotEmpty()
+                .allSatisfy(question -> assertThat(question)
+                        .doesNotContainIgnoringCase("avenia")
+                        .doesNotContainIgnoringCase("blindpay")
+                        .doesNotContainIgnoringCase("owner")
+                        .doesNotContainIgnoringCase("operator")
+                        .doesNotContainIgnoringCase("viewer"));
     }
 
     @Test
@@ -191,10 +200,13 @@ class SupportChatServiceTest {
         SupportChatResponseDTO response = supportChatService.chat(auth, request);
 
         assertThat(response.getReply())
-                .contains("Avenia")
-                .contains("BlindPay")
+                .contains("multi-provedor de liquidez")
+                .contains("provedores parceiros regulados")
                 .contains("Status da sua sessão (Administrador):")
                 .contains("2FA = Ativo")
+                .doesNotContainIgnoringCase("avenia")
+                .doesNotContainIgnoringCase("blindpay")
+                .doesNotContain("QuoteOrchestratorService")
                 .doesNotContain("JBSWY3DPEHPK3PXP")
                 .doesNotContain("$2a$10$secretHashValue");
     }
@@ -306,7 +318,9 @@ class SupportChatServiceTest {
 
         assertThat(response.getReply())
                 .contains("Empresa Confidencial S.A.")
-                .contains("Papel = OPERATOR | 2FA = Pendente de ativação")
+                .contains("Perfil = Membro com permissão para operar | 2FA = Pendente de ativação")
+                .doesNotContain("OPERATOR")
+                .doesNotContain("Papel =")
                 .doesNotContain("Compliance KYB")
                 .doesNotContain("AML =")
                 .doesNotContain("12345678000199")
@@ -315,19 +329,20 @@ class SupportChatServiceTest {
     }
 
     @Test
-    @DisplayName("Local assistant answers new platform topics: members, dashboard/PDF, ToS/KYC restart, and 2FA anti-replay")
+    @DisplayName("Local assistant answers new platform topics using abstract user-friendly language without technical terms")
     void chat_localAssistant_answersNewPlatformTopics() {
         Authentication auth = new UsernamePasswordAuthenticationToken("service-user", null, List.of());
 
         SupportChatResponseDTO membersReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
-                .message("Quais são os papéis de membros OWNER, OPERATOR, VIEWER e como funcionam convites?")
+                .message("Quais são os perfis de representante e membros que podem operar ou visualizar e como funcionam convites?")
                 .build());
         assertThat(membersReply.getProvider()).isEqualTo("vstable-assistant");
         assertThat(membersReply.getReply())
-                .contains("OWNER")
-                .contains("OPERATOR")
-                .contains("VIEWER")
-                .contains("TERMS_VERSION");
+                .contains("Representante")
+                .contains("Membro com permissão para operar")
+                .contains("Membro com acesso apenas de visualização")
+                .contains("Termos de Uso e Política de Privacidade vigentes");
+        assertNoForbiddenTechnicalTerms(membersReply.getReply());
 
         SupportChatResponseDTO dashboardReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
                 .message("Como funciona o dashboard, economia estimada e comprovante em PDF?")
@@ -337,16 +352,18 @@ class SupportChatServiceTest {
                 .contains("BRL -> USDC")
                 .contains("4%")
                 .contains("comprovante em PDF")
-                .contains("conciliação automática");
+                .contains("acompanhamento e atualização automática do status");
+        assertNoForbiddenTechnicalTerms(dashboardReply.getReply());
 
         SupportChatResponseDTO kycReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
-                .message("Como aceitar os Termos de Serviço e reiniciar meu KYC com documentos?")
+                .message("Como aceitar os termos e reiniciar meu KYC com documentos?")
                 .build());
         assertThat(kycReply.getProvider()).isEqualTo("vstable-assistant");
         assertThat(kycReply.getReply())
-                .contains("ToS")
+                .contains("termos do provedor de pagamento")
                 .contains("3 MB")
                 .contains("reiniciar/refazer");
+        assertNoForbiddenTechnicalTerms(kycReply.getReply());
 
         SupportChatResponseDTO totpReply = supportChatService.chat(auth, SupportChatRequestDTO.builder()
                 .message("O código 2FA TOTP pode ser reutilizado?")
@@ -354,7 +371,8 @@ class SupportChatServiceTest {
         assertThat(totpReply.getProvider()).isEqualTo("vstable-assistant");
         assertThat(totpReply.getReply())
                 .contains("uso único")
-                .contains("90 segundos");
+                .contains("janela de validade");
+        assertNoForbiddenTechnicalTerms(totpReply.getReply());
     }
 
     @Test
@@ -446,7 +464,8 @@ class SupportChatServiceTest {
             // Assert
             assertThat(input.userContextSummary())
                     .contains("Empresa Ativa Ltda")
-                    .contains("Papel = OPERATOR | 2FA = Ativo")
+                    .contains("Perfil = Membro com permissão para operar | 2FA = Ativo")
+                    .doesNotContain("OPERATOR")
                     .doesNotContain("KYB")
                     .doesNotContain("AML")
                     .doesNotContain(UNLINKED);
@@ -455,8 +474,8 @@ class SupportChatServiceTest {
         }
 
         @Test
-        @DisplayName("Active membership with OWNER/OPERATOR role never leaks CNPJ, e-mail, hashes, TOTP secret, balance, or UUIDs")
-        void activeMembership_withSensitiveFields_includesRoleWithoutLeakingPiiOrSecrets() {
+        @DisplayName("Active membership maps OWNER, OPERATOR, VIEWER and null role to abstract profiles without leaking PII or technical terms")
+        void activeMembership_withSensitiveFields_includesAbstractRoleWithoutLeakingPiiOrTechnicalTerms() {
             UUID companyId = UUID.randomUUID();
             UUID userId = UUID.randomUUID();
             UserEntity user = UserEntity.builder()
@@ -484,7 +503,7 @@ class SupportChatServiceTest {
             ProviderInput input = chatAndCapture(user);
 
             assertThat(input.userContextSummary())
-                    .isEqualTo("**Status atual da sua conta (Empresa Segura):** Papel = OWNER | 2FA = Ativo.")
+                    .isEqualTo("**Status atual da sua conta (Empresa Segura):** Perfil = Representante | 2FA = Ativo.")
                     .doesNotContain("Ana Carolina Silva")
                     .doesNotContain("ana.silva@empresa.com.br")
                     .doesNotContain("98765432000188")
@@ -494,31 +513,68 @@ class SupportChatServiceTest {
                     .doesNotContain("SUPERSECRETTOTP32KEY")
                     .doesNotContain(userId.toString())
                     .doesNotContain(companyId.toString())
-                    .doesNotContain(membershipId.toString())
-                    .doesNotContain("Compliance KYB")
-                    .doesNotContain("AML =");
+                    .doesNotContain(membershipId.toString());
+            assertNoForbiddenTechnicalTerms(input.userContextSummary());
 
             assertThat(input.systemPrompt())
-                    .contains("Papel = OWNER | 2FA = Ativo")
-                    .contains("GESTÃO DE MEMBROS, PAPÉIS E CONVITES DA EMPRESA:")
-                    .contains("TERMS_VERSION")
+                    .contains("Perfil = Representante | 2FA = Ativo")
+                    .contains("GESTÃO DE MEMBROS, PERFIS E CONVITES DA EMPRESA:")
+                    .contains("Membro com permissão para operar")
+                    .contains("Membro com acesso apenas de visualização")
+                    .contains("Termos de Uso e Política de Privacidade vigentes")
                     .contains("CONTA FINANCEIRA EMPRESARIAL E SALDO EM BRL:")
-                    .contains("Idempotency-Key")
+                    .contains("ambiente de testes/simulação")
                     .contains("DASHBOARD, CÂMBIO DE REFERÊNCIA E ECONOMIA ESTIMADA:")
-                    .contains("TTL de 2h")
+                    .contains("atualizada periodicamente no dashboard")
                     .contains("4%")
-                    .contains("TERMOS DE SERVIÇO (ToS) BLINDPAY, KYC INDIVIDUAL E REABERTURA:")
+                    .contains("TERMOS DO PROVEDOR DE PAGAMENTO, KYC INDIVIDUAL E REABERTURA:")
                     .contains("3 MB")
-                    .contains("COMPROVANTE EM PDF, STATUS E CONCILIAÇÃO AUTOMÁTICA:")
-                    .contains("uso único (anti-replay)")
-                    .contains("90 segundos")
-                    .doesNotContain("Compliance KYB")
-                    .doesNotContain("AML =")
+                    .contains("COMPROVANTE EM PDF E ACOMPANHAMENTO DE STATUS:")
+                    .contains("uso único dentro da sua janela de validade")
                     .doesNotContain("98765432000188")
                     .doesNotContain("154320.99")
                     .doesNotContain("SUPERSECRETTOTP32KEY")
                     .doesNotContain(userId.toString())
                     .doesNotContain(companyId.toString());
+            assertNoForbiddenTechnicalTerms(input.systemPrompt());
+        }
+
+        @Test
+        @DisplayName("Active membership maps VIEWER role to abstract read-only business label")
+        void activeMembership_viewerRole_mapsToAbstractProfileLabel() {
+            UUID companyId = UUID.randomUUID();
+            CompanyEntity company = CompanyEntity.builder()
+                    .id(companyId)
+                    .legalName("Empresa Visualização Ltda")
+                    .tradeName("Empresa Visualização")
+                    .build();
+            when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+
+            UserEntity viewer = user(companyId);
+            TestCompanyUsers.withMembership(viewer, companyId, CompanyRole.VIEWER, MembershipStatus.ACTIVE);
+            ProviderInput viewerInput = chatAndCapture(viewer);
+            assertThat(viewerInput.userContextSummary())
+                    .isEqualTo("**Status atual da sua conta (Empresa Visualização):** Perfil = Membro com acesso apenas de visualização | 2FA = Ativo.");
+            assertNoForbiddenTechnicalTerms(viewerInput.userContextSummary());
+        }
+
+        @Test
+        @DisplayName("Active membership maps null role to abstract default Membro label")
+        void activeMembership_nullRole_mapsToDefaultMemberLabel() {
+            UUID companyId = UUID.randomUUID();
+            CompanyEntity company = CompanyEntity.builder()
+                    .id(companyId)
+                    .legalName("Empresa Visualização Ltda")
+                    .tradeName("Empresa Visualização")
+                    .build();
+            when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+
+            UserEntity nullRoleMember = user(companyId);
+            TestCompanyUsers.withMembership(nullRoleMember, companyId, null, MembershipStatus.ACTIVE);
+            ProviderInput nullRoleInput = chatAndCapture(nullRoleMember);
+            assertThat(nullRoleInput.userContextSummary())
+                    .isEqualTo("**Status atual da sua conta (Empresa Visualização):** Perfil = Membro | 2FA = Ativo.");
+            assertNoForbiddenTechnicalTerms(nullRoleInput.userContextSummary());
         }
 
         @Test
@@ -601,6 +657,31 @@ class SupportChatServiceTest {
 
                     .build();
         }
+    }
+
+    private static void assertNoForbiddenTechnicalTerms(String text) {
+        assertThat(text)
+                .doesNotContainIgnoringCase("OWNER")
+                .doesNotContainIgnoringCase("OPERATOR")
+                .doesNotContainIgnoringCase("VIEWER")
+                .doesNotContainIgnoringCase("QuoteOrchestratorService")
+                .doesNotContainIgnoringCase("BeneficiaryValidator")
+                .doesNotContainIgnoringCase("TERMS_VERSION")
+                .doesNotContainIgnoringCase("Idempotency-Key")
+                .doesNotContainIgnoringCase("basePrice")
+                .doesNotContainIgnoringCase("TTL")
+                .doesNotContainIgnoringCase("sandbox")
+                .doesNotContainIgnoringCase("homologação")
+                .doesNotContainIgnoringCase("tickets Avenia")
+                .doesNotContainIgnoringCase("controle atômico")
+                .doesNotContainIgnoringCase("CRYPTO_WALLET")
+                .doesNotContainIgnoringCase("Avenia")
+                .doesNotContainIgnoringCase("BlindPay")
+                .doesNotContainIgnoringCase("Bitso")
+                .doesNotContainIgnoringCase("webhook")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =")
+                .doesNotMatch("(?s).*\\bToS\\b.*");
     }
 
     private record ProviderInput(String systemPrompt, String userContextSummary) {
