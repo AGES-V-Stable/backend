@@ -12,6 +12,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.Map;
 import java.util.UUID;
@@ -24,6 +26,24 @@ import static org.mockito.Mockito.when;
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    @ParameterizedTest
+    @EnumSource(value = HttpStatus.class, names = {"SERVICE_UNAVAILABLE", "CONFLICT", "UNAUTHORIZED",
+            "BAD_REQUEST", "UNPROCESSABLE_CONTENT", "CONTENT_TOO_LARGE"})
+    void responseStatus_preservesExpectedHttpStatusAndReason(HttpStatus status) {
+        var response = handler.handleResponseStatus(new ResponseStatusException(status, "Request cannot proceed"));
+
+        assertThat(response.getStatusCode()).isEqualTo(status);
+        assertThat(response.getBody()).containsEntry("code", status.name())
+                .containsEntry("message", "Request cannot proceed");
+    }
+
+    @Test
+    void responseStatus_withoutReason_usesStatusPhrase() {
+        var response = handler.handleResponseStatus(new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+
+        assertThat(response.getBody()).containsEntry("message", "Unauthorized");
+    }
 
     @Test
     void handleIllegalArgument_returns400WithExceptionMessage() {

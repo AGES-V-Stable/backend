@@ -18,6 +18,9 @@ import ages.vstable.backend.external.blindpay.dto.BlindPayCustomerResponse;
 import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosRequest;
 import ages.vstable.backend.external.blindpay.dto.BlindPayInitiateTosResponse;
 import ages.vstable.backend.repository.BlindPayIndividualKycRepository;
+import ages.vstable.backend.repository.ProviderAccountRepository;
+import ages.vstable.backend.entity.enums.IntegrationProvider;
+import ages.vstable.backend.entity.enums.BlindPayOnboardingStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -25,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.net.URI;
@@ -46,6 +50,7 @@ public class BlindPayIndividualKycService {
     private static final String REJECTED = "rejected";
     private final BlindPayGateway gateway;
     private final BlindPayIndividualKycRepository repository;
+    private final ProviderAccountRepository providerAccountRepository;
 
     @Value("${blindpay.individual-kyc.enabled:false}")
     private boolean enabled;
@@ -76,13 +81,15 @@ public class BlindPayIndividualKycService {
         UUID sessionKey = UUID.randomUUID();
         entry.setTosSessionKey(sessionKey);
         entry.setUpdatedAt(now());
-        // Commit the webhook correlation BEFORE calling the provider. An immediate
-        // signed tos.accept webhook must never race an uncommitted DB transaction.
+        // Persist the session before exposing the hosted link so its redirect can be
+        // correlated with this user even when they accept immediately.
         repository.saveAndFlush(entry);
 
         BlindPayInitiateTosResponse response = gateway.initiateTermsOfService(
                 new BlindPayInitiateTosRequest(sessionKey, null,
-                        redirectUrl == null || redirectUrl.isBlank() ? null : redirectUrl));
+                        redirectUrl == null || redirectUrl.isBlank() ? null
+                                : UriComponentsBuilder.fromUriString(redirectUrl)
+                                    .replaceQueryParam("state", sessionKey).build().toUriString()));
         if (response == null || !trustedTermsUrl(response.url()))
             throw BlindPayIntegrationException.invalidResponse("Invalid BlindPay terms link");
         return response;
@@ -98,6 +105,28 @@ public class BlindPayIndividualKycService {
         }
     }
 
+    /** Consumes the hosted redirect for this user's latest terms session. Customer creation
+     * still sends tos_id to BlindPay, which validates that the acceptance is valid and unused. */
+    @Transactional
+    public BlindPayIndividualKycStatus confirmTerms(UserEntity user, UUID sessionKey, String tosId) {
+        verifyUser(user);
+        BlindPayIndividualKycEntity entry = repository.findForUpdate(user.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Start the terms session first"));
+        if (sessionKey == null || !sessionKey.equals(entry.getTosSessionKey()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Terms session does not match this user");
+        if (tosId == null || !tosId.matches("to_[A-Za-z0-9]{12}"))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid terms acceptance id");
+        if (entry.getCustomerId() != null || (entry.getTosId() != null && !tosId.equals(entry.getTosId())))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Terms already linked to a customer or acceptance");
+        if (entry.getTosAcceptedAt() == null) {
+            entry.setTosId(tosId);
+            entry.setTosAcceptedAt(now());
+            entry.setUpdatedAt(now());
+            repository.save(entry);
+        }
+        return new BlindPayIndividualKycStatus(true, false, entry.getKycStatus(), entry.getAmlStatus());
+    }
+
     @Transactional
     public BlindPayIndividualKycStatus status(UserEntity user) {
         verifyUser(user);
@@ -105,21 +134,33 @@ public class BlindPayIndividualKycService {
         if (found.isEmpty()) return new BlindPayIndividualKycStatus(false, false, null, null);
         BlindPayIndividualKycEntity entry = found.get();
         if (entry.getCustomerId() != null) {
-            try {
-                BlindPayCustomerResponse remote = gateway.getCustomer(entry.getCustomerId());
-                if (remote != null && entry.getCustomerId().equals(remote.id())
-                        && ("user:" + user.getId()).equals(remote.externalId())
-                        && (remote.updatedAt() == null || entry.getProviderUpdatedAt() == null
-                            || !remote.updatedAt().isBefore(entry.getProviderUpdatedAt()))) {
-                    entry.setKycStatus(remote.kycStatus());
-                    entry.setAmlStatus(remote.amlStatus());
-                    entry.setProviderUpdatedAt(remote.updatedAt());
-                    entry.setUpdatedAt(now());
-                    repository.save(entry);
-                }
-            } catch (BlindPayIntegrationException ignored) {
-                // Fall back to the last verified webhook status.
+            BlindPayCustomerResponse remote = gateway.getCustomer(entry.getCustomerId());
+            if (remote == null || !entry.getCustomerId().equals(remote.id())
+                    || !("user:" + user.getId()).equals(remote.externalId())) {
+                throw BlindPayIntegrationException.invalidResponse("BlindPay returned an unexpected customer");
             }
+            if (remote.updatedAt() != null && entry.getProviderUpdatedAt() != null
+                    && remote.updatedAt().isBefore(entry.getProviderUpdatedAt())) {
+                throw BlindPayIntegrationException.invalidResponse("BlindPay returned an outdated customer status");
+            }
+            entry.setKycStatus(remote.kycStatus());
+            entry.setAmlStatus(remote.amlStatus());
+            entry.setProviderUpdatedAt(remote.updatedAt());
+            entry.setUpdatedAt(now());
+            repository.save(entry);
+            providerAccountRepository.findByProviderAndExternalCustomerId(
+                    IntegrationProvider.BLINDPAY, entry.getCustomerId()).ifPresent(account -> {
+                if (account.getProviderUpdatedAt() != null && remote.updatedAt() != null
+                        && remote.updatedAt().isBefore(account.getProviderUpdatedAt())) return;
+                account.setKycStatus(remote.kycStatus());
+                account.setAmlStatus(remote.amlStatus());
+                account.setStatus(BlindPayOnboardingStatus.fromProvider(remote.kycStatus(), remote.amlStatus(),
+                        account.getTosAcceptedAt() != null).name());
+                account.setProviderUpdatedAt(remote.updatedAt());
+                account.setSynchronizedAt(now());
+                account.setUpdatedAt(now());
+                providerAccountRepository.save(account);
+            });
         }
         return new BlindPayIndividualKycStatus(entry.getTosAcceptedAt() != null,
                 entry.getCustomerId() != null, entry.getKycStatus(), entry.getAmlStatus());

@@ -27,6 +27,18 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        String code = status == null ? "HTTP_ERROR" : status.name();
+        String fallbackMessage = status == null ? "Request failed" : status.getReasonPhrase();
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .headers(ex.getHeaders())
+                .body(Map.of("code", code,
+                        "message", ex.getReason() == null ? fallbackMessage : ex.getReason()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity
@@ -224,15 +236,6 @@ public class GlobalExceptionHandler {
                 .body(Map.of("code", "ACCESS_DENIED", "message", "Access denied"));
     }
 
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
-        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
-        String code = status != null ? status.name() : "ERROR";
-        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
-        return ResponseEntity
-                .status(ex.getStatusCode())
-                .body(Map.of("code", code, "message", message != null ? message : ""));
-    }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {

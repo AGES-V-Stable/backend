@@ -31,7 +31,20 @@ public class BlindPayProvisioningService {
     private final BlindPayIndividualAccountService individualAccountService;
 
     public String ensureBankAccount(CompanyEntity company, BeneficiaryEntity beneficiary) {
-        ProviderAccountEntity providerAccount = approvedCustomer(company);
+        return requireApprovedBankAccount(provisionBankAccount(company, beneficiary));
+    }
+
+    /** Registration can finish while the destination bank account is still under review. */
+    public void registerBankAccount(CompanyEntity company, BeneficiaryEntity beneficiary) {
+        BlindPayBankAccountResponse response = provisionBankAccount(company, beneficiary);
+        String status = normalizedBankStatus(response.status());
+        if (!"APPROVED".equals(status) && !"VERIFYING".equals(status)) {
+            throw new BlindPayComplianceException("BlindPay beneficiary bank account was not accepted");
+        }
+    }
+
+    private BlindPayBankAccountResponse provisionBankAccount(CompanyEntity company, BeneficiaryEntity beneficiary) {
+        ProviderAccountEntity providerAccount = requireApprovedCustomer(company);
         BeneficiaryProviderAccountEntity existing = beneficiaryProviderAccountRepository
                 .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
                 .orElse(null);
@@ -45,7 +58,7 @@ public class BlindPayProvisioningService {
             existing.setSynchronizedAt(OffsetDateTime.now(ZoneOffset.UTC));
             existing.setUpdatedAt(existing.getSynchronizedAt());
             beneficiaryProviderAccountRepository.save(existing);
-            return requireApprovedBankAccount(current);
+            return current;
         }
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -73,7 +86,7 @@ public class BlindPayProvisioningService {
             link.setUpdatedAt(now);
             try {
                 beneficiaryProviderAccountRepository.save(link);
-                return requireApprovedBankAccount(response);
+                return response;
             } catch (DataIntegrityViolationException ex) {
                 return beneficiaryProviderAccountRepository
                         .findByBeneficiaryIdAndProvider(beneficiary.getId(), IntegrationProvider.BLINDPAY)
@@ -86,7 +99,7 @@ public class BlindPayProvisioningService {
                                 throw BlindPayIntegrationException.invalidResponse(
                                         "BlindPay returned an unexpected bank account");
                             }
-                            return requireApprovedBankAccount(current);
+                            return current;
                         })
                         .orElseThrow(() -> ex);
             }
@@ -120,7 +133,7 @@ public class BlindPayProvisioningService {
             throw new IllegalArgumentException("Unsupported BlindPay network: " + networkValue);
         }
 
-        ProviderAccountEntity providerAccount = approvedCustomer(company);
+        ProviderAccountEntity providerAccount = requireApprovedCustomer(company);
         ProviderWalletEntity existing = providerWalletRepository
                 .findByProviderAccountIdAndNetwork(providerAccount.getId(), network.name())
                 .orElse(null);
@@ -185,7 +198,7 @@ public class BlindPayProvisioningService {
      */
     public ManagedWallet ensureManagedWallet(CompanyEntity company, String network) {
         String walletId = ensureWallet(company, network);
-        ProviderAccountEntity providerAccount = approvedCustomer(company);
+        ProviderAccountEntity providerAccount = requireApprovedCustomer(company);
         ProviderWalletEntity wallet = providerWalletRepository
                 .findByProviderAccountIdAndNetwork(providerAccount.getId(), network.toLowerCase())
                 .filter(found -> walletId.equals(found.getExternalWalletId()))
@@ -212,7 +225,7 @@ public class BlindPayProvisioningService {
      * ({@code BlindPayComplianceService}), nunca durante uma cotação. Conta, wallet e
      * cotações só são pedidos para clientes com KYB aprovado, AML liberado e termos aceitos.
      */
-    private ProviderAccountEntity approvedCustomer(CompanyEntity company) {
+    public ProviderAccountEntity requireApprovedCustomer(CompanyEntity company) {
         return providerAccountRepository
                 .findByCompanyIdAndProvider(company.getId(), IntegrationProvider.BLINDPAY)
                 // Sem KYB: a empresa opera com o KYC individual aprovado do proprietário.
@@ -309,6 +322,13 @@ public class BlindPayProvisioningService {
         }
         if (normalized.equalsIgnoreCase("Brasil") || normalized.equalsIgnoreCase("Brazil")) {
             return "BR";
+        }
+        if (normalized.length() == 3) {
+            for (String alpha2 : java.util.Locale.getISOCountries()) {
+                if (java.util.Locale.of("", alpha2).getISO3Country().equalsIgnoreCase(normalized)) {
+                    return alpha2;
+                }
+            }
         }
         throw new IllegalArgumentException("Country must use ISO 3166-1 alpha-2: " + country);
     }
