@@ -119,7 +119,7 @@ public class SyntheticDataSeeder {
     private void seedAdministrator(OffsetDateTime now, String password) {
         administratorRepository.save(AdministratorEntity.builder()
                 .fullName("Development Administrator")
-                .email("dev.admin@example.test")
+                .email("dev.admin@example.test1")
                 .passwordHash(passwordEncoder.encode(password))
                 .passwordSalt(BCrypt.gensalt())
                 .createdAt(now)
