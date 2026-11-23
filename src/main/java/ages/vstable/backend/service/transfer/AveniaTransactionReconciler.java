@@ -70,6 +70,7 @@ public class AveniaTransactionReconciler {
                         .ifPresent(t -> t.setUpdatedAt(now())));
                 reconcile(id);
             } catch (RuntimeException ex) {
+                ages.vstable.backend.logging.OperationalLog.milestone("transfer.reconciliation.completed", "failure", "transfer", id);
                 // Não registrar respostas externas: podem conter dados financeiros ou pessoais.
                 log.warn("Could not reconcile Avenia transaction {} ({})", id, ex.getClass().getSimpleName());
             }
@@ -95,6 +96,10 @@ public class AveniaTransactionReconciler {
                 .filter(t -> snapshot.getAveniaTicketId().equals(t.getAveniaTicketId()))
                 .ifPresent(t -> {
                     OffsetDateTime observedAt = now();
+                    if (t.getStatus() != next) {
+                        ages.vstable.backend.logging.OperationalLog.milestone("transfer.status.changed",
+                                next.name().toLowerCase(java.util.Locale.ROOT), "transfer", t.getId());
+                    }
                     t.setStatus(next);
                     t.setUpdatedAt(observedAt);
                     // O DTO não fornece a data efetiva de liquidação; não inventar settledAt.

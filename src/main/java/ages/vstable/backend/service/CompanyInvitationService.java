@@ -170,6 +170,7 @@ public class CompanyInvitationService {
         invitation.setVersion(invitation.getVersion() + 1);
         invitation.setUpdatedAt(now);
         invitationRepository.saveAndFlush(invitation);
+        ages.vstable.backend.logging.OperationalLog.milestone("invitation.regenerated", "success", "invitation", invitation.getId());
         return new GeneratedInvitationResponse(toResponse(invitation), inviteUrl(token));
     }
 
@@ -197,6 +198,7 @@ public class CompanyInvitationService {
         invitation.setVersion(invitation.getVersion() + 1);
         invitation.setUpdatedAt(now);
         invitationRepository.saveAndFlush(invitation);
+        ages.vstable.backend.logging.OperationalLog.milestone("invitation.revoked", "success", "invitation", invitation.getId());
     }
 
     private GeneratedInvitationResponse createPending(UUID companyId, UserEntity owner,
@@ -237,6 +239,7 @@ public class CompanyInvitationService {
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
+        ages.vstable.backend.logging.OperationalLog.milestone("invitation.created", "success", "invitation", invitation.getId());
         return new GeneratedInvitationResponse(MembershipResponseMapper.invitation(invitation, owner), inviteUrl(token));
     }
 

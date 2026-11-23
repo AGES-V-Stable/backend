@@ -104,6 +104,8 @@ public class JwtTokenFilter extends OncePerRequestFilter {
                               HttpServletRequest httpServletRequest,
                               HttpServletResponse httpServletResponse) {
         httpServletRequest.setAttribute("user_id", email);
+        var actorId = ages.vstable.backend.service.observability.ObservabilityIdentity.id(principal);
+        if (actorId != null) org.slf4j.MDC.put("actorId", actorId.toString());
 
         // Authorities come from the stored account, not from the token claims, so a
         // revoked role takes effect without waiting for the token to expire.

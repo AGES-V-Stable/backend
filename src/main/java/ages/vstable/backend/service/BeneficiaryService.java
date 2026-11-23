@@ -69,7 +69,7 @@ public class BeneficiaryService {
         }
 
         BeneficiaryResponse response = toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
-        OperationalLog.milestone("beneficiary.creation.completed", "success");
+        OperationalLog.milestone("beneficiary.creation.completed", "success", "beneficiary", beneficiary.getId());
         return response;
     }
 

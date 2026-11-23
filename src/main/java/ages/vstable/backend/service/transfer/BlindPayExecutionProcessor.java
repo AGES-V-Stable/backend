@@ -513,6 +513,10 @@ public class BlindPayExecutionProcessor {
         }
         baseTransactionRepository.findById(execution.getTransactionId()).ifPresent(transaction -> {
             TransactionStatus status = transactionStatus(execution);
+            if (transaction.getStatus() != status) {
+                ages.vstable.backend.logging.OperationalLog.milestone("transfer.status.changed",
+                        status.name().toLowerCase(java.util.Locale.ROOT), "transfer", transaction.getId());
+            }
             transaction.setStatus(status);
             transaction.setForeignAmount(execution.getTargetAmount().setScale(2, RoundingMode.DOWN));
             transaction.setUpdatedAt(now);

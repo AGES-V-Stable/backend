@@ -174,6 +174,7 @@ public class CompanyMemberService {
 
     /** O evento inclui somente IDs tecnicos; nunca nome, email, JWT ou documentos. */
     private static void auditAfterCommit(String action, UUID actorId, UUID companyId, UUID memberId) {
+        ages.vstable.backend.logging.OperationalLog.milestone(action, "success", "membership", memberId);
         Runnable emit = () -> AUDIT.atInfo()
                 .addKeyValue("event", action)
                 .addKeyValue("actorUserId", actorId)

@@ -107,6 +107,7 @@ public class CompanyService {
                 .map(this::toResponse);
     }
 
+    @Transactional
     public CompanyResponse create(CompanyCreateRequest request) {
         CompanyNormalizedData data = companyDataValidator.normalize(
                 request.getLegalName(), request.getCnpj(), request.getCountry(), request.getZipCode(),
@@ -114,9 +115,12 @@ public class CompanyService {
 
         assertCnpjAvailable(data.cnpj());
 
-        return toResponse(saveNewCompany(data, request.getTradeName(), OffsetDateTime.now(ZoneOffset.UTC)));
+        var saved = saveNewCompany(data, request.getTradeName(), OffsetDateTime.now(ZoneOffset.UTC));
+        ages.vstable.backend.logging.OperationalLog.milestone("company.creation.completed", "success", "company", saved.getId());
+        return toResponse(saved);
     }
 
+    @Transactional
     public CompanyResponse update(
             UUID id,
             CompanyUpdateRequest request
@@ -139,15 +143,19 @@ public class CompanyService {
         company.setTradeName(normalizeOptional(request.getTradeName()));
         company.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
 
-        return toResponse(saveOrConflict(company));
+        var saved = saveOrConflict(company);
+        ages.vstable.backend.logging.OperationalLog.milestone("company.update.completed", "success", "company", saved.getId());
+        return toResponse(saved);
     }
 
+    @Transactional
     public void deleteById(UUID id) {
         if (!companyRepository.existsById(id)) {
             throw new NotFoundException("Company not found");
         }
 
         companyRepository.deleteById(id);
+        ages.vstable.backend.logging.OperationalLog.milestone("company.deletion.completed", "success", "company", id);
     }
 
     public boolean existsById(UUID id) {

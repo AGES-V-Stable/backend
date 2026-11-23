@@ -1,3 +1,12 @@
+observability:
+  enabled: ${OBSERVABILITY_ENABLED:true}
+  retention-days: ${OBSERVABILITY_RETENTION_DAYS:30}
+  # Métricas CloudWatch EMF (uma linha JSON no stdout). Desligado por padrão; o profile lambda liga.
+  # O namespace separa os ambientes quando compartilham a conta (ex.: VStable/staging, VStable/production).
+  emf:
+    enabled: ${EMF_METRICS_ENABLED:false}
+    namespace: ${EMF_METRICS_NAMESPACE:VStable}
+
 logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
@@ -19,6 +28,25 @@ logging:
 
 server:
   port: ${SPRING_SERVER_PORT:8080}
+
+# Observability: só /actuator/health é exposto (probes de liveness/readiness), sem detalhes,
+# porque o endpoint é público. Liveness não toca em dependências; readiness inclui o banco.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      show-components: never
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
 
 spring:
   application:
@@ -181,6 +209,11 @@ spring:
       maximum-pool-size: 2
   flyway:
     enabled: false
+
+# Na Lambda o stdout vai para o CloudWatch Logs, que extrai as métricas EMF.
+observability:
+  emf:
+    enabled: ${EMF_METRICS_ENABLED:true}
 
 # Sem padrão na Lambda: a aplicação não sobe sem a versão publicada dos termos e sem a topologia de proxies
 # definida para o ambiente, para que valores provisórios nunca sejam usados em staging ou produção.
