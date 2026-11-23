@@ -10,6 +10,7 @@ import java.util.List;
 
 import static ages.vstable.backend.logging.EmfMetrics.Metric;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EmfMetricsTest {
@@ -101,7 +102,8 @@ class EmfMetricsTest {
         });
 
         // Act / Assert
-        EmfMetrics.emit(EmfMetrics.dimensions(), Metric.count("UnexpectedError", 1));
+        assertThatCode(() -> EmfMetrics.emit(EmfMetrics.dimensions(), Metric.count("UnexpectedError", 1)))
+                .doesNotThrowAnyException();
     }
 
     @Test
