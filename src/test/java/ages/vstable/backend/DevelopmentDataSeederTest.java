@@ -115,7 +115,7 @@ class DevelopmentDataSeederTest {
         ArgumentCaptor<AdministratorEntity> adminCaptor = ArgumentCaptor.forClass(AdministratorEntity.class);
         verify(administratorRepository).save(adminCaptor.capture());
         AdministratorEntity admin = adminCaptor.getValue();
-        assertThat(admin.getEmail()).isEqualTo("dev.admin@example.test");
+        assertThat(admin.getEmail()).isEqualTo("dev.admin@example.test1");
         assertThat(passwordEncoder.matches(password, admin.getPasswordHash())).isTrue();
         assertThat(admin.getPasswordHash()).isNotEqualTo(user.getPasswordHash());
         assertThat(admin.getPasswordSalt()).startsWith("$2").hasSize(29);

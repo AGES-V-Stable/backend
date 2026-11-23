@@ -481,13 +481,17 @@ class SupportChatClientTest {
         var result = client.generateReply("system", List.of(), "Qual a taxa da Avenia?", "Contexto");
 
         assertThat(result.provider()).isEqualTo("vstable-assistant");
-        assertThat(result.reply()).contains("Avenia").contains("BlindPay");
+        assertThat(result.reply())
+                .contains("multi-provedor de liquidez institucional")
+                .contains("provedores parceiros regulados")
+                .doesNotContainIgnoringCase("avenia")
+                .doesNotContainIgnoringCase("blindpay");
         mockServer.verify();
     }
 
     @ParameterizedTest
     @MethodSource("domainTopics")
-    @DisplayName("Built-in knowledge assistant should accurately match domain topics and include user context")
+    @DisplayName("Built-in knowledge assistant should accurately match domain topics and include user context without technical terms")
     void generateBuiltInKnowledgeReply_matchesAllDomainTopics(String message, String expectedSectionSnippet) {
         properties.setProvider("local");
 
@@ -497,12 +501,13 @@ class SupportChatClientTest {
         assertThat(result.reply())
                 .contains(expectedSectionSnippet)
                 .contains("Contexto de Teste");
+        assertNoForbiddenTechnicalTerms(result.reply());
     }
 
     static Stream<Arguments> domainTopics() {
         return Stream.of(
                 Arguments.of(
-                        "Como funciona a integração com a Avenia e BlindPay?",
+                        "Como funciona a estrutura multi-provedor de liquidez e pagamento?",
                         "multi-provedor de liquidez institucional"),
                 Arguments.of(
                         "Quais são os países, moedas e trilhos suportados como SPEI e Argentina?",
@@ -526,8 +531,84 @@ class SupportChatClientTest {
                         "Como cadastrar um beneficiário internacional com IBAN ou wallet?",
                         "Para cadastrar um **Beneficiário** na V-Stable:"),
                 Arguments.of(
+                        "Quais são os perfis de representante e membros que podem operar ou visualizar e como funcionam convites?",
+                        "Gestão de Membros, Perfis e Convites"),
+                Arguments.of(
+                        "Como funciona o dashboard, economia estimada, extrato e comprovante em PDF?",
+                        "Dashboard, Economia Estimada e Comprovante em PDF"),
+                Arguments.of(
                         "Olá, tudo bem?",
                         "Olá! Sou o **Assistente Virtual da V-Stable**.")
         );
+    }
+
+    @Test
+    @DisplayName("Built-in knowledge assistant covers enriched details using abstract business language without technical terms")
+    void generateBuiltInKnowledgeReply_coversEnrichedPlatformFeaturesWithoutForbiddenTerms() {
+        properties.setProvider("local");
+
+        var twoFa = client.generateReply("system", List.of(), "O código 2FA TOTP tem uso único?", "Ctx");
+        assertThat(twoFa.reply())
+                .contains("uso único")
+                .contains("janela de validade");
+        assertNoForbiddenTechnicalTerms(twoFa.reply());
+
+        var kyc = client.generateReply("system", List.of(), "Como enviar documento no KYC e aceitar os termos?", "Ctx");
+        assertThat(kyc.reply())
+                .contains("termos do provedor de pagamento")
+                .contains("3 MB por arquivo")
+                .contains("reiniciar/refazer");
+        assertNoForbiddenTechnicalTerms(kyc.reply());
+
+        var transferBalance = client.generateReply("system", List.of(), "Como funciona o saldo empresarial em BRL?", "Ctx");
+        assertThat(transferBalance.reply())
+                .contains("Saldo empresarial em BRL")
+                .contains("ambiente de testes/simulação")
+                .contains("comprovante em PDF")
+                .contains("acompanhamento e atualização automática do status");
+        assertNoForbiddenTechnicalTerms(transferBalance.reply());
+
+        var members = client.generateReply("system", List.of(), "Como revogar convite ou mudar permissão de quem pode operar?", "Ctx");
+        assertThat(members.reply())
+                .contains("Representante")
+                .contains("Membro com permissão para operar")
+                .contains("Membro com acesso apenas de visualização")
+                .contains("Termos de Uso e Política de Privacidade vigentes");
+        assertNoForbiddenTechnicalTerms(members.reply());
+
+        var dashboard = client.generateReply("system", List.of(), "Como funciona o acompanhamento e a economia no dashboard?", "Ctx");
+        assertThat(dashboard.reply())
+                .contains("BRL -> USDC")
+                .contains("BRL -> USDT")
+                .contains("atualização periódica")
+                .contains("4%")
+                .contains("comprovante em PDF")
+                .contains("acompanhamento e atualização automática do status");
+        assertNoForbiddenTechnicalTerms(dashboard.reply());
+    }
+
+    private static void assertNoForbiddenTechnicalTerms(String text) {
+        assertThat(text)
+                .doesNotContainIgnoringCase("OWNER")
+                .doesNotContainIgnoringCase("OPERATOR")
+                .doesNotContainIgnoringCase("VIEWER")
+                .doesNotContainIgnoringCase("QuoteOrchestratorService")
+                .doesNotContainIgnoringCase("BeneficiaryValidator")
+                .doesNotContainIgnoringCase("TERMS_VERSION")
+                .doesNotContainIgnoringCase("Idempotency-Key")
+                .doesNotContainIgnoringCase("basePrice")
+                .doesNotContainIgnoringCase("TTL")
+                .doesNotContainIgnoringCase("sandbox")
+                .doesNotContainIgnoringCase("homologação")
+                .doesNotContainIgnoringCase("tickets Avenia")
+                .doesNotContainIgnoringCase("controle atômico")
+                .doesNotContainIgnoringCase("CRYPTO_WALLET")
+                .doesNotContainIgnoringCase("Avenia")
+                .doesNotContainIgnoringCase("BlindPay")
+                .doesNotContainIgnoringCase("Bitso")
+                .doesNotContainIgnoringCase("webhook")
+                .doesNotContain("Compliance KYB")
+                .doesNotContain("AML =")
+                .doesNotMatch("(?s).*\\bToS\\b.*");
     }
 }

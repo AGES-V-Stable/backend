@@ -7,6 +7,9 @@ import ages.vstable.backend.dto.beneficiary.BeneficiaryResponse;
 import ages.vstable.backend.entity.BeneficiaryEntity;
 import ages.vstable.backend.entity.CompanyEntity;
 import ages.vstable.backend.entity.enums.BankAccountType;
+import ages.vstable.backend.entity.enums.ReceivingMethod;
+import ages.vstable.backend.exception.AveniaIntegrationException;
+import ages.vstable.backend.service.quote.BlindPayProvisioningService;
 import ages.vstable.backend.exception.NotFoundException;
 import ages.vstable.backend.exception.UnprocessableEntityException;
 import ages.vstable.backend.external.avenia.AveniaBeneficiaryService;
@@ -32,6 +35,7 @@ public class BeneficiaryService {
     private final BeneficiaryValidator beneficiaryValidator;
     private final AveniaBeneficiaryService aveniaBeneficiaryService;
     private final CompanyFinancialAccountService companyFinancialAccountService;
+    private final BlindPayProvisioningService blindPayProvisioningService;
 
     @Transactional
     public BeneficiaryResponse create(UUID companyId, UUID currentUserId, BeneficiaryCreateRequest request) {
@@ -47,10 +51,22 @@ public class BeneficiaryService {
         // O beneficiário pertence à empresa: é cadastrado na conta Avenia dela, qualquer que seja o membro
         // autorizado. O usuário é só o ator da operação.
         String subAccountId = companyFinancialAccountService.requireAveniaSubAccountId(company.getId());
-        AveniaBeneficiaryRegistration registration = aveniaBeneficiaryService.register(beneficiary, subAccountId);
-        beneficiary.setAveniaId(registration.bankAccountId());
-        beneficiary.setAveniaWalletId(registration.walletId());
-        beneficiary.setAveniaSubAccountId(subAccountId);
+        BeneficiaryEntity saved;
+        try {
+            AveniaBeneficiaryRegistration registration = aveniaBeneficiaryService.register(beneficiary, subAccountId);
+            beneficiary.setAveniaId(registration.bankAccountId());
+            beneficiary.setAveniaWalletId(registration.walletId());
+            beneficiary.setAveniaSubAccountId(subAccountId);
+        } catch (AveniaIntegrationException failure) {
+            if (beneficiary.getReceivingMethod() != ReceivingMethod.BANK_ACCOUNT) throw failure;
+            // Resolve the approved customer before inserting the beneficiary: linking the owner's
+            // KYC locks the company in its own transaction and must not wait on our foreign-key lock.
+            blindPayProvisioningService.requireApprovedCustomer(company);
+            saved = beneficiaryRepository.saveAndFlush(beneficiary);
+            blindPayProvisioningService.registerBankAccount(company, saved);
+            OperationalLog.milestone("beneficiary.creation.blindpay_fallback", "success");
+            return toResponse(saved);
+        }
 
         BeneficiaryResponse response = toResponse(beneficiaryRepository.saveAndFlush(beneficiary));
         OperationalLog.milestone("beneficiary.creation.completed", "success", "beneficiary", beneficiary.getId());

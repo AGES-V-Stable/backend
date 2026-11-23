@@ -109,6 +109,7 @@ class SupportChatDtoTest {
     void supportChatProperties_defaultsAndMutations() {
         SupportChatProperties properties = new SupportChatProperties();
 
+        assertThat(properties.isEnabled()).isTrue();
         assertThat(properties.getProvider()).isEqualTo("gemini");
         assertThat(properties.getApiKey()).isEmpty();
         assertThat(properties.getGeminiModel()).isEqualTo("gemini-flash-lite-latest");
@@ -116,6 +117,7 @@ class SupportChatDtoTest {
         assertThat(properties.getDeepseekModel()).isEqualTo("deepseek-chat");
         assertThat(properties.getDeepseekBaseUrl()).isEqualTo("https://api.deepseek.com");
 
+        properties.setEnabled(false);
         properties.setProvider("deepseek");
         properties.setApiKey("sk-custom");
         properties.setGeminiModel("gemini-1.5-pro");
@@ -123,6 +125,7 @@ class SupportChatDtoTest {
         properties.setDeepseekModel("deepseek-reasoner");
         properties.setDeepseekBaseUrl("https://custom-deepseek.test");
 
+        assertThat(properties.isEnabled()).isFalse();
         assertThat(properties.getProvider()).isEqualTo("deepseek");
         assertThat(properties.getApiKey()).isEqualTo("sk-custom");
         assertThat(properties.getGeminiModel()).isEqualTo("gemini-1.5-pro");

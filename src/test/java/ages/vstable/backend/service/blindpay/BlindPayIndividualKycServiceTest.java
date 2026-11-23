@@ -31,12 +31,13 @@ import static org.mockito.Mockito.*;
 class BlindPayIndividualKycServiceTest {
     @Mock BlindPayGateway gateway;
     @Mock BlindPayIndividualKycRepository repository;
+    @Mock ages.vstable.backend.repository.ProviderAccountRepository providerAccounts;
     private BlindPayIndividualKycService service;
     private UserEntity user;
 
     @BeforeEach
     void setUp() {
-        service = new BlindPayIndividualKycService(gateway, repository);
+        service = new BlindPayIndividualKycService(gateway, repository, providerAccounts);
         ReflectionTestUtils.setField(service, "enabled", true);
         user = UserEntity.builder()
                 .id(UUID.randomUUID())
@@ -57,6 +58,99 @@ class BlindPayIndividualKycServiceTest {
         var status = service.status(user);
         assertThat(status.termsAccepted()).isFalse();
         assertThat(status.submitted()).isFalse();
+    }
+
+    @Test
+    void manualStatusCheckFetchesProviderAndUpdatesLinkedAccount() {
+        var entry = BlindPayIndividualKycEntity.builder().userId(user.getId()).customerId("re_customer")
+                .tosAcceptedAt(OffsetDateTime.now()).kycStatus("verifying").build();
+        when(repository.findById(user.getId())).thenReturn(Optional.of(entry));
+        var remote = mock(BlindPayCustomerResponse.class);
+        when(remote.id()).thenReturn("re_customer");
+        when(remote.externalId()).thenReturn("user:" + user.getId());
+        when(remote.kycStatus()).thenReturn("approved");
+        when(remote.amlStatus()).thenReturn("clear");
+        when(gateway.getCustomer("re_customer")).thenReturn(remote);
+        var account = ages.vstable.backend.entity.ProviderAccountEntity.builder()
+                .externalCustomerId("re_customer").tosAcceptedAt(OffsetDateTime.now()).status("VERIFYING").build();
+        when(providerAccounts.findByProviderAndExternalCustomerId(
+                ages.vstable.backend.entity.enums.IntegrationProvider.BLINDPAY, "re_customer"))
+                .thenReturn(Optional.of(account));
+
+        var status = service.status(user);
+
+        assertThat(status.kycStatus()).isEqualTo("approved");
+        assertThat(status.amlStatus()).isEqualTo("clear");
+        assertThat(account.getStatus()).isEqualTo("APPROVED");
+        verify(repository).save(entry);
+        verify(providerAccounts).save(account);
+    }
+
+    @Test
+    void manualStatusFailureDoesNotSilentlyReturnOldApproval() {
+        var entry = BlindPayIndividualKycEntity.builder().userId(user.getId()).customerId("re_customer")
+                .kycStatus("approved").amlStatus("clear").build();
+        when(repository.findById(user.getId())).thenReturn(Optional.of(entry));
+        var failure = ages.vstable.backend.exception.BlindPayIntegrationException.communication("Unavailable", null);
+        when(gateway.getCustomer("re_customer")).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.status(user)).isSameAs(failure);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void manualStatusRejectsAnotherCustomersResponse() {
+        var entry = BlindPayIndividualKycEntity.builder().userId(user.getId()).customerId("re_customer").build();
+        when(repository.findById(user.getId())).thenReturn(Optional.of(entry));
+        var remote = mock(BlindPayCustomerResponse.class);
+        when(remote.id()).thenReturn("re_other");
+        when(gateway.getCustomer("re_customer")).thenReturn(remote);
+
+        assertThatThrownBy(() -> service.status(user))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayIntegrationException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void termsRedirectIsBoundToTheLatestSession() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "redirectUrl", "http://localhost/kyc");
+        when(repository.findById(user.getId())).thenReturn(Optional.empty());
+        when(gateway.initiateTermsOfService(any()))
+                .thenReturn(new BlindPayInitiateTosResponse("https://app.blindpay.com/e/terms-of-service"));
+
+        service.startTerms(user);
+
+        var saved = ArgumentCaptor.forClass(BlindPayIndividualKycEntity.class);
+        verify(repository).saveAndFlush(saved.capture());
+        var request = ArgumentCaptor.forClass(BlindPayInitiateTosRequest.class);
+        verify(gateway).initiateTermsOfService(request.capture());
+        assertThat(request.getValue().redirectUrl()).isEqualTo("http://localhost/kyc?state=" + saved.getValue().getTosSessionKey());
+    }
+
+    @Test
+    void termsCanBeConfirmedFromHostedRedirectWithoutAWebhook() {
+        UUID state = UUID.randomUUID();
+        var entry = BlindPayIndividualKycEntity.builder().userId(user.getId()).tosSessionKey(state).build();
+        when(repository.findForUpdate(user.getId())).thenReturn(Optional.of(entry));
+
+        var result = service.confirmTerms(user, state, "to_000000000001");
+
+        assertThat(result.termsAccepted()).isTrue();
+        assertThat(entry.getTosId()).isEqualTo("to_000000000001");
+        assertThat(entry.getTosAcceptedAt()).isNotNull();
+        verify(repository).save(entry);
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void termsReturnCannotBeAttachedToAnotherSession() {
+        var entry = BlindPayIndividualKycEntity.builder().userId(user.getId()).tosSessionKey(UUID.randomUUID()).build();
+        when(repository.findForUpdate(user.getId())).thenReturn(Optional.of(entry));
+
+        assertThatThrownBy(() -> service.confirmTerms(user, UUID.randomUUID(), "to_000000000001"))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("does not match");
+        verify(repository, never()).save(any());
+        verifyNoInteractions(gateway);
     }
 
     @Test
@@ -200,6 +294,10 @@ class BlindPayIndividualKycServiceTest {
         when(gateway.submitCustomerRfi(eq("re_000000000001"), any(), startsWith("individual-rfi:rfi_1:")))
                 .thenReturn(new BlindPayRfiSubmitResponse(true, null));
 
+        var remote = mock(BlindPayCustomerResponse.class);
+        when(remote.id()).thenReturn("re_000000000001");
+        when(remote.externalId()).thenReturn("user:" + user.getId());
+        when(gateway.getCustomer("re_000000000001")).thenReturn(remote);
         var details = service.rfi(user);
         service.submitRfi(user, java.util.Map.of("occupation", "Engenheira"));
 

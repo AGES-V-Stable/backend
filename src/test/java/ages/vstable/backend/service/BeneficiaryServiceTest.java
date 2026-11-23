@@ -17,6 +17,8 @@ import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.external.avenia.dto.AveniaBeneficiaryRegistration;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import ages.vstable.backend.logging.LogCapture;
+import ages.vstable.backend.service.quote.BlindPayProvisioningService;
+import ages.vstable.backend.exception.BlindPayIntegrationException;
 import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.AveniaKycVerificationRepository;
 import ages.vstable.backend.repository.BeneficiaryRepository;
@@ -67,6 +69,9 @@ class BeneficiaryServiceTest {
     @Mock
     private AveniaKycVerificationRepository aveniaKycVerificationRepository;
 
+    @Mock
+    private BlindPayProvisioningService blindPayProvisioningService;
+
     private BeneficiaryService beneficiaryService;
 
     private final UUID companyId = UUID.randomUUID();
@@ -76,7 +81,7 @@ class BeneficiaryServiceTest {
     @BeforeEach
     void setUp() {
         beneficiaryService = new BeneficiaryService(beneficiaryRepository, companyRepository,
-                new BeneficiaryValidator(), aveniaBeneficiaryService, companyFinancialAccountService);
+                new BeneficiaryValidator(), aveniaBeneficiaryService, companyFinancialAccountService, blindPayProvisioningService);
     }
 
     private void stubSubAccount() {
@@ -158,6 +163,7 @@ class BeneficiaryServiceTest {
         ArgumentCaptor<BeneficiaryEntity> captor = ArgumentCaptor.forClass(BeneficiaryEntity.class);
         verify(beneficiaryRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getCompany().getId()).isEqualTo(companyId);
+        org.mockito.Mockito.verifyNoInteractions(blindPayProvisioningService);
         assertThat(captor.getValue().getAveniaId()).isEqualTo(aveniaId);
         assertThat(captor.getValue().getAveniaSubAccountId()).isEqualTo(subAccountId);
         assertThat(captor.getValue().getAccountClass()).isEqualTo("business");
@@ -332,6 +338,67 @@ class BeneficiaryServiceTest {
         assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("walletAddress: Campo obrigatório.");
+    }
+
+    @Test
+    void create_sepaUnavailableAtAvenia_registersWithBlindPayOnly() {
+        CompanyEntity company = approvedCompany();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenThrow(AveniaIntegrationException.response("eur fiat rail does not exist", 400, null));
+        stubSavedBeneficiary();
+        BeneficiaryCreateRequest request = bankAccountRequest();
+        request.setPaymentRail("sepa");
+        request.setCurrency("EUR");
+        request.setIban("DE89370400440532013000");
+        request.setCountryCode("DEU");
+
+        BeneficiaryResponse response = beneficiaryService.create(companyId, currentUserId, request);
+
+        ArgumentCaptor<BeneficiaryEntity> saved = ArgumentCaptor.forClass(BeneficiaryEntity.class);
+        var order = org.mockito.Mockito.inOrder(blindPayProvisioningService, beneficiaryRepository);
+        order.verify(blindPayProvisioningService).requireApprovedCustomer(company);
+        order.verify(beneficiaryRepository).saveAndFlush(saved.capture());
+        order.verify(blindPayProvisioningService).registerBankAccount(company, saved.getValue());
+        assertThat(response.getId()).isEqualTo(saved.getValue().getId());
+        assertThat(saved.getValue().getAveniaId()).isNull();
+        assertThat(saved.getValue().getAveniaWalletId()).isNull();
+        assertThat(saved.getValue().getAveniaSubAccountId()).isNull();
+        assertThat(saved.getValue().getPaymentRail()).isEqualTo("sepa");
+        assertThat(saved.getValue().getIban()).isEqualTo("DE89370400440532013000");
+    }
+
+    @Test
+    void create_bothProvidersFail_propagatesBlindPayFailure() {
+        CompanyEntity company = approvedCompany();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenThrow(AveniaIntegrationException.communication("Unavailable", null));
+        stubSavedBeneficiary();
+        var failure = BlindPayIntegrationException.invalidResponse("BlindPay rejected beneficiary");
+        org.mockito.Mockito.doThrow(failure).when(blindPayProvisioningService)
+                .registerBankAccount(eq(company), any());
+
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
+                .isSameAs(failure);
+    }
+
+    @Test
+    void create_fallbackRequiresApprovedBlindPayCustomerBeforeSaving() {
+        CompanyEntity company = approvedCompany();
+        when(companyRepository.findById(companyId)).thenReturn(Optional.of(company));
+        stubSubAccount();
+        when(aveniaBeneficiaryService.register(any(), eq(subAccountId)))
+                .thenThrow(AveniaIntegrationException.response("Unsupported rail", 400, null));
+        org.mockito.Mockito.doThrow(new ages.vstable.backend.exception.BlindPayComplianceException("KYC required"))
+                .when(blindPayProvisioningService).requireApprovedCustomer(company);
+
+        assertThatThrownBy(() -> beneficiaryService.create(companyId, currentUserId, bankAccountRequest()))
+                .isInstanceOf(ages.vstable.backend.exception.BlindPayComplianceException.class);
+        verify(beneficiaryRepository, never()).saveAndFlush(any());
+        verify(blindPayProvisioningService, never()).registerBankAccount(any(), any());
     }
 
     @Test

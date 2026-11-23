@@ -34,6 +34,17 @@ public class BlindPayIndividualKycController {
         return service.startTerms(user);
     }
 
+    public record TermsReturnRequest(
+            @jakarta.validation.constraints.NotNull java.util.UUID state,
+            @jakarta.validation.constraints.NotBlank
+            @jakarta.validation.constraints.Pattern(regexp = "to_[A-Za-z0-9]{12}") String tosId) {}
+
+    @PostMapping("/terms/confirm")
+    public BlindPayIndividualKycStatus confirmTerms(@AuthenticationPrincipal UserEntity user,
+            @RequestBody @Valid TermsReturnRequest request) {
+        return service.confirmTerms(user, request.state(), request.tosId());
+    }
+
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public BlindPayIndividualKycStatus submit(
             @AuthenticationPrincipal UserEntity user,

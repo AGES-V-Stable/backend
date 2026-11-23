@@ -176,6 +176,7 @@ transfers:
 
 ai:
   support:
+    enabled: ${AI_SUPPORT_ENABLED:true}
     provider: ${AI_SUPPORT_PROVIDER:gemini}
     api-key: ${AI_SUPPORT_API_KEY:}
     gemini-model: ${AI_SUPPORT_GEMINI_MODEL:gemini-flash-lite-latest}
