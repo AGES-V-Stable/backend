@@ -4,8 +4,8 @@ import ages.vstable.backend.dto.exchangerate.ExchangeRateResponse;
 import ages.vstable.backend.dto.exchangerate.ExchangeRatesResponse;
 import ages.vstable.backend.entity.ExchangeRateSnapshotEntity;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
-import ages.vstable.backend.external.avenia.AveniaTransferService;
-import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
+import ages.vstable.backend.external.avenia.AveniaReferenceRateGateway;
+import ages.vstable.backend.external.avenia.dto.AveniaReferenceRateRequest;
 import ages.vstable.backend.logging.OperationalLog;
 import ages.vstable.backend.repository.ExchangeRateSnapshotRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +42,7 @@ public class ExchangeRateService {
     static final int RATE_SCALE = 8;
 
     private final ExchangeRateSnapshotRepository repository;
-    private final AveniaTransferService aveniaTransferService;
+    private final AveniaReferenceRateGateway referenceRateGateway;
     private final ExchangeRateProperties properties;
     private final Executor executor;
     private final Clock clock;
@@ -50,21 +50,21 @@ public class ExchangeRateService {
     @Autowired
     public ExchangeRateService(
             ExchangeRateSnapshotRepository repository,
-            AveniaTransferService aveniaTransferService,
+            AveniaReferenceRateGateway referenceRateGateway,
             ExchangeRateProperties properties,
             @Qualifier("quoteProviderExecutor") Executor executor) {
-        this(repository, aveniaTransferService, properties, executor, Clock.systemUTC());
+        this(repository, referenceRateGateway, properties, executor, Clock.systemUTC());
     }
 
     // Construtor visível para testes determinísticos (controle do tempo do TTL)
     ExchangeRateService(
             ExchangeRateSnapshotRepository repository,
-            AveniaTransferService aveniaTransferService,
+            AveniaReferenceRateGateway referenceRateGateway,
             ExchangeRateProperties properties,
             Executor executor,
             Clock clock) {
         this.repository = repository;
-        this.aveniaTransferService = aveniaTransferService;
+        this.referenceRateGateway = referenceRateGateway;
         this.properties = properties;
         this.executor = executor;
         this.clock = clock;
@@ -119,18 +119,15 @@ public class ExchangeRateService {
     }
 
     /**
-     * Cotação sem subconta: o valor é global, não pertence a um usuário, e a cotação não
-     * cria ticket nem movimenta saldo. A taxa é o basePrice (mercado, sem tarifas), o mesmo
-     * valor gravado como câmbio das transferências.
+     * Leitura global de referência sem token executável, ticket ou movimentação de saldo.
+     * Cotações financeiras continuam exigindo a subconta autorizada da empresa.
      */
     private BigDecimal fetchRate(ExchangeRateProperties.Pair pair) {
-        AveniaQuoteRequest request = new AveniaQuoteRequest(
+        AveniaReferenceRateRequest request = new AveniaReferenceRateRequest(
                 normalize(pair.getBaseCurrency()), pair.getInputPaymentMethod(),
                 normalize(pair.getQuoteCurrency()), pair.getOutputPaymentMethod(),
-                properties.getReferenceAmount(), null,
-                null, null, null, null, null, null, null, null, null, null, null);
-        var response = aveniaTransferService.createQuote(request);
-        BigDecimal price = response == null ? null : response.basePrice();
+                properties.getReferenceAmount());
+        BigDecimal price = referenceRateGateway.getReferenceRate(request);
         // Taxas ausentes, negativas ou que arredondam para zero nunca são cotação atual.
         // O CompletionException do futuro mantém a última taxa como STALE, se existir.
         if (price == null || price.signum() <= 0) {

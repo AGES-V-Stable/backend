@@ -14,6 +14,7 @@ import ages.vstable.backend.external.avenia.dto.AveniaKycAttemptsResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaReferenceRateRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
@@ -89,6 +90,54 @@ class AveniaClientTest {
     // ---------------------------------------------------------------------
     // Quote / Ticket
     // ---------------------------------------------------------------------
+
+    @Test
+    void referenceRate_returnsOnlyBasePriceFromExistingSignedGet() {
+        server.expect(requestTo("https://avenia.test/v2/account/quote/fixed-rate"
+                        + "?inputCurrency=BRL&inputPaymentMethod=PIX&outputCurrency=USDC"
+                        + "&outputPaymentMethod=POLYGON&inputThirdParty=false&outputThirdParty=false&inputAmount=1000"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-API-Key", "minha-api-key"))
+                .andExpect(header("X-API-Signature", not(blankString())))
+                .andRespond(withSuccess("""
+                        {"quoteToken":"must-not-escape","inputCurrency":"BRL","inputPaymentMethod":"PIX",
+                         "outputCurrency":"USDC","outputPaymentMethod":"POLYGON","basePrice":"5.47"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.getReferenceRate(referenceRequest())).isEqualByComparingTo("5.47");
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}", "{\"basePrice\":0}", "{\"basePrice\":-1}",
+            "{\"basePrice\":5.47,\"inputCurrency\":\"USD\",\"inputPaymentMethod\":\"PIX\",\"outputCurrency\":\"USDC\",\"outputPaymentMethod\":\"POLYGON\"}",
+            "{\"basePrice\":5.47,\"inputCurrency\":\"BRL\",\"inputPaymentMethod\":\"SWIFT\",\"outputCurrency\":\"USDC\",\"outputPaymentMethod\":\"POLYGON\"}",
+            "{\"basePrice\":5.47,\"inputCurrency\":\"BRL\",\"inputPaymentMethod\":\"PIX\",\"outputCurrency\":\"USDT\",\"outputPaymentMethod\":\"POLYGON\"}",
+            "{\"basePrice\":5.47,\"inputCurrency\":\"BRL\",\"inputPaymentMethod\":\"PIX\",\"outputCurrency\":\"USDC\",\"outputPaymentMethod\":\"SWIFT\"}"
+    })
+    void referenceRate_rejectsMissingInvalidOrMismatchedMarketData(String response) {
+        server.expect(method(HttpMethod.GET)).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.getReferenceRate(referenceRequest()))
+                .isInstanceOf(AveniaIntegrationException.class)
+                .hasMessage("Avenia returned an invalid reference rate");
+        server.verify();
+    }
+
+    @Test
+    void referenceRate_rejectsInvalidInputsBeforeTransport() {
+        assertThatThrownBy(() -> client.getReferenceRate(null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AveniaReferenceRateRequest("BRL", "PIX", "USDC", "POLYGON", BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AveniaReferenceRateRequest("", "PIX", "USDC", "POLYGON", BigDecimal.ONE))
+                .isInstanceOf(IllegalArgumentException.class);
+        server.verify();
+    }
+
+    private static AveniaReferenceRateRequest referenceRequest() {
+        return new AveniaReferenceRateRequest("BRL", "PIX", "USDC", "POLYGON", new BigDecimal("1000"));
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})

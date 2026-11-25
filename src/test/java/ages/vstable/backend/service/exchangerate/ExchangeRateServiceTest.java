@@ -5,9 +5,8 @@ import ages.vstable.backend.dto.exchangerate.ExchangeRatesResponse;
 import ages.vstable.backend.entity.ExchangeRateSnapshotEntity;
 import ages.vstable.backend.entity.enums.IntegrationProvider;
 import ages.vstable.backend.exception.AveniaIntegrationException;
-import ages.vstable.backend.external.avenia.AveniaTransferService;
-import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
-import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.AveniaReferenceRateGateway;
+import ages.vstable.backend.external.avenia.dto.AveniaReferenceRateRequest;
 import ages.vstable.backend.repository.ExchangeRateSnapshotRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +46,7 @@ class ExchangeRateServiceTest {
     private ExchangeRateSnapshotRepository repository;
 
     @Mock
-    private AveniaTransferService aveniaTransferService;
+    private AveniaReferenceRateGateway referenceRateGateway;
 
     private ExchangeRateProperties properties;
 
@@ -61,7 +60,7 @@ class ExchangeRateServiceTest {
     }
 
     private ExchangeRateService service(Executor executor) {
-        return new ExchangeRateService(repository, aveniaTransferService, properties, executor,
+        return new ExchangeRateService(repository, referenceRateGateway, properties, executor,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -69,7 +68,7 @@ class ExchangeRateServiceTest {
     void withoutSavedRate_quotesAveniaPersistsAndReturnsCurrent() {
         // Arrange
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("5.47"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("5.47"));
 
         // Act
         ExchangeRatesResponse response = service(DIRECT).currentRates();
@@ -94,7 +93,7 @@ class ExchangeRateServiceTest {
         // Assert
         assertThat(response.rates()).containsExactly(
                 new ExchangeRateResponse("BRL", "USDC", "5.40123457", fetchedAt, ExchangeRateStatus.CURRENT));
-        verifyNoInteractions(aveniaTransferService);
+        verifyNoInteractions(referenceRateGateway);
         verify(repository, never()).upsert(any(), any(), any(), any(), any(), any());
     }
 
@@ -108,7 +107,7 @@ class ExchangeRateServiceTest {
 
         // Assert
         assertThat(response.rates().getFirst().status()).isEqualTo(ExchangeRateStatus.CURRENT);
-        verifyNoInteractions(aveniaTransferService);
+        verifyNoInteractions(referenceRateGateway);
     }
 
     @Test
@@ -116,7 +115,7 @@ class ExchangeRateServiceTest {
         // Arrange
         when(repository.findAll()).thenReturn(List.of(
                 snapshot("BRL", "USDC", "5.40", NOW_UTC.minusHours(2).minusSeconds(1))));
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("5.512345675"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("5.512345675"));
 
         // Act
         ExchangeRatesResponse response = service(DIRECT).currentRates();
@@ -133,7 +132,7 @@ class ExchangeRateServiceTest {
         // Arrange
         OffsetDateTime fetchedAt = NOW_UTC.minusHours(5);
         when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
-        when(aveniaTransferService.createQuote(any()))
+        when(referenceRateGateway.getReferenceRate(any()))
                 .thenThrow(AveniaIntegrationException.response("Could not obtain a quote from Avenia", 503, null));
 
         // Act
@@ -149,7 +148,7 @@ class ExchangeRateServiceTest {
     void aveniaFailsWithoutSavedRate_returnsUnavailableWithoutRate() {
         // Arrange
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any()))
+        when(referenceRateGateway.getReferenceRate(any()))
                 .thenThrow(new AveniaIntegrationException("Avenia returned an incomplete quote", 502, false, null));
 
         // Act
@@ -165,7 +164,7 @@ class ExchangeRateServiceTest {
     @Test
     void zeroRateWithoutCache_isUnavailableAndIsNotPersisted() {
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("0"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("0"));
 
         ExchangeRatesResponse response = service(DIRECT).currentRates();
 
@@ -178,7 +177,7 @@ class ExchangeRateServiceTest {
     void negativeRateWithCache_remainsStaleAndIsNotOverwritten() {
         OffsetDateTime fetchedAt = NOW_UTC.minusHours(4);
         when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("-1.25"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("-1.25"));
 
         ExchangeRatesResponse response = service(DIRECT).currentRates();
 
@@ -190,7 +189,7 @@ class ExchangeRateServiceTest {
     @Test
     void subprecisionRateWithoutCache_isUnavailableInsteadOfDisplayingZeroAsCurrent() {
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("0.000000001"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("0.000000001"));
 
         ExchangeRatesResponse response = service(DIRECT).currentRates();
 
@@ -202,7 +201,7 @@ class ExchangeRateServiceTest {
     @Test
     void missingRateWithoutCache_isUnavailableAndIsNotPersisted() {
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote(null));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote(null));
 
         ExchangeRatesResponse response = service(DIRECT).currentRates();
 
@@ -214,7 +213,7 @@ class ExchangeRateServiceTest {
     void missingProviderResponseWithCache_preservesLastRateAsStale() {
         OffsetDateTime fetchedAt = NOW_UTC.minusHours(4);
         when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
-        when(aveniaTransferService.createQuote(any())).thenReturn(null);
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(null);
 
         ExchangeRatesResponse response = service(DIRECT).currentRates();
 
@@ -240,25 +239,23 @@ class ExchangeRateServiceTest {
     }
 
     @Test
-    void quote_isRequestedOnTheMainAccountWithTheReferenceAmountAndConfiguredRoute() {
+    void referenceRead_usesOnlyTheReferenceAmountAndConfiguredRoute() {
         // Arrange
         when(repository.findAll()).thenReturn(List.of());
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("5.47"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("5.47"));
 
         // Act
         service(DIRECT).currentRates();
 
         // Assert
-        ArgumentCaptor<AveniaQuoteRequest> captor = ArgumentCaptor.forClass(AveniaQuoteRequest.class);
-        verify(aveniaTransferService).createQuote(captor.capture());
-        AveniaQuoteRequest request = captor.getValue();
+        ArgumentCaptor<AveniaReferenceRateRequest> captor = ArgumentCaptor.forClass(AveniaReferenceRateRequest.class);
+        verify(referenceRateGateway).getReferenceRate(captor.capture());
+        AveniaReferenceRateRequest request = captor.getValue();
         assertThat(request.inputCurrency()).isEqualTo("BRL");
         assertThat(request.inputPaymentMethod()).isEqualTo("PIX");
         assertThat(request.outputCurrency()).isEqualTo("USDC");
         assertThat(request.outputPaymentMethod()).isEqualTo("POLYGON");
         assertThat(request.inputAmount()).isEqualByComparingTo("1000");
-        assertThat(request.outputAmount()).isNull();
-        assertThat(request.subAccountId()).isNull();
     }
 
     @Test
@@ -267,7 +264,7 @@ class ExchangeRateServiceTest {
         properties.setPairs(List.of(pair("BRL", "USDC"), pair("BRL", "USDT")));
         OffsetDateTime fetchedAt = NOW_UTC.minusMinutes(10);
         when(repository.findAll()).thenReturn(List.of(snapshot("BRL", "USDC", "5.40", fetchedAt)));
-        when(aveniaTransferService.createQuote(any()))
+        when(referenceRateGateway.getReferenceRate(any()))
                 .thenThrow(AveniaIntegrationException.communication("Could not reach Avenia", null));
 
         // Act
@@ -292,7 +289,7 @@ class ExchangeRateServiceTest {
 
         // Assert
         assertThat(response.rates().getFirst().status()).isEqualTo(ExchangeRateStatus.CURRENT);
-        verifyNoInteractions(aveniaTransferService);
+        verifyNoInteractions(referenceRateGateway);
     }
 
     private static ExchangeRateProperties.Pair pair(String base, String quote) {
@@ -315,9 +312,7 @@ class ExchangeRateServiceTest {
                 .build();
     }
 
-    private static AveniaQuoteResponse quote(String basePrice) {
-        return new AveniaQuoteResponse("token", "BRL", "PIX", new BigDecimal("1000"), "USDC", "POLYGON",
-                new BigDecimal("182.11"), BigDecimal.ZERO, null, false, false, List.of(),
-                basePrice == null ? null : new BigDecimal(basePrice), "BRLUSDC");
+    private static BigDecimal quote(String basePrice) {
+        return basePrice == null ? null : new BigDecimal(basePrice);
     }
 }

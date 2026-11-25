@@ -2,8 +2,7 @@ package ages.vstable.backend.service.exchangerate;
 
 import ages.vstable.backend.dto.exchangerate.ExchangeRatesResponse;
 import ages.vstable.backend.exception.AveniaIntegrationException;
-import ages.vstable.backend.external.avenia.AveniaTransferService;
-import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.AveniaClient;
 import ages.vstable.backend.repository.ExchangeRateSnapshotRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,6 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +46,7 @@ class ExchangeRateIntegrationTest {
     }
 
     @MockitoBean
-    private AveniaTransferService aveniaTransferService;
+    private AveniaClient referenceRateGateway;
 
     @Autowired
     private ExchangeRateSnapshotRepository repository;
@@ -115,7 +113,7 @@ class ExchangeRateIntegrationTest {
     @Test
     void currentRates_persistsOnFirstReadAndServesTheCacheOnTheNext() {
         // Arrange: pares padrão de application.yaml (BRL→USDC e BRL→USDT).
-        when(aveniaTransferService.createQuote(any())).thenReturn(quote("5.47"));
+        when(referenceRateGateway.getReferenceRate(any())).thenReturn(quote("5.47"));
 
         // Act
         ExchangeRatesResponse first = service.currentRates();
@@ -126,7 +124,7 @@ class ExchangeRateIntegrationTest {
                 .containsExactly("USDC:5.47000000:CURRENT", "USDT:5.47000000:CURRENT");
         assertThat(second.rates()).isEqualTo(first.rates());
         assertThat(repository.count()).isEqualTo(2);
-        verify(aveniaTransferService, times(2)).createQuote(any());
+        verify(referenceRateGateway, times(2)).getReferenceRate(any());
     }
 
     @Test
@@ -134,7 +132,7 @@ class ExchangeRateIntegrationTest {
         // Arrange
         OffsetDateTime old = OffsetDateTime.now(ZoneOffset.UTC).minusHours(3).truncatedTo(ChronoUnit.MICROS);
         repository.upsert(UUID.randomUUID(), "BRL", "USDC", new BigDecimal("5.40"), "AVENIA", old);
-        when(aveniaTransferService.createQuote(any()))
+        when(referenceRateGateway.getReferenceRate(any()))
                 .thenThrow(AveniaIntegrationException.communication("Could not reach Avenia", null));
 
         // Act
@@ -149,9 +147,7 @@ class ExchangeRateIntegrationTest {
         });
     }
 
-    private static AveniaQuoteResponse quote(String basePrice) {
-        return new AveniaQuoteResponse("token", "BRL", "PIX", new BigDecimal("1000"), "USDC", "POLYGON",
-                new BigDecimal("182.11"), BigDecimal.ZERO, null, false, false, List.of(),
-                new BigDecimal(basePrice), "BRLUSDC");
+    private static BigDecimal quote(String basePrice) {
+        return basePrice == null ? null : new BigDecimal(basePrice);
     }
 }

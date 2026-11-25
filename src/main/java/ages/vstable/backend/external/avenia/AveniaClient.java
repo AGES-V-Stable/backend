@@ -20,6 +20,8 @@ import ages.vstable.backend.external.avenia.dto.AveniaKycResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaEurBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaQuoteResponse;
+import ages.vstable.backend.external.avenia.dto.AveniaReferenceRateRequest;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import ages.vstable.backend.external.avenia.dto.AveniaSubAccountResponse;
 import ages.vstable.backend.external.avenia.dto.AveniaSwiftBeneficiaryRequest;
 import ages.vstable.backend.external.avenia.dto.AveniaTicketRequest;
@@ -37,6 +39,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
+import java.math.BigDecimal;
 import java.security.PrivateKey;
 import java.time.Instant;
 import java.util.List;
@@ -46,7 +49,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class AveniaClient implements AveniaGateway {
+public class AveniaClient implements AveniaGateway, AveniaReferenceRateGateway {
 
     private static final String DOCUMENTS_URI = "/v2/documents/";
     private static final String LIVENESS_BODY = "{\"documentType\":\"SELFIE-FROM-LIVENESS\"}";
@@ -86,6 +89,34 @@ public class AveniaClient implements AveniaGateway {
         this.requestSigner = requestSigner;
         this.objectMapper = objectMapper;
         this.restClient = restClientBuilder.baseUrl(properties.getBaseUrl()).build();
+    }
+
+    @Override
+    public BigDecimal getReferenceRate(AveniaReferenceRateRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("reference rate request must be provided");
+        }
+        // Reuse the existing signed GET, but never deserialize or expose its executable token.
+        AveniaQuoteRequest quote = new AveniaQuoteRequest(
+                request.inputCurrency(), request.inputPaymentMethod(),
+                request.outputCurrency(), request.outputPaymentMethod(), request.inputAmount(),
+                null, false, false, null, null, null, null, null, null, null, null, null);
+        ReferenceRateResponse response = get(buildQuoteUri(quote), ReferenceRateResponse.class,
+                "Could not obtain a reference rate from Avenia");
+        if (response == null || response.basePrice() == null || response.basePrice().signum() <= 0
+                || !request.inputCurrency().equalsIgnoreCase(response.inputCurrency())
+                || !request.inputPaymentMethod().equalsIgnoreCase(response.inputPaymentMethod())
+                || !request.outputCurrency().equalsIgnoreCase(response.outputCurrency())
+                || !request.outputPaymentMethod().equalsIgnoreCase(response.outputPaymentMethod())) {
+            throw new AveniaIntegrationException("Avenia returned an invalid reference rate", 502, false, null);
+        }
+        return response.basePrice();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ReferenceRateResponse(
+            String inputCurrency, String inputPaymentMethod,
+            String outputCurrency, String outputPaymentMethod, BigDecimal basePrice) {
     }
 
     @Override

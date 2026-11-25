@@ -70,8 +70,11 @@ administrador); sem autenticação, 401. As cotações são globais, não depend
   última salva); `UNAVAILABLE` (falhou e nunca houve cotação; `rate` e `fetchedAt` nulos).
 - Cache na tabela `exchange_rate_snapshots` (uma linha por par, upsert), atualizado na leitura:
   sem agendador nem cache em memória, porque o backend roda em Lambda. Uma cotação vencida é
-  pedida de novo à Avenia (`AveniaTransferService#createQuote`, conta principal, sem subconta,
-  sem ticket); em falha ou timeout a linha salva não é alterada. Os pares são consultados em
+  pedida de novo à Avenia por `AveniaReferenceRateGateway#getReferenceRate`: leitura do GET
+  de cotação já existente, sem subconta, que retorna somente `basePrice`, nunca token executável
+  ou ticket. A rota retornada deve corresponder à solicitada e o preço deve ser positivo.
+  Cotações/tickets financeiros continuam exigindo subconta em ambos os serviços e cliente;
+  a leitura de referência não remove essa proteção. Em falha ou timeout a linha salva não é alterada. Os pares são consultados em
   paralelo, cada um com `provider-timeout`.
 - Configuração em `exchange-rates`: `ttl` (`EXCHANGE_RATES_TTL`, padrão 2h), `provider-timeout`
   (`EXCHANGE_RATES_PROVIDER_TIMEOUT`, 5s), `reference-amount` (`EXCHANGE_RATES_REFERENCE_AMOUNT`,
